@@ -142,7 +142,6 @@ export function ExplorerTab({
         if (!initialPath) return;
         if (!hasMountedRef.current) {
             hasMountedRef.current = true;
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             loadPath(initialPath, false);
         } else if (initialPath !== currentPathRef.current) {
             loadPath(initialPath, true);
@@ -151,7 +150,6 @@ export function ExplorerTab({
 
     useEffect(() => {
         if (refreshTrigger > 0 && currentPathRef.current && currentPathRef.current !== 'app://dashboard') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             loadPath(currentPathRef.current, false);
         }
     }, [refreshTrigger, loadPath]);

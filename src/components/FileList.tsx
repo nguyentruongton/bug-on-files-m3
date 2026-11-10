@@ -63,7 +63,6 @@ export const FileList: React.FC<FileListProps> = ({
     }
 
     const sortedFiles = files;
-    let lastGroup = '';
     const listIconColWidth = Math.min(48, Math.max(36, Math.round(iconSize * 0.65) + 12));
     const listIconRenderSize = Math.min(32, Math.max(20, Math.round(iconSize * 0.45)));
     const listColumnsTemplate = `${listIconColWidth}px minmax(180px, 1fr) 156px 110px 96px`;
@@ -125,8 +124,8 @@ export const FileList: React.FC<FileListProps> = ({
 
             {sortedFiles.map((file, index) => {
                 const currentGroup = groupingEnabled ? getSemanticGroup(file) : '';
-                const showHeader = groupingEnabled && currentGroup !== lastGroup;
-                if (showHeader) lastGroup = currentGroup;
+                const prevGroup = groupingEnabled && index > 0 ? getSemanticGroup(sortedFiles[index - 1]) : '';
+                const showHeader = Boolean(groupingEnabled && currentGroup !== prevGroup);
 
                 const hidden = isHiddenFile(file.name);
                 const iconInfo = getFileIconInfo(file);
