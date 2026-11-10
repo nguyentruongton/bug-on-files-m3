@@ -3,12 +3,11 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import url from 'url';
 import os from 'os';
-import { spawn, exec, execFile } from 'child_process';
+import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
-import dbus from 'dbus-next';
 import { setupPtyHandlers, setMainWindow, killAllPty } from './pty';
+import { getExtractCommand, parseDesktopEntry, matchesMimeType } from './systemUtils';
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 // --- State ---
@@ -16,33 +15,6 @@ let mainWindow: BrowserWindow | null = null;
 
 // Initialize PTY handlers
 setupPtyHandlers();
-let terminalProcess: any = null;
-let terminalSessionProxy: any = null;
-
-// --- Helper Functions ---
-async function setupTerminal(pid: number) {
-    const bus = dbus.sessionBus();
-    const serviceName = `org.kde.konsole - ${pid} `;
-
-    for (let i = 0; i < 20; i++) {
-        try {
-            // Check if service exists by listing names? No, just try to get object.
-            const sessionPath = '/Sessions/1';
-            const sessionObj = await bus.getProxyObject(serviceName, sessionPath);
-            const sessionInterface = sessionObj.getInterface('org.kde.konsole.Session');
-
-            if (sessionInterface) {
-                terminalSessionProxy = sessionInterface;
-                console.log('Connected to Konsole DBus:', serviceName);
-                return;
-            }
-        } catch (e) {
-            // Ignore errors while waiting
-        }
-        await new Promise(r => setTimeout(r, 500));
-    }
-    console.warn('Failed to connect to Konsole DBus after retries');
-}
 
 // Register protocol before app ready
 protocol.registerSchemesAsPrivileged([
@@ -163,17 +135,9 @@ ipcMain.handle('fs:open', async (_, filePath: string) => {
 
 ipcMain.handle('fs:extract', async (_, filePath: string) => {
     try {
-        const dir = path.dirname(filePath);
-        const ext = path.extname(filePath).toLowerCase();
-
-        // Simple extraction logic - extend as needed
-        if (ext === '.zip') {
-            await execAsync(`unzip "${filePath}" -d "${dir}"`);
-        } else if (ext === '.tar' || ext === '.gz' || ext === '.xz') {
-            await execAsync(`tar -xf "${filePath}" -C "${dir}"`);
-        } else {
-            return false; // Unsupported
-        }
+        const extractCmd = getExtractCommand(filePath);
+        if (!extractCmd) return false;
+        await execFileAsync(extractCmd.cmd, extractCmd.args);
         return true;
     } catch (e) {
         console.error('Extract failed', e);
@@ -192,25 +156,20 @@ ipcMain.handle('system:get-apps', async () => {
 
     for (const dir of dirs) {
         try {
-            const files = await fs.readdir(dir); // This acts on directory path
+            const files = await fs.readdir(dir);
             for (const file of files) {
-                if (file.endsWith('.desktop')) {
-                    try {
-                        const content = await fs.readFile(path.join(dir, file), 'utf-8');
-                        const nameMatch = content.match(/^Name=(.*)$/m);
-                        const iconMatch = content.match(/^Icon=(.*)$/m);
-                        const execMatch = content.match(/^Exec=(.*)$/m);
-
-                        if (nameMatch && execMatch) {
-                            const name = nameMatch[1];
-                            const execCmd = execMatch[1].split(' ')[0]; // Take command, ignore args like %u
-                            const icon = iconMatch ? iconMatch[1] : '';
-
-                            // Naive check to ignore repeats?
-                            apps.push({ name, icon, exec: execCmd });
-                        }
-                    } catch { }
-                }
+                if (!file.endsWith('.desktop')) continue;
+                try {
+                    const content = await fs.readFile(path.join(dir, file), 'utf-8');
+                    const entry = parseDesktopEntry(content);
+                    if (entry && !entry.noDisplay) {
+                        apps.push({
+                            name: entry.name,
+                            icon: entry.icon || '',
+                            exec: entry.exec
+                        });
+                    }
+                } catch { }
             }
         } catch { }
     }
@@ -221,9 +180,10 @@ ipcMain.handle('system:get-apps', async () => {
 
 ipcMain.handle('system:open-with', async (_, execPath: string, filePath: string) => {
     try {
-        // e.g. "code" "/path/to/file"
-        // Should use spawn for detached process
-        const child = spawn(execPath, [filePath], { detached: true, stdio: 'ignore' });
+        const parts = execPath.match(/(?:[^\s"]+|"[^"]*")+/g) || [execPath];
+        const cmd = parts[0].replace(/^"|"$/g, '');
+        const args = parts.slice(1).map(a => a.replace(/^"|"$/g, ''));
+        const child = spawn(cmd, [...args, filePath], { detached: true, stdio: 'ignore' });
         child.unref();
         return true;
     } catch (e) {
@@ -240,43 +200,18 @@ ipcMain.handle('fs:get-home', () => {
     return os.homedir();
 });
 
-// Embedded terminal handles opening via ipcRenderer.invoke('terminal:spawn') directly in pty.ts
-// We keep terminal:open as a no-op or alias if needed, but the frontend now uses ptySpawn.
-ipcMain.handle('terminal:open', async () => {
-    // Legacy handler - no op or focus existing?
-    // Frontend handles the pane toggling.
-    return true;
-});
-
-// Embedded terminal handles opening via ipcRenderer.invoke('terminal:spawn') directly in pty.ts
-
-ipcMain.handle('terminal:cd', async (_, dirPath: string) => {
-    // Send 'cd' command to the active PTY session(s)
-    // We need a way to target the specific tab's terminal or the "global" one.
-    // For now, let's broadcast to the most recent or active one if possible, 
-    // or better yet, frontend should handle this by writing to its own PTY pid.
-    // BUT checking App.tsx, TerminalService.cd calls this. 
-    // We should probably rely on the frontend sending data to the PTY directly.
-
-    // However, to keep compatibility with TerminalService.cd implementation:
-    // We can emit an event to the renderer to tell the active terminal to cd?
-    // OR we can make TerminalService.cd just use ptyWrite.
-
-    // Simplest fix: Make this handler send the input to the PTY wrapper.
-    if (dirPath) {
-        // We'll add a helper in pty.ts to write to all sessions or a specific one.
-        // For now, let's just log or ignore, assuming App.tsx is updated to not call this? 
-        // No, App.tsx calls TerminalService.cd.
-
-        // Plan: Update TerminalService.ts to use ptyWrite instead of this IPC.
-        // For now, removing the Konsole spawning code.
-    }
-});
-
 ipcMain.handle('dialog:open-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ['openFile'],
         filters: [{ name: 'CSS Files', extensions: ['css'] }]
+    });
+    if (canceled) return null;
+    return filePaths[0];
+});
+
+ipcMain.handle('dialog:open-directory', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openDirectory']
     });
     if (canceled) return null;
     return filePaths[0];
@@ -310,7 +245,7 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 
 ipcMain.handle('system:get-drives', async () => {
     try {
-        const { stdout } = await execAsync('lsblk --json -o NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM');
+        const { stdout } = await execFileAsync('lsblk', ['--json', '-o', 'NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM']);
         const data = JSON.parse(stdout);
         const devices = data.blockdevices || [];
 
@@ -346,7 +281,7 @@ ipcMain.handle('system:get-storage-usage', async () => {
     try {
         // Linux: df -kP / (output in 1K blocks)
         // Output format: Filesystem 1024-blocks Used Available Capacity Mounted on
-        const { stdout } = await execAsync('df -kP /');
+        const { stdout } = await execFileAsync('df', ['-kP', '/']);
         const lines = stdout.trim().split('\n');
         if (lines.length < 2) return null;
 
@@ -421,7 +356,7 @@ ipcMain.handle('window:set-icon', async (_, iconType: 'light' | 'dark' | string)
 ipcMain.handle('system:get-directory-size', async (_, dirPath: string) => {
     try {
         // Use du -sb for bytes (Linux/GNU). -s = summary, -b = bytes
-        const { stdout } = await execAsync(`du -sb "${dirPath}"`);
+        const { stdout } = await execFileAsync('du', ['-sb', dirPath]);
         const match = stdout.match(/^(\d+)/);
         if (match) {
             return parseInt(match[1], 10);
@@ -439,16 +374,10 @@ ipcMain.handle('system:get-directory-size', async (_, dirPath: string) => {
 
 ipcMain.handle('system:get-recommended-apps', async (_, filePath: string) => {
     try {
-        // 1. Get Mime Type
-        // Escape double quotes in filePath for shell command
-        const safePath = filePath.replace(/"/g, '\\"');
-        const { stdout: mimeOut } = await execAsync(`xdg-mime query filetype "${safePath}"`);
+        const { stdout: mimeOut } = await execFileAsync('xdg-mime', ['query', 'filetype', filePath]);
         const mime = mimeOut.trim();
         if (!mime) return [];
 
-        // console.log('MIME:', mime, 'for', filePath);
-
-        // 2. Find desktop files
         const searchPaths = [
             '/usr/share/applications',
             path.join(os.homedir(), '.local/share/applications'),
@@ -456,49 +385,28 @@ ipcMain.handle('system:get-recommended-apps', async (_, filePath: string) => {
             path.join(os.homedir(), '.local/share/flatpak/exports/share/applications')
         ];
 
-        const appFiles = new Set<string>();
+        const apps: { name: string; icon: string | null; exec: string; path: string }[] = [];
         for (const searchPath of searchPaths) {
             try {
-                // Check if directory exists first
-                await fs.access(searchPath);
-
-                // Use grep to find files containing the mime type
-                // -l = list filenames only
-                // escape mime type for grep? usually mime has / and -, safeish.
-                const { stdout: grepOut } = await execAsync(`grep -l "${mime}" "${searchPath}"/*.desktop || true`);
-                grepOut.split('\n').filter(Boolean).forEach(f => appFiles.add(f));
-            } catch (e) {
-                // console.log('Error searching path:', searchPath, e);
-            }
-        }
-
-        // 3. Parse desktop files
-        const apps: any[] = [];
-        for (const file of appFiles) {
-            try {
-                const content = await fs.readFile(file, 'utf-8');
-                const nameMatch = content.match(/^Name=(.*)$/m);
-                const iconMatch = content.match(/^Icon=(.*)$/m);
-                const execMatch = content.match(/^Exec=(.*)$/m);
-                const noDisplayMatch = content.match(/^NoDisplay=(.*)$/m);
-                // Only show if not hidden
-                if (noDisplayMatch && noDisplayMatch[1].toLowerCase() === 'true') continue;
-
-                if (nameMatch && execMatch) {
-                    // Clean Exec command (remove %f, %U etc)
-                    let execCmd = execMatch[1].replace(/%[fFuUikc]/g, '').trim();
-                    // If quotes wrap the command, remove them? usually Exec="cmd" isn't standard, but Exec=cmd param is.
-
-                    apps.push({
-                        name: nameMatch[1],
-                        icon: iconMatch ? iconMatch[1] : null, // Frontend should handle icon resolution
-                        exec: execCmd,
-                        path: file
-                    });
+                const files = await fs.readdir(searchPath);
+                for (const file of files) {
+                    if (!file.endsWith('.desktop')) continue;
+                    const fullPath = path.join(searchPath, file);
+                    try {
+                        const content = await fs.readFile(fullPath, 'utf-8');
+                        const entry = parseDesktopEntry(content, fullPath);
+                        if (entry && !entry.noDisplay && matchesMimeType(entry.mimeTypes, mime)) {
+                            apps.push({
+                                name: entry.name,
+                                icon: entry.icon,
+                                exec: entry.exec,
+                                path: fullPath
+                            });
+                        }
+                    } catch { }
                 }
             } catch { }
         }
-        // console.log('Found apps:', apps.length);
         return apps;
     } catch (err) {
         console.error('Error getting recommended apps:', err);
@@ -556,10 +464,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    if (terminalProcess) {
-        process.kill(terminalProcess.pid);
-        terminalProcess = null;
-    }
+    killAllPty();
     if (process.platform !== 'darwin') {
         app.quit();
     }
