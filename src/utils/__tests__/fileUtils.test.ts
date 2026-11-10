@@ -3,6 +3,11 @@ import {
   getSemanticGroup,
   isHiddenFile,
   isArchiveFile,
+  isImageFile,
+  isVideoFile,
+  isAudioFile,
+  isPdfFile,
+  isTextFile,
   getFileIconInfo,
   formatFileSize,
   formatFileDate,
@@ -35,6 +40,32 @@ describe('fileUtils', () => {
     expect(isArchiveFile('kernel.tar.xz')).toBe(true);
     expect(isArchiveFile('archive.tar')).toBe(true);
     expect(isArchiveFile('notes.txt')).toBe(false);
+  });
+
+  test('file type predicates identify media, pdf, and text files', () => {
+    expect(isImageFile('pic.PNG')).toBe(true);
+    expect(isImageFile('pic.webp')).toBe(true);
+    expect(isImageFile('doc.pdf')).toBe(false);
+
+    expect(isVideoFile('movie.mp4')).toBe(true);
+    expect(isVideoFile('movie.MKV')).toBe(true);
+    expect(isVideoFile('song.mp3')).toBe(false);
+
+    expect(isAudioFile('song.flac')).toBe(true);
+    expect(isAudioFile('song.WAV')).toBe(true);
+    expect(isAudioFile('movie.mp4')).toBe(false);
+
+    expect(isPdfFile('doc.pdf')).toBe(true);
+    expect(isPdfFile('DOC.PDF')).toBe(true);
+    expect(isPdfFile('doc.txt')).toBe(false);
+
+    expect(isTextFile('notes.txt')).toBe(true);
+    expect(isTextFile('README.MD')).toBe(true);
+    expect(isTextFile('config.toml')).toBe(true);
+    expect(isTextFile('main.rs')).toBe(true);
+    expect(isTextFile('package.json')).toBe(true);
+    expect(isTextFile('app.log')).toBe(true);
+    expect(isTextFile('photo.png')).toBe(false);
   });
 
   test('getFileIconInfo returns semantic icon and colorClass per file type', () => {

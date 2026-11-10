@@ -24,6 +24,17 @@ const CODE_EXTENSIONS = new Set([
     'html', 'css', 'scss', 'json', 'xml', 'yaml', 'yml', 'sql', 'sh', 'bash',
     'php', 'rb', 'go', 'rs', 'lua'
 ]);
+const TEXT_EXTENSIONS = new Set([
+    ...CODE_EXTENSIONS,
+    'txt',
+    'md',
+    'csv',
+    'log',
+    'conf',
+    'ini',
+    'toml',
+    'json'
+]);
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'gz', 'xz', 'tgz', '7z', 'rar', 'iso']);
 const EXTRACTABLE_EXTENSIONS = ['.zip', '.tar', '.gz', '.xz', '.tgz'];
 const EXEC_EXTENSIONS = new Set(['exe', 'appimage', 'deb', 'rpm', 'apk']);
@@ -42,6 +53,22 @@ export function isHiddenFile(filename: string): boolean {
 
 export function isImageFile(filename: string): boolean {
     return IMAGE_EXTENSIONS.has(getFileExtension(filename));
+}
+
+export function isVideoFile(filename: string): boolean {
+    return VIDEO_EXTENSIONS.has(getFileExtension(filename));
+}
+
+export function isAudioFile(filename: string): boolean {
+    return AUDIO_EXTENSIONS.has(getFileExtension(filename));
+}
+
+export function isPdfFile(filename: string): boolean {
+    return getFileExtension(filename) === 'pdf';
+}
+
+export function isTextFile(filename: string): boolean {
+    return TEXT_EXTENSIONS.has(getFileExtension(filename));
 }
 
 export function isArchiveFile(filename: string): boolean {

@@ -10,6 +10,7 @@ import {
     formatFileSize,
     formatFileDate,
 } from '../utils/fileUtils';
+import { toMediaUrl } from '../utils/quickLook';
 
 interface FileListProps {
     files: IFile[];
@@ -188,7 +189,7 @@ export const FileList: React.FC<FileListProps> = ({
                             >
                                 {!file.isDirectory && isImageFile(file.name) ? (
                                     <img
-                                        src={`media://${file.path}`}
+                                        src={toMediaUrl(file.path)}
                                         alt={file.name}
                                         loading="lazy"
                                         decoding="async"
