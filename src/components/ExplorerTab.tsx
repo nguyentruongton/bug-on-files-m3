@@ -12,7 +12,7 @@ import type { IFile } from '../types/files';
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { getSemanticGroup, GROUP_ORDER } from '../utils/fileUtils';
+import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
 import {
     createHistory,
     pushHistory,
@@ -30,8 +30,10 @@ interface ExplorerTabProps {
     onContextMenu: (e: React.MouseEvent, file: IFile | null, selectedFiles: IFile[]) => void;
     onCreateFolderRequest?: () => void;
     showHiddenFiles: boolean;
+    onToggleHiddenFiles?: () => void;
     iconSize: number;
     viewMode: 'grid' | 'list';
+    onViewModeChange?: (mode: 'grid' | 'list') => void;
     filledIcons: boolean;
 }
 
@@ -44,9 +46,11 @@ export function ExplorerTab({
     onContextMenu,
     onCreateFolderRequest,
     showHiddenFiles,
+    onToggleHiddenFiles,
     iconSize,
     viewMode,
-    filledIcons
+    onViewModeChange,
+    filledIcons,
 }: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
     const currentPathRef = useRef(initialPath);
@@ -56,6 +60,10 @@ export function ExplorerTab({
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
     const { copy, cut, clipboard, clear: clearClipboard } = useClipboard();
+
+    // Selection State
+    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+    const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
 
     // Track recents
     const [, setRecentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
@@ -67,15 +75,14 @@ export function ExplorerTab({
         const newItem: IFile = {
             name,
             path,
-            isDirectory: true, // Assumed if navigating to it
+            isDirectory: true,
             size: 0,
-            mtime: new Date()
+            mtime: new Date(),
         };
 
-        setRecentFiles(prev => {
-            // Remove duplicates or move to top
-            const filtered = prev.filter(f => f.path !== path);
-            return [newItem, ...filtered].slice(0, 20); // Keep last 20
+        setRecentFiles((prev) => {
+            const filtered = prev.filter((f) => f.path !== path);
+            return [newItem, ...filtered].slice(0, 20);
         });
     }, [setRecentFiles]);
 
@@ -100,11 +107,13 @@ export function ExplorerTab({
     };
 
     const loadPath = useCallback(async (path: string, recordHistory = true) => {
-        setSearchActive(false); // Reset search
+        setSearchActive(false);
         setSearchQuery('');
+        setSelectedFiles(new Set());
+        setLastSelectedPath(null);
 
         if (recordHistory) {
-            setHistoryState(prev => pushHistory(prev, path));
+            setHistoryState((prev) => pushHistory(prev, path));
         }
 
         if (path === 'app://dashboard') {
@@ -121,17 +130,19 @@ export function ExplorerTab({
             currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
-            addToRecents(path); // Track it
+            addToRecents(path);
         } catch (e) {
             console.error('Failed to load path', path, e);
+            showToast(`Failed to open ${path}`, 'error');
         }
         setLoading(false);
-    }, [onPathChange, tabId, addToRecents]);
+    }, [onPathChange, tabId, addToRecents, showToast]);
 
     useEffect(() => {
         if (!initialPath) return;
         if (!hasMountedRef.current) {
             hasMountedRef.current = true;
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             loadPath(initialPath, false);
         } else if (initialPath !== currentPathRef.current) {
             loadPath(initialPath, true);
@@ -140,6 +151,7 @@ export function ExplorerTab({
 
     useEffect(() => {
         if (refreshTrigger > 0 && currentPathRef.current && currentPathRef.current !== 'app://dashboard') {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             loadPath(currentPathRef.current, false);
         }
     }, [refreshTrigger, loadPath]);
@@ -164,7 +176,6 @@ export function ExplorerTab({
         if (file.isDirectory) {
             loadPath(file.path);
         } else {
-            // Open file
             FileSystemService.open(file.path);
         }
     };
@@ -182,17 +193,27 @@ export function ExplorerTab({
     const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('name');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
+    const handleSortChange = useCallback((field: 'name' | 'size' | 'date') => {
+        if (sortBy === field) {
+            setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortBy(field);
+            setSortOrder(field === 'name' ? 'asc' : 'desc');
+        }
+    }, [sortBy]);
+
     // Grouping State
     const [groupingEnabled, setGroupingEnabled] = useState(true);
 
+    const hiddenCount = useMemo(
+        () => files.filter((f) => isHiddenFile(f.name)).length,
+        [files]
+    );
+
     // Filter AND Sort files
     const sortedFiles = useMemo(() => {
-        let filtered = files.filter(f => showHiddenFiles || !f.name.startsWith('.'));
-        return filtered.sort((a: IFile, b: IFile) => {
-            // Always folders first? 
-            // If grouping enabled, use group order.
-            // Note: getSemanticGroup returns 'Folders' for directories.
-
+        const filtered = files.filter((f) => showHiddenFiles || !isHiddenFile(f.name));
+        return [...filtered].sort((a: IFile, b: IFile) => {
             if (groupingEnabled) {
                 const groupA = getSemanticGroup(a);
                 const groupB = getSemanticGroup(b);
@@ -200,7 +221,6 @@ export function ExplorerTab({
                     return GROUP_ORDER.indexOf(groupA) - GROUP_ORDER.indexOf(groupB);
                 }
             } else {
-                // Standard Folders First if not grouping (or implicit in grouping)
                 if (a.isDirectory !== b.isDirectory) {
                     return a.isDirectory ? -1 : 1;
                 }
@@ -214,32 +234,30 @@ export function ExplorerTab({
                 case 'size':
                     result = a.size - b.size;
                     break;
-                case 'date':
-                    result = a.mtime.getTime() - b.mtime.getTime();
+                case 'date': {
+                    const timeA = a.mtime instanceof Date ? a.mtime.getTime() : new Date(a.mtime).getTime();
+                    const timeB = b.mtime instanceof Date ? b.mtime.getTime() : new Date(b.mtime).getTime();
+                    result = timeA - timeB;
                     break;
+                }
             }
             return sortOrder === 'asc' ? result : -result;
         });
     }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
 
-
-    // Selection State
-    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-    const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
-
-    // Clear selection on path change
-    useEffect(() => {
-        setSelectedFiles(new Set());
-        setLastSelectedPath(null);
-    }, [currentPath]);
+    const selectedSize = useMemo(() => {
+        if (selectedFiles.size === 0) return 0;
+        return sortedFiles
+            .filter((f) => selectedFiles.has(f.path) && !f.isDirectory)
+            .reduce((acc, f) => acc + (f.size || 0), 0);
+    }, [sortedFiles, selectedFiles]);
 
     const handleSelect = (file: IFile, toggle: boolean, range: boolean) => {
         const newSelection = new Set(toggle ? selectedFiles : []);
 
         if (range && lastSelectedPath) {
-            // Find range using SORTED files
-            const start = sortedFiles.findIndex(f => f.path === lastSelectedPath);
-            const end = sortedFiles.findIndex(f => f.path === file.path);
+            const start = sortedFiles.findIndex((f) => f.path === lastSelectedPath);
+            const end = sortedFiles.findIndex((f) => f.path === file.path);
             if (start !== -1 && end !== -1) {
                 const low = Math.min(start, end);
                 const high = Math.max(start, end);
@@ -257,16 +275,12 @@ export function ExplorerTab({
                 setLastSelectedPath(file.path);
             }
         } else {
-            // Single select
             newSelection.add(file.path);
             setLastSelectedPath(file.path);
         }
 
         setSelectedFiles(newSelection);
     };
-
-    // Expose method to force reload or navigate from outside?
-    // For now simple.
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -310,10 +324,17 @@ export function ExplorerTab({
                 return;
             }
 
-            // Select All (Ctrl+A)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            // Toggle Hidden Files (Ctrl+H)
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'h') {
                 e.preventDefault();
-                const allPaths = new Set(sortedFiles.map(f => f.path));
+                onToggleHiddenFiles?.();
+                return;
+            }
+
+            // Select All (Ctrl+A)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                const allPaths = new Set(sortedFiles.map((f) => f.path));
                 setSelectedFiles(allPaths);
                 return;
             }
@@ -334,16 +355,16 @@ export function ExplorerTab({
                             await FileSystemService.trash(path);
                         }
                         showToast(`Deleted ${selectedFiles.size} items`, 'success');
-                        loadPath(currentPath, false); // Refresh
+                        loadPath(currentPath, false);
                     }
                 }
                 return;
             }
 
             // Copy (Ctrl+C)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
                 if (selectedFiles.size > 0) {
-                    const filesToCopy = sortedFiles.filter(f => selectedFiles.has(f.path));
+                    const filesToCopy = sortedFiles.filter((f) => selectedFiles.has(f.path));
                     copy(filesToCopy);
                     showToast(`Copied ${selectedFiles.size} items`, 'info');
                 }
@@ -351,9 +372,9 @@ export function ExplorerTab({
             }
 
             // Cut (Ctrl+X)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
                 if (selectedFiles.size > 0) {
-                    const filesToCut = sortedFiles.filter(f => selectedFiles.has(f.path));
+                    const filesToCut = sortedFiles.filter((f) => selectedFiles.has(f.path));
                     cut(filesToCut);
                     showToast(`Cut ${selectedFiles.size} items`, 'info');
                 }
@@ -361,7 +382,7 @@ export function ExplorerTab({
             }
 
             // Paste (Ctrl+V)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
                 if (clipboard && clipboard.files.length > 0 && currentPath !== 'app://dashboard') {
                     let count = 0;
                     for (const file of clipboard.files) {
@@ -374,7 +395,8 @@ export function ExplorerTab({
                             }
                             count++;
                         } catch (err) {
-                            console.error("Paste error", err);
+                            console.error('Paste error', err);
+                            showToast(`Failed to paste ${file.name}`, 'error');
                         }
                     }
 
@@ -384,7 +406,7 @@ export function ExplorerTab({
 
                     if (count > 0) {
                         showToast(`Pasted ${count} items`, 'success');
-                        loadPath(currentPath, false); // Refresh
+                        loadPath(currentPath, false);
                     }
                 }
                 return;
@@ -407,14 +429,15 @@ export function ExplorerTab({
         handleBack,
         handleForward,
         handleUp,
-        onCreateFolderRequest
+        onCreateFolderRequest,
+        onToggleHiddenFiles,
     ]);
 
     return (
         <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
-            {/* Top Bar (Breadcrumb/Path) */}
-            {(currentPath !== 'app://dashboard') && (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '8px 24px 0' }}>
+            {/* Top Bar (Breadcrumb/Path + Quick Actions) */}
+            {currentPath !== 'app://dashboard' && (
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '10px 20px 0' }}>
                     <div style={{ display: 'flex', gap: '2px' }}>
                         <IconButton
                             onClick={handleBack}
@@ -448,36 +471,77 @@ export function ExplorerTab({
                             onSearch={handleSearch}
                         />
                     </div>
-                    {/* Sort Controls */}
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    {/* Quick Action & Sort Controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {onCreateFolderRequest && (
+                            <IconButton
+                                variant="standard"
+                                onClick={onCreateFolderRequest}
+                                title="New Folder (Ctrl+Shift+N)"
+                            >
+                                <Icon name="create_new_folder" />
+                            </IconButton>
+                        )}
+                        {onToggleHiddenFiles && (
+                            <IconButton
+                                variant={showHiddenFiles ? 'tonal' : 'standard'}
+                                onClick={onToggleHiddenFiles}
+                                title={showHiddenFiles ? 'Hide Hidden Files (Ctrl+H)' : 'Show Hidden Files (Ctrl+H)'}
+                            >
+                                <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} />
+                            </IconButton>
+                        )}
                         <IconButton
-                            variant={groupingEnabled ? 'filled' : 'standard'}
+                            variant={groupingEnabled ? 'tonal' : 'standard'}
                             onClick={() => setGroupingEnabled(!groupingEnabled)}
-                            title="Toggle Grouping"
+                            title={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
                         >
                             <Icon name="view_agenda" />
                         </IconButton>
-                        <div style={{ width: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+
+                        <div style={{ width: '1px', height: '24px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+
                         <IconButton
-                            variant={sortBy === 'name' ? 'filled' : 'standard'}
-                            onClick={() => {
-                                if (sortBy === 'name') setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                                else { setSortBy('name'); setSortOrder('asc'); }
-                            }}
-                            title="Sort by Name"
+                            variant={sortBy === 'name' ? 'tonal' : 'standard'}
+                            onClick={() => handleSortChange('name')}
+                            title={`Sort by Name (${sortBy === 'name' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
                         >
                             <Icon name="sort_by_alpha" />
                         </IconButton>
                         <IconButton
-                            variant={sortBy === 'date' ? 'filled' : 'standard'}
-                            onClick={() => {
-                                if (sortBy === 'date') setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                                else { setSortBy('date'); setSortOrder('desc'); }
-                            }}
-                            title="Sort by Date"
+                            variant={sortBy === 'date' ? 'tonal' : 'standard'}
+                            onClick={() => handleSortChange('date')}
+                            title={`Sort by Date (${sortBy === 'date' ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'click to sort'})`}
                         >
                             <Icon name="calendar_today" />
                         </IconButton>
+                        <IconButton
+                            variant={sortBy === 'size' ? 'tonal' : 'standard'}
+                            onClick={() => handleSortChange('size')}
+                            title={`Sort by Size (${sortBy === 'size' ? (sortOrder === 'asc' ? 'Smallest' : 'Largest') : 'click to sort'})`}
+                        >
+                            <Icon name="straighten" />
+                        </IconButton>
+                        <IconButton
+                            variant="standard"
+                            onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                            title={sortOrder === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
+                        >
+                            <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} />
+                        </IconButton>
+
+                        {onViewModeChange && (
+                            <>
+                                <div style={{ width: '1px', height: '24px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+                                <IconButton
+                                    variant="tonal"
+                                    onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
+                                    title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
+                                >
+                                    <Icon name={viewMode === 'grid' ? 'view_list' : 'grid_view'} />
+                                </IconButton>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -491,9 +555,9 @@ export function ExplorerTab({
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                     {searchActive && (
-                        <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ padding: '8px 20px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Icon name="search" />
-                            <span>Found {files.length} results for "{searchQuery}"</span>
+                            <span>Found {sortedFiles.length} results for "{searchQuery}"</span>
                             <IconButton onClick={() => loadPath(currentPath, false)} variant="standard" title="Clear Search">
                                 <Icon name="close" />
                             </IconButton>
@@ -521,10 +585,9 @@ export function ExplorerTab({
                             if (droppedFiles.length > 0 && currentPath) {
                                 let count = 0;
                                 for (const file of droppedFiles) {
-                                    // @ts-ignore
-                                    const sourcePath = file.path;
+                                    const sourcePath = (file as File & { path?: string }).path;
                                     if (sourcePath) {
-                                        const fileName = sourcePath.split(/[/\\\\]/).pop();
+                                        const fileName = sourcePath.split(/[/\\]/).pop();
                                         const destPath = `${currentPath}/${fileName}`.replace(/\\+/g, '/');
                                         if (window.electron && window.electron.copyFile) {
                                             await window.electron.copyFile(sourcePath, destPath);
@@ -547,7 +610,7 @@ export function ExplorerTab({
                             onContextMenu={(e, file) => {
                                 let effectiveSelection: IFile[];
                                 if (selectedFiles.has(file.path)) {
-                                    effectiveSelection = sortedFiles.filter(f => selectedFiles.has(f.path));
+                                    effectiveSelection = sortedFiles.filter((f) => selectedFiles.has(f.path));
                                 } else {
                                     handleSelect(file, false, false);
                                     effectiveSelection = [file];
@@ -558,14 +621,24 @@ export function ExplorerTab({
                             viewMode={viewMode}
                             filledIcons={filledIcons}
                             groupingEnabled={groupingEnabled}
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortChange={handleSortChange}
+                            isSearch={searchActive}
                         />
                     </div>
                 </div>
             )}
 
             {currentPath !== 'app://dashboard' && (
-                <StatusBar totalItems={files.length} selectedCount={selectedFiles.size} />
+                <StatusBar
+                    totalItems={files.length}
+                    visibleItems={sortedFiles.length}
+                    hiddenCount={showHiddenFiles ? 0 : hiddenCount}
+                    selectedCount={selectedFiles.size}
+                    selectedSize={selectedSize}
+                />
             )}
         </div>
     );
-};
+}
