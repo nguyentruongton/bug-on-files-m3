@@ -89,6 +89,8 @@ export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSele
                                     <img
                                         src={`media://${file.path}`}
                                         alt={file.name}
+                                        loading="lazy"
+                                        decoding="async"
                                         className="file-thumbnail"
                                         onError={(e) => {
                                             (e.currentTarget).style.display = 'none';

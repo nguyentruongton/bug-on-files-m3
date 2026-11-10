@@ -21,6 +21,7 @@
     justify-content: flex-start;
     padding: 16px 8px;
     height: auto;
+    contain-intrinsic-size: auto 120px;
     /* Let content define height */
     text-align: center;
     gap: 8px;
@@ -58,6 +59,8 @@
     align-items: center;
     padding: 0 16px;
     height: 52px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
     border-radius: 12px;
     cursor: pointer;
     color: var(--md-sys-color-on-surface);
