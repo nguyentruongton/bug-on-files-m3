@@ -169,9 +169,9 @@ ipcMain.handle('system:get-apps', async () => {
                             exec: entry.exec
                         });
                     }
-                } catch { }
+                } catch { /* ignore unreadable desktop file */ }
             }
-        } catch { }
+        } catch { /* ignore missing application dir */ }
     }
 
     appsCache = apps.sort((a, b) => a.name.localeCompare(b.name));
@@ -403,9 +403,9 @@ ipcMain.handle('system:get-recommended-apps', async (_, filePath: string) => {
                                 path: fullPath
                             });
                         }
-                    } catch { }
+                    } catch { /* ignore unreadable desktop file */ }
                 }
-            } catch { }
+            } catch { /* ignore missing application dir */ }
         }
         return apps;
     } catch (err) {

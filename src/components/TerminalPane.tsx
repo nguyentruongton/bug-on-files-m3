@@ -14,7 +14,6 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
     const fitAddonRef = useRef<FitAddon | null>(null);
     const pidRef = useRef<number | null>(null);
     const latestCwdRef = useRef<string | undefined>(cwd);
-    latestCwdRef.current = cwd;
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -62,7 +61,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
             }
         });
 
-        const initialCwd = cwd && !cwd.startsWith('app://') ? cwd : '';
+        const spawnTarget = latestCwdRef.current;
+        const initialCwd = spawnTarget && !spawnTarget.startsWith('app://') ? spawnTarget : '';
 
         window.electron.ptySpawn(initialCwd).then((pid) => {
             if (!pid) return;
@@ -108,6 +108,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
     }, []); // Only mount once
 
     useEffect(() => {
+        latestCwdRef.current = cwd;
         if (cwd && !cwd.startsWith('app://') && pidRef.current) {
             // Escape path for shell safety - wrap in single quotes, replacing single quotes with '\''
             const safePath = cwd.replace(/'/g, "'\\''");

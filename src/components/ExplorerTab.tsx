@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useClipboard } from '../contexts/ClipboardContext';
 import { StatusBar } from './StatusBar';
@@ -13,21 +13,45 @@ import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { getSemanticGroup, GROUP_ORDER } from '../utils/fileUtils';
+import {
+    createHistory,
+    pushHistory,
+    stepBack,
+    stepForward,
+    type HistoryState,
+} from '../utils/navigationHistory';
 
 interface ExplorerTabProps {
     tabId: string;
     isActive: boolean;
     initialPath: string;
+    refreshTrigger?: number;
     onPathChange: (id: string, path: string) => void;
-    onContextMenu: (e: React.MouseEvent, file: IFile | null) => void;
+    onContextMenu: (e: React.MouseEvent, file: IFile | null, selectedFiles: IFile[]) => void;
+    onCreateFolderRequest?: () => void;
     showHiddenFiles: boolean;
     iconSize: number;
     viewMode: 'grid' | 'list';
     filledIcons: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, showHiddenFiles, iconSize, viewMode, filledIcons }: ExplorerTabProps) {
+export function ExplorerTab({
+    tabId,
+    isActive,
+    initialPath,
+    refreshTrigger = 0,
+    onPathChange,
+    onContextMenu,
+    onCreateFolderRequest,
+    showHiddenFiles,
+    iconSize,
+    viewMode,
+    filledIcons
+}: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
+    const currentPathRef = useRef(initialPath);
+    const hasMountedRef = useRef(false);
+    const [historyState, setHistoryState] = useState<HistoryState>(() => createHistory(initialPath));
     const [files, setFiles] = useState<IFile[]>([]);
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
@@ -75,11 +99,16 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         setLoading(false);
     };
 
-    const loadPath = useCallback(async (path: string) => {
+    const loadPath = useCallback(async (path: string, recordHistory = true) => {
         setSearchActive(false); // Reset search
         setSearchQuery('');
 
+        if (recordHistory) {
+            setHistoryState(prev => pushHistory(prev, path));
+        }
+
         if (path === 'app://dashboard') {
+            currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
             return;
@@ -89,6 +118,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         try {
             const items = await FileSystemService.listDir(path);
             setFiles(items);
+            currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
             addToRecents(path); // Track it
@@ -99,14 +129,36 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }, [onPathChange, tabId, addToRecents]);
 
     useEffect(() => {
-        if (initialPath) {
-            loadPath(initialPath);
+        if (!initialPath) return;
+        if (!hasMountedRef.current) {
+            hasMountedRef.current = true;
+            loadPath(initialPath, false);
+        } else if (initialPath !== currentPathRef.current) {
+            loadPath(initialPath, true);
         }
-    }, [initialPath, loadPath]); // Added loadPath dependency
+    }, [initialPath, loadPath]);
 
+    useEffect(() => {
+        if (refreshTrigger > 0 && currentPathRef.current && currentPathRef.current !== 'app://dashboard') {
+            loadPath(currentPathRef.current, false);
+        }
+    }, [refreshTrigger, loadPath]);
 
+    const handleBack = useCallback(() => {
+        const result = stepBack(historyState);
+        if (result.path) {
+            setHistoryState(result.state);
+            loadPath(result.path, false);
+        }
+    }, [historyState, loadPath]);
 
-    // Actually, we want to control path internal to tab mostly.
+    const handleForward = useCallback(() => {
+        const result = stepForward(historyState);
+        if (result.path) {
+            setHistoryState(result.state);
+            loadPath(result.path, false);
+        }
+    }, [historyState, loadPath]);
 
     const handleNavigate = (file: IFile) => {
         if (file.isDirectory) {
@@ -117,12 +169,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         }
     };
 
-    const handleUp = async () => {
-        if (window.electron && currentPath) {
+    const handleUp = useCallback(async () => {
+        if (window.electron && currentPath && currentPath !== 'app://dashboard') {
             const parent = await window.electron.getParentPath(currentPath);
-            loadPath(parent);
+            if (parent !== currentPath) {
+                loadPath(parent);
+            }
         }
-    };
+    }, [currentPath, loadPath]);
 
     // Sort State
     const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('name');
@@ -219,6 +273,43 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         if (!isActive) return;
 
         const handleKeyDown = async (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (
+                target &&
+                (target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.isContentEditable ||
+                    target.closest('.xterm'))
+            ) {
+                return;
+            }
+
+            if (e.altKey && e.key === 'ArrowLeft') {
+                e.preventDefault();
+                handleBack();
+                return;
+            }
+
+            if (e.altKey && e.key === 'ArrowRight') {
+                e.preventDefault();
+                handleForward();
+                return;
+            }
+
+            if (e.altKey && e.key === 'ArrowUp') {
+                e.preventDefault();
+                handleUp();
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+                if (currentPath && currentPath !== 'app://dashboard') {
+                    e.preventDefault();
+                    onCreateFolderRequest?.();
+                }
+                return;
+            }
+
             // Select All (Ctrl+A)
             if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
                 e.preventDefault();
@@ -230,7 +321,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             // Refresh (F5)
             if (e.key === 'F5') {
                 e.preventDefault();
-                loadPath(currentPath);
+                loadPath(currentPath, false);
                 return;
             }
 
@@ -238,14 +329,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             if (e.key === 'Delete') {
                 e.preventDefault();
                 if (selectedFiles.size > 0) {
-                    // Logic to delete files
-                    // We need a confirm dialog really, but for now simple confirm
                     if (window.confirm(`Delete ${selectedFiles.size} items?`)) {
                         for (const path of selectedFiles) {
                             await FileSystemService.trash(path);
                         }
                         showToast(`Deleted ${selectedFiles.size} items`, 'success');
-                        loadPath(currentPath); // Refresh
+                        loadPath(currentPath, false); // Refresh
                     }
                 }
                 return;
@@ -273,10 +362,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
             // Paste (Ctrl+V)
             if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-                if (clipboard && clipboard.files.length > 0) {
+                if (clipboard && clipboard.files.length > 0 && currentPath !== 'app://dashboard') {
                     let count = 0;
                     for (const file of clipboard.files) {
-                        const destPath = currentPath + '/' + file.name;
+                        const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
                         try {
                             if (clipboard.operation === 'copy') {
                                 await FileSystemService.copy(file.path, destPath);
@@ -295,7 +384,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
                     if (count > 0) {
                         showToast(`Pasted ${count} items`, 'success');
-                        loadPath(currentPath); // Refresh
+                        loadPath(currentPath, false); // Refresh
                     }
                 }
                 return;
@@ -304,16 +393,54 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isActive, sortedFiles, selectedFiles, currentPath, loadPath, showToast]);
+    }, [
+        isActive,
+        sortedFiles,
+        selectedFiles,
+        currentPath,
+        loadPath,
+        showToast,
+        copy,
+        cut,
+        clipboard,
+        clearClipboard,
+        handleBack,
+        handleForward,
+        handleUp,
+        onCreateFolderRequest
+    ]);
 
     return (
         <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
             {/* Top Bar (Breadcrumb/Path) */}
             {(currentPath !== 'app://dashboard') && (
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '8px 24px 0' }}>
-                    <IconButton onClick={handleUp} variant="standard">
-                        <Icon name="arrow_upward" />
-                    </IconButton>
+                    <div style={{ display: 'flex', gap: '2px' }}>
+                        <IconButton
+                            onClick={handleBack}
+                            disabled={historyState.index <= 0}
+                            variant="standard"
+                            title="Back (Alt+Left)"
+                        >
+                            <Icon name="arrow_back" />
+                        </IconButton>
+                        <IconButton
+                            onClick={handleForward}
+                            disabled={historyState.index >= historyState.entries.length - 1}
+                            variant="standard"
+                            title="Forward (Alt+Right)"
+                        >
+                            <Icon name="arrow_forward" />
+                        </IconButton>
+                        <IconButton
+                            onClick={handleUp}
+                            disabled={!currentPath || currentPath === '/'}
+                            variant="standard"
+                            title="Up (Alt+Up)"
+                        >
+                            <Icon name="arrow_upward" />
+                        </IconButton>
+                    </div>
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                         <Omnibar
                             currentPath={currentPath}
@@ -367,20 +494,21 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                         <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Icon name="search" />
                             <span>Found {files.length} results for "{searchQuery}"</span>
-                            <IconButton onClick={() => loadPath(currentPath)} variant="standard" title="Clear Search">
+                            <IconButton onClick={() => loadPath(currentPath, false)} variant="standard" title="Clear Search">
                                 <Icon name="close" />
                             </IconButton>
                         </div>
                     )}
-// ...
                     <div
                         style={{ flex: 1, overflow: 'auto' }}
                         onClick={(e) => {
-                            // Only if clicking the background itself, not bubbling from a file item (which handles its own events)
-                            // Actually file items stop propagation?
-                            // If I click blank space, e.target will be this div or a spacer.
-                            if (e.target === e.currentTarget) {
+                            if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('.file-list-item')) {
                                 setSelectedFiles(new Set());
+                            }
+                        }}
+                        onContextMenu={(e) => {
+                            if (!(e.target as HTMLElement).closest('.file-list-item')) {
+                                onContextMenu(e, null, []);
                             }
                         }}
                         onDragOver={(e) => {
@@ -389,9 +517,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                         }}
                         onDrop={async (e) => {
                             e.preventDefault();
-                            // Drop logic ...
-                            // (Kept as is, but simpler to just re-render the wrapper div if I want to wrap content)
-                            // Actually, I can just wrap the content div.
                             const droppedFiles = Array.from(e.dataTransfer.files);
                             if (droppedFiles.length > 0 && currentPath) {
                                 let count = 0;
@@ -409,7 +534,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                                 }
                                 if (count > 0) {
                                     showToast(`Imported ${count} files`, 'success');
-                                    loadPath(currentPath);
+                                    loadPath(currentPath, false);
                                 }
                             }
                         }}
@@ -420,10 +545,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                             onSelect={handleSelect}
                             onNavigate={handleNavigate}
                             onContextMenu={(e, file) => {
-                                if (file && !selectedFiles.has(file.path)) {
+                                let effectiveSelection: IFile[];
+                                if (selectedFiles.has(file.path)) {
+                                    effectiveSelection = sortedFiles.filter(f => selectedFiles.has(f.path));
+                                } else {
                                     handleSelect(file, false, false);
+                                    effectiveSelection = [file];
                                 }
-                                onContextMenu(e, file);
+                                onContextMenu(e, file, effectiveSelection);
                             }}
                             iconSize={iconSize}
                             viewMode={viewMode}
