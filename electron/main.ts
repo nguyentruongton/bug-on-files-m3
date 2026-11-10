@@ -8,6 +8,7 @@ import { promisify } from 'util';
 import { setupPtyHandlers, setMainWindow, killAllPty } from './pty';
 import { getExtractCommand, parseDesktopEntry, matchesMimeType, resolvePlaces } from './systemUtils';
 import { DirWatchers } from './dirWatcher';
+import { readTextPreview } from './textPreview';
 
 const execFileAsync = promisify(execFile);
 
@@ -328,6 +329,10 @@ ipcMain.handle('fs:read-file', async (_, filePath: string) => {
     } catch {
         return null;
     }
+});
+
+ipcMain.handle('fs:read-text-preview', async (_, filePath: string) => {
+    return readTextPreview(filePath);
 });
 
 ipcMain.handle('app:get-startup-path', async () => {

@@ -4,6 +4,12 @@ export type WatchEvent =
     | { id: number; type: 'change' }
     | { id: number; type: 'error'; message: string };
 
+export type TextPreview =
+    | { kind: 'text'; content: string }
+    | { kind: 'too-large'; size: number }
+    | { kind: 'binary' }
+    | { kind: 'error' };
+
 export interface IDrive {
     name: string;
     label: string;
@@ -32,6 +38,7 @@ export interface IElectronAPI {
     openFileDialog: () => Promise<string | null>;
     openDirectoryDialog: () => Promise<string | null>;
     readFile: (path: string) => Promise<string | null>;
+    readTextPreview: (path: string) => Promise<TextPreview>;
     startDrag: (path: string, iconPath?: string) => void;
     getStartupPath: () => Promise<string | null>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;

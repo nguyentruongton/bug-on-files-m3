@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electron', {
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   openDirectoryDialog: () => ipcRenderer.invoke('dialog:open-directory'),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
+  readTextPreview: (path: string) => ipcRenderer.invoke('fs:read-text-preview', path),
   startDrag: (path: string, iconPath?: string) => ipcRenderer.send('dnd:start', path, iconPath),
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
