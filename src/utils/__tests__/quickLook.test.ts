@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { IFile } from '../../types/files';
-import { getPreviewKind, toMediaUrl, stepIndex } from '../quickLook';
+import {
+  getPreviewKind,
+  toMediaUrl,
+  stepIndex,
+  resolveQuickLookTarget,
+  resolveQuickLookFallback,
+  getArrowStepDelta,
+} from '../quickLook';
 
 function makeFile(name: string, isDirectory = false): IFile {
   return {
@@ -72,6 +79,101 @@ describe('quickLook', () => {
     test('returns -1 when length is 0 or negative', () => {
       expect(stepIndex(0, 0, 1)).toBe(-1);
       expect(stepIndex(0, -1, 1)).toBe(-1);
+    });
+  });
+
+  describe('resolveQuickLookTarget', () => {
+    const fileA = makeFile('a.txt');
+    const fileB = makeFile('b.png');
+    const fileC = makeFile('c.pdf');
+    const sorted = [fileA, fileB, fileC];
+
+    test('returns null when selectedFiles is empty', () => {
+      expect(resolveQuickLookTarget(new Set(), null, sorted)).toBeNull();
+      expect(resolveQuickLookTarget(new Set(), fileA.path, sorted)).toBeNull();
+    });
+
+    test('returns lastSelectedPath file if present in selection and sortedFiles', () => {
+      const selected = new Set([fileA.path, fileB.path]);
+      expect(resolveQuickLookTarget(selected, fileB.path, sorted)).toEqual(fileB);
+      expect(resolveQuickLookTarget(selected, fileA.path, sorted)).toEqual(fileA);
+    });
+
+    test('falls back to first selected file in sortedFiles order if lastSelectedPath is null or missing', () => {
+      const selected = new Set([fileC.path, fileB.path]);
+      // sorted order is fileA, fileB, fileC, so fileB comes first in sortedFiles
+      expect(resolveQuickLookTarget(selected, null, sorted)).toEqual(fileB);
+      expect(resolveQuickLookTarget(selected, '/nonexistent', sorted)).toEqual(fileB);
+    });
+
+    test('returns null if selected files are not visible in sortedFiles', () => {
+      const selected = new Set(['/other/hidden.txt']);
+      expect(resolveQuickLookTarget(selected, '/other/hidden.txt', sorted)).toBeNull();
+    });
+  });
+
+  describe('resolveQuickLookFallback', () => {
+    const fileA = makeFile('a.txt');
+    const fileB = makeFile('b.png');
+    const fileC = makeFile('c.pdf');
+    const fileD = makeFile('d.mp4');
+
+    test('returns unchanged file if still present in newFiles', () => {
+      const prev = [fileA, fileB, fileC];
+      const next = [fileA, fileB, fileC];
+      expect(resolveQuickLookFallback(fileB.path, prev, next)).toEqual(fileB);
+    });
+
+    test('moves to next neighbour (item shifting into position) when middle item is deleted', () => {
+      const prev = [fileA, fileB, fileC, fileD];
+      const next = [fileA, fileC, fileD]; // fileB deleted
+      expect(resolveQuickLookFallback(fileB.path, prev, next)).toEqual(fileC);
+    });
+
+    test('moves to previous neighbour (new last item) when last item is deleted', () => {
+      const prev = [fileA, fileB, fileC, fileD];
+      const next = [fileA, fileB, fileC]; // fileD deleted
+      expect(resolveQuickLookFallback(fileD.path, prev, next)).toEqual(fileC);
+    });
+
+    test('moves to new first item when first item is deleted', () => {
+      const prev = [fileA, fileB, fileC];
+      const next = [fileB, fileC]; // fileA deleted
+      expect(resolveQuickLookFallback(fileA.path, prev, next)).toEqual(fileB);
+    });
+
+    test('returns null when all files were deleted (newFiles is empty)', () => {
+      const prev = [fileA];
+      const next: IFile[] = [];
+      expect(resolveQuickLookFallback(fileA.path, prev, next)).toBeNull();
+    });
+
+    test('falls back to newFiles[0] if prevPath was not in prevFiles', () => {
+      const prev = [fileA];
+      const next = [fileB, fileC];
+      expect(resolveQuickLookFallback('/unknown', prev, next)).toEqual(fileB);
+    });
+  });
+
+  describe('getArrowStepDelta', () => {
+    test('ArrowLeft and ArrowRight navigate in both list and grid view', () => {
+      expect(getArrowStepDelta('ArrowLeft', 'grid')).toBe(-1);
+      expect(getArrowStepDelta('ArrowLeft', 'list')).toBe(-1);
+      expect(getArrowStepDelta('ArrowRight', 'grid')).toBe(1);
+      expect(getArrowStepDelta('ArrowRight', 'list')).toBe(1);
+    });
+
+    test('ArrowUp and ArrowDown navigate in list view only', () => {
+      expect(getArrowStepDelta('ArrowUp', 'list')).toBe(-1);
+      expect(getArrowStepDelta('ArrowDown', 'list')).toBe(1);
+      expect(getArrowStepDelta('ArrowUp', 'grid')).toBeNull();
+      expect(getArrowStepDelta('ArrowDown', 'grid')).toBeNull();
+    });
+
+    test('other keys return null', () => {
+      expect(getArrowStepDelta('Enter', 'list')).toBeNull();
+      expect(getArrowStepDelta('Space', 'grid')).toBeNull();
+      expect(getArrowStepDelta('Tab', 'list')).toBeNull();
     });
   });
 });

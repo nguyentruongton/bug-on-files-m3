@@ -11,10 +11,15 @@ import type { IFile } from '../types/files';
 
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
+import { QuickLook } from './QuickLook';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDirWatch } from '../hooks/useDirWatch';
 import { pruneSelectedFiles, recoverMissingFolder } from '../utils/explorerTabUtils';
 import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
+import {
+    resolveQuickLookTarget,
+    resolveQuickLookFallback,
+} from '../utils/quickLook';
 import {
     createHistory,
     pushHistory,
@@ -69,6 +74,9 @@ export function ExplorerTab({
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
     const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
 
+    // Quick Look State
+    const [quickLookPath, setQuickLookPath] = useState<string | null>(null);
+
     // Track recents
     const [, setRecentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
@@ -122,6 +130,7 @@ export function ExplorerTab({
         setSearchQuery('');
         setSelectedFiles(new Set());
         setLastSelectedPath(null);
+        setQuickLookPath(null);
 
         if (recordHistory) {
             setHistoryState((prev) => pushHistory(prev, path));
@@ -376,6 +385,40 @@ export function ExplorerTab({
         });
     }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
 
+    // Quick Look fallback resolution on live reload or active tab change
+    const [prevSortedForQuickLook, setPrevSortedForQuickLook] = useState<IFile[]>(sortedFiles);
+    const [prevActiveForQuickLook, setPrevActiveForQuickLook] = useState<boolean>(isActive);
+
+    if (prevActiveForQuickLook !== isActive) {
+        setPrevActiveForQuickLook(isActive);
+        if (!isActive && quickLookPath) {
+            setQuickLookPath(null);
+        }
+    }
+
+    if (prevSortedForQuickLook !== sortedFiles) {
+        setPrevSortedForQuickLook(sortedFiles);
+        if (quickLookPath && !sortedFiles.some((f) => f.path === quickLookPath)) {
+            const fallback = resolveQuickLookFallback(
+                quickLookPath,
+                prevSortedForQuickLook,
+                sortedFiles
+            );
+            if (fallback) {
+                setQuickLookPath(fallback.path);
+                setSelectedFiles(new Set([fallback.path]));
+                setLastSelectedPath(fallback.path);
+            } else {
+                setQuickLookPath(null);
+            }
+        }
+    }
+
+    const quickLookFile = useMemo(() => {
+        if (!quickLookPath) return null;
+        return sortedFiles.find((f) => f.path === quickLookPath) ?? null;
+    }, [quickLookPath, sortedFiles]);
+
     const selectedSize = useMemo(() => {
         if (selectedFiles.size === 0) return 0;
         return sortedFiles
@@ -519,6 +562,25 @@ export function ExplorerTab({
                 }
                 return;
             }
+
+            // Quick Look (Space)
+            if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                if (
+                    target?.closest('dialog') ||
+                    document.querySelector('dialog[open]')
+                ) {
+                    return;
+                }
+
+                if (currentPath !== 'app://dashboard' && selectedFiles.size > 0) {
+                    e.preventDefault();
+                    const targetFile = resolveQuickLookTarget(selectedFiles, lastSelectedPath, sortedFiles);
+                    if (targetFile) {
+                        setQuickLookPath(targetFile.path);
+                    }
+                    return;
+                }
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -527,6 +589,7 @@ export function ExplorerTab({
         isActive,
         sortedFiles,
         selectedFiles,
+        lastSelectedPath,
         currentPath,
         loadPath,
         showToast,
@@ -748,6 +811,22 @@ export function ExplorerTab({
                     hiddenCount={showHiddenFiles ? 0 : hiddenCount}
                     selectedCount={selectedFiles.size}
                     selectedSize={selectedSize}
+                />
+            )}
+
+            {quickLookFile && (
+                <QuickLook
+                    file={quickLookFile}
+                    files={sortedFiles}
+                    viewMode={viewMode}
+                    onClose={() => setQuickLookPath(null)}
+                    onNavigate={(nextFile) => {
+                        handleSelect(nextFile, false, false);
+                        setQuickLookPath(nextFile.path);
+                    }}
+                    onOpen={(fileToOpen) => {
+                        handleNavigate(fileToOpen);
+                    }}
                 />
             )}
         </div>
