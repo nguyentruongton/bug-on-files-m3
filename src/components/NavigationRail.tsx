@@ -13,11 +13,13 @@ interface NavigationItem {
 interface NavigationRailProps {
     items: NavigationItem[];
     fab?: React.ReactNode;
+    headerAction?: React.ReactNode;
 }
 
-export const NavigationRail: React.FC<NavigationRailProps> = ({ items, fab }) => {
+export const NavigationRail: React.FC<NavigationRailProps> = ({ items, fab, headerAction }) => {
     return (
         <nav className="m3-navigation-rail">
+            {headerAction && <div className="m3-navigation-rail__header">{headerAction}</div>}
             {fab && <div className="m3-navigation-rail__fab">{fab}</div>}
             <div className="m3-navigation-rail__menu">
                 {items.map((item, index) => (

@@ -87,3 +87,33 @@ export function resolveAfterTabClose<T extends { id: string; path: string }>(
     terminalCwd: nextCwd,
   };
 }
+
+export function normalizePath(pathStr: string): string {
+  if (!pathStr || pathStr === '/') return pathStr;
+  return pathStr.replace(/\/+$/, '');
+}
+
+export function getActiveDriveMountpoint(currentPath: string, mountpoints: string[]): string | null {
+  if (!currentPath || currentPath.startsWith('app://')) {
+    return null;
+  }
+  const normCurrent = normalizePath(currentPath);
+  let bestMatch: string | null = null;
+
+  for (const rawMount of mountpoints) {
+    if (!rawMount) continue;
+    const normMount = normalizePath(rawMount);
+    const matches =
+      normMount === '/'
+        ? normCurrent.startsWith('/')
+        : normCurrent === normMount || normCurrent.startsWith(`${normMount}/`);
+
+    if (matches) {
+      if (bestMatch === null || normMount.length > normalizePath(bestMatch).length) {
+        bestMatch = rawMount;
+      }
+    }
+  }
+
+  return bestMatch;
+}

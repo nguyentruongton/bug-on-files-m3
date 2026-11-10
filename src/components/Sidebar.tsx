@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Icon } from './Icon';
+import { normalizePath, getActiveDriveMountpoint } from '../utils/navigationHistory';
 import './Sidebar.css';
 
 interface Place {
@@ -11,6 +12,7 @@ interface Place {
 interface SidebarProps {
     onNavigate: (path: string) => void;
     currentPath: string;
+    collapsed?: boolean;
 }
 
 interface Drive {
@@ -23,7 +25,7 @@ interface Drive {
     usb: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath, collapsed = false }) => {
     const [places, setPlaces] = useState<Place[]>([]);
     const [drives, setDrives] = useState<Drive[]>([]);
 
@@ -46,28 +48,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath }) => 
         }
     }, []);
 
+    const normalizedCurrent = normalizePath(currentPath);
+    const activeMountpoint = getActiveDriveMountpoint(
+        currentPath,
+        drives.map((d) => d.mountpoint)
+    );
+
     return (
-        <aside className="sidebar">
+        <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`} aria-hidden={collapsed}>
             <div className="sidebar-section">
                 <h3 className="sidebar-title">Places</h3>
                 <div className="sidebar-list">
-                    <button
-                        className={`sidebar-item ${currentPath === 'app://dashboard' ? 'active' : ''}`}
-                        onClick={() => onNavigate('app://dashboard')}
-                    >
-                        <Icon name="dashboard" className="sidebar-icon" filled={currentPath === 'app://dashboard'} />
-                        <span className="sidebar-label">Dashboard</span>
-                    </button>
-                    {places.map((place) => (
-                        <button
-                            key={place.path}
-                            className={`sidebar-item ${currentPath === place.path ? 'active' : ''}`}
-                            onClick={() => onNavigate(place.path)}
-                        >
-                            <Icon name={getPlaceIcon(place.name)} className="sidebar-icon" filled={currentPath.startsWith(place.path)} />
-                            <span className="sidebar-label">{place.name}</span>
-                        </button>
-                    ))}
+                    {places.map((place) => {
+                        const isActive = normalizedCurrent === normalizePath(place.path);
+                        return (
+                            <button
+                                key={`${place.name}:${place.path}`}
+                                className={`sidebar-item ${isActive ? 'active' : ''}`}
+                                onClick={() => onNavigate(place.path)}
+                                title={place.path}
+                            >
+                                <Icon name={getPlaceIcon(place.name)} className="sidebar-icon" filled={isActive} />
+                                <span className="sidebar-label">{place.name}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -75,17 +80,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath }) => 
                 <div className="sidebar-section">
                     <h3 className="sidebar-title">Devices</h3>
                     <div className="sidebar-list">
-                        {drives.map((drive) => (
-                            <button
-                                key={drive.mountpoint}
-                                className={`sidebar-item ${currentPath.startsWith(drive.mountpoint) ? 'active' : ''}`}
-                                onClick={() => onNavigate(drive.mountpoint)}
-                                title={drive.name}
-                            >
-                                <Icon name={drive.usb ? 'usb' : 'hard_drive'} className="sidebar-icon" />
-                                <span className="sidebar-label">{drive.label || drive.name}</span>
-                            </button>
-                        ))}
+                        {drives.map((drive) => {
+                            const isActive = activeMountpoint !== null && normalizePath(drive.mountpoint) === normalizePath(activeMountpoint);
+                            return (
+                                <button
+                                    key={`${drive.name}:${drive.mountpoint}`}
+                                    className={`sidebar-item ${isActive ? 'active' : ''}`}
+                                    onClick={() => onNavigate(drive.mountpoint)}
+                                    title={`${drive.label || drive.name} (${drive.mountpoint})`}
+                                >
+                                    <Icon name={drive.usb ? 'usb' : 'hard_drive'} className="sidebar-icon" filled={isActive} />
+                                    <span className="sidebar-label">{drive.label || drive.name}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -105,4 +113,3 @@ function getPlaceIcon(name: string): string {
         default: return 'folder';
     }
 }
-

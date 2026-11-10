@@ -86,3 +86,52 @@ export function matchesMimeType(entryMimeTypes: string[], targetMime: string): b
   if (!normalizedTarget) return false;
   return entryMimeTypes.some((mime) => mime.trim().toLowerCase() === normalizedTarget);
 }
+
+export type PlaceKey = 'home' | 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos';
+
+export interface PlaceItem {
+  name: string;
+  path: string;
+  icon: string;
+}
+
+const PLACE_DEFINITIONS: Array<{ key: PlaceKey; name: string; icon: string }> = [
+  { key: 'home', name: 'Home', icon: '🏠' },
+  { key: 'desktop', name: 'Desktop', icon: '🖥️' },
+  { key: 'documents', name: 'Documents', icon: '📄' },
+  { key: 'downloads', name: 'Downloads', icon: '⬇️' },
+  { key: 'music', name: 'Music', icon: '🎵' },
+  { key: 'pictures', name: 'Pictures', icon: '🖼️' },
+  { key: 'videos', name: 'Videos', icon: '🎥' },
+];
+
+function stripTrailingSlashes(p: string): string {
+  if (!p || p === '/') return p;
+  return p.replace(/\/+$/, '');
+}
+
+export function resolvePlaces(
+  homeDir: string,
+  getSystemPath: (key: PlaceKey) => string
+): PlaceItem[] {
+  const normalizedHome = stripTrailingSlashes(homeDir);
+
+  return PLACE_DEFINITIONS.map(({ key, name, icon }) => {
+    if (key === 'home') {
+      return { name, path: normalizedHome, icon };
+    }
+
+    let resolved = '';
+    try {
+      resolved = stripTrailingSlashes(getSystemPath(key) || '');
+    } catch {
+      resolved = '';
+    }
+
+    if (!resolved || resolved === normalizedHome) {
+      resolved = path.join(normalizedHome, name);
+    }
+
+    return { name, path: resolved, icon };
+  });
+}

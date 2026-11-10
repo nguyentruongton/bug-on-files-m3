@@ -6,7 +6,7 @@ import os from 'os';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { setupPtyHandlers, setMainWindow, killAllPty } from './pty';
-import { getExtractCommand, parseDesktopEntry, matchesMimeType } from './systemUtils';
+import { getExtractCommand, parseDesktopEntry, matchesMimeType, resolvePlaces } from './systemUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -90,15 +90,7 @@ ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
 
 ipcMain.handle('fs:get-places', () => {
     const home = app.getPath('home');
-    return [
-        { name: 'Home', path: home, icon: '🏠' },
-        { name: 'Desktop', path: app.getPath('desktop'), icon: '🖥️' },
-        { name: 'Documents', path: app.getPath('documents'), icon: '📄' },
-        { name: 'Downloads', path: app.getPath('downloads'), icon: '⬇️' },
-        { name: 'Music', path: app.getPath('music'), icon: '🎵' },
-        { name: 'Pictures', path: app.getPath('pictures'), icon: '🖼️' },
-        { name: 'Videos', path: app.getPath('videos'), icon: '🎥' },
-    ];
+    return resolvePlaces(home, (key) => app.getPath(key));
 });
 
 ipcMain.handle('fs:copy', async (_, source: string, dest: string) => {

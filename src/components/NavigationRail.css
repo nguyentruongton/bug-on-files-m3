@@ -1,5 +1,6 @@
 .m3-navigation-rail {
     width: 80px;
+    flex-shrink: 0;
     height: 100%;
     background-color: var(--md-sys-color-surface-container);
     display: flex;
@@ -10,8 +11,12 @@
     box-sizing: border-box;
 }
 
+.m3-navigation-rail__header {
+    margin-bottom: 4px;
+}
+
 .m3-navigation-rail__fab {
-    margin-bottom: 24px;
+    margin-bottom: 16px;
 }
 
 .m3-navigation-rail__menu {

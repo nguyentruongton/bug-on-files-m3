@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getExtractCommand, parseDesktopEntry, matchesMimeType } from '../systemUtils';
+import { getExtractCommand, parseDesktopEntry, matchesMimeType, resolvePlaces } from '../systemUtils';
 
 describe('getExtractCommand', () => {
   test('builds safe unzip args for .zip with shell metacharacters in path', () => {
@@ -56,5 +56,27 @@ MimeType=text/plain;inode/directory;application/x-code-workspace;
   test('matches exact MIME type from parsed list', () => {
     expect(matchesMimeType(['text/plain', 'image/png'], 'image/png')).toBe(true);
     expect(matchesMimeType(['text/plain', 'image/png'], 'image/jpeg')).toBe(false);
+  });
+});
+
+describe('resolvePlaces', () => {
+  test('falls back to ~/FolderName when getSystemPath returns homeDir or throws', () => {
+    const places = resolvePlaces('/home/stark', (key) => {
+      if (key === 'home') return '/home/stark';
+      if (key === 'documents') return '/home/stark';
+      if (key === 'downloads') return '/home/stark/';
+      if (key === 'music') throw new Error('not configured');
+      return `/home/stark/${key[0].toUpperCase()}${key.slice(1)}`;
+    });
+
+    expect(places).toEqual([
+      { name: 'Home', path: '/home/stark', icon: '🏠' },
+      { name: 'Desktop', path: '/home/stark/Desktop', icon: '🖥️' },
+      { name: 'Documents', path: '/home/stark/Documents', icon: '📄' },
+      { name: 'Downloads', path: '/home/stark/Downloads', icon: '⬇️' },
+      { name: 'Music', path: '/home/stark/Music', icon: '🎵' },
+      { name: 'Pictures', path: '/home/stark/Pictures', icon: '🖼️' },
+      { name: 'Videos', path: '/home/stark/Videos', icon: '🎥' },
+    ]);
   });
 });

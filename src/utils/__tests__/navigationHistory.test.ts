@@ -6,6 +6,8 @@ import {
   stepForward,
   resolveTerminalTargetDir,
   resolveAfterTabClose,
+  normalizePath,
+  getActiveDriveMountpoint,
 } from '../navigationHistory';
 
 describe('navigationHistory', () => {
@@ -98,5 +100,21 @@ describe('resolveAfterTabClose', () => {
       activeTabId: '2',
       terminalCwd: '/home/stark/Downloads',
     });
+  });
+});
+
+describe('normalizePath and getActiveDriveMountpoint', () => {
+  test('normalizes trailing slashes while preserving root /', () => {
+    expect(normalizePath('/')).toBe('/');
+    expect(normalizePath('/home/stark/')).toBe('/home/stark');
+    expect(normalizePath('/home/stark')).toBe('/home/stark');
+  });
+
+  test('selects the longest matching mountpoint for a path', () => {
+    const mounts = ['/', '/home', '/run/media/stark/USB'];
+    expect(getActiveDriveMountpoint('/home/stark/Documents', mounts)).toBe('/home');
+    expect(getActiveDriveMountpoint('/run/media/stark/USB/photos', mounts)).toBe('/run/media/stark/USB');
+    expect(getActiveDriveMountpoint('/etc/nginx', mounts)).toBe('/');
+    expect(getActiveDriveMountpoint('app://dashboard', mounts)).toBeNull();
   });
 });
