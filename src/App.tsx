@@ -338,7 +338,10 @@ function AppContent() {
             const file = contextMenu.item!;
             setContextMenu(null);
             try {
-              await window.electron.extractFile(file.path);
+              const ok = await window.electron.extractFile(file.path);
+              if (!ok) {
+                throw new Error('Extract command returned false');
+              }
               showToast(`Extracted "${file.name}"`, 'success');
               refreshActiveTab();
             } catch (err) {

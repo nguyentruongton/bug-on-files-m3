@@ -58,7 +58,7 @@ ipcMain.handle('theme:get-css', async () => {
     try {
         const css = await fs.readFile(themePath, 'utf-8');
         return css;
-    } catch (error) {
+    } catch {
         return null;
     }
 });
@@ -77,7 +77,7 @@ ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
                     size: stats.size,
                     mtime: stats.mtime
                 };
-            } catch (e) {
+            } catch {
                 return null;
             }
         }));
@@ -236,15 +236,32 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 });
 
 ipcMain.handle('system:get-drives', async () => {
+    interface LsblkDevice {
+        name: string;
+        label?: string | null;
+        mountpoint?: string | null;
+        size?: string;
+        type?: string;
+        tran?: string | null;
+        rm?: boolean;
+        children?: LsblkDevice[];
+    }
+    interface DriveInfo {
+        name: string;
+        label: string;
+        mountpoint: string;
+        size: string | undefined;
+        type: string | undefined;
+        removable: boolean;
+        usb: boolean;
+    }
     try {
         const { stdout } = await execFileAsync('lsblk', ['--json', '-o', 'NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM']);
-        const data = JSON.parse(stdout);
+        const data = JSON.parse(stdout) as { blockdevices?: LsblkDevice[] };
         const devices = data.blockdevices || [];
 
-        const drives: any[] = [];
-        const processDevice = (dev: any) => {
-            // We want devices that have a mountpoint OR children with mountpoints?
-            // Actually, usually partition has mountpoint.
+        const drives: DriveInfo[] = [];
+        const processDevice = (dev: LsblkDevice) => {
             if (dev.mountpoint) {
                 drives.push({
                     name: dev.name,
@@ -252,7 +269,7 @@ ipcMain.handle('system:get-drives', async () => {
                     mountpoint: dev.mountpoint,
                     size: dev.size,
                     type: dev.type,
-                    removable: dev.rm || dev.tran === 'usb',
+                    removable: Boolean(dev.rm || dev.tran === 'usb'),
                     usb: dev.tran === 'usb'
                 });
             }
@@ -262,7 +279,7 @@ ipcMain.handle('system:get-drives', async () => {
         };
 
         devices.forEach(processDevice);
-        return drives.filter(d => d.removable || d.mountpoint.startsWith('/run/media')); // Filter for interesting drives
+        return drives.filter(d => d.removable || d.mountpoint.startsWith('/run/media'));
     } catch (e) {
         console.error('Failed to get drives', e);
         return [];
@@ -317,7 +334,7 @@ ipcMain.handle('app:get-startup-path', async () => {
                 return path.dirname(lastArg); // Open parent folder if file passed
             }
         }
-    } catch (e) {
+    } catch {
         // Path doesn't exist or other error
         return null;
     }
@@ -340,7 +357,7 @@ ipcMain.handle('window:set-icon', async (_, iconType: 'light' | 'dark' | string)
                 await fs.access(p);
                 mainWindow.setIcon(p);
                 return;
-            } catch { }
+            } catch { /* ignore missing icon candidate */ }
         }
     }
 });
@@ -354,10 +371,11 @@ ipcMain.handle('system:get-directory-size', async (_, dirPath: string) => {
             return parseInt(match[1], 10);
         }
         return 0;
-    } catch (error: any) {
+    } catch (error: unknown) {
         // du might fail on some files but still return partial
-        if (error.stdout) {
-            const match = error.stdout.match(/^(\d+)/);
+        const partialStdout = (error as { stdout?: string })?.stdout;
+        if (partialStdout) {
+            const match = partialStdout.match(/^(\d+)/);
             if (match) return parseInt(match[1], 10);
         }
         return 0;
@@ -420,7 +438,13 @@ ipcMain.handle('system:search', async (_, directory: string, query: string, opti
         const { stdout } = await execFileAsync('find', args, { maxBuffer: 1024 * 1024 * 10 });
 
         const lines = stdout.split('\n').filter(Boolean);
-        const results: any[] = []; // Use any to avoid IFile import issues
+        const results: Array<{
+            name: string;
+            path: string;
+            isDirectory: boolean;
+            size: number;
+            mtime: Date;
+        }> = [];
 
         const topLines = lines.slice(0, 100);
 
@@ -434,7 +458,7 @@ ipcMain.handle('system:search', async (_, directory: string, query: string, opti
                     size: stats.size,
                     mtime: stats.mtime
                 });
-            } catch { }
+            } catch { /* ignore inaccessible path */ }
         }
         return results;
     } catch (error) {

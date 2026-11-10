@@ -186,7 +186,7 @@ export const FileList: React.FC<FileListProps> = ({
                                     fontSize: `${effectiveIconSize}px`,
                                 }}
                             >
-                                {isImageFile(file.name) ? (
+                                {!file.isDirectory && isImageFile(file.name) ? (
                                     <img
                                         src={`media://${file.path}`}
                                         alt={file.name}
