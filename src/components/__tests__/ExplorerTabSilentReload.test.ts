@@ -1,22 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { pruneSelectedFiles, recoverMissingFolder } from '../../utils/explorerTabUtils';
 
 describe('ExplorerTab silent reload & recovery logic', () => {
   describe('selection pruning', () => {
-    function pruneSelectedFiles(prev: Set<string>, currentFiles: Array<{ path: string }>): Set<string> {
-      if (prev.size === 0) return prev;
-      const validPaths = new Set(currentFiles.map((f) => f.path));
-      let changed = false;
-      const next = new Set<string>();
-      for (const p of prev) {
-        if (validPaths.has(p)) {
-          next.add(p);
-        } else {
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    }
-
     test('retains selected files that still exist', () => {
       const selected = new Set(['/tmp/a.txt', '/tmp/b.txt']);
       const current = [{ path: '/tmp/a.txt' }, { path: '/tmp/b.txt' }, { path: '/tmp/c.txt' }];
@@ -42,34 +28,6 @@ describe('ExplorerTab silent reload & recovery logic', () => {
   });
 
   describe('folder missing recovery walk', () => {
-    async function recoverMissingFolder(
-      missingPath: string,
-      deps: {
-        exists: (path: string) => Promise<boolean>;
-        getParentPath: (path: string) => Promise<string>;
-        loadPath: (path: string) => void;
-        showToast: (msg: string, type: string) => void;
-      }
-    ) {
-      let checkPath = missingPath;
-      while (checkPath) {
-        const parent = await deps.getParentPath(checkPath);
-        if (!parent || parent === checkPath) {
-          if (await deps.exists(parent || '/')) {
-            deps.loadPath(parent || '/');
-            deps.showToast('Folder no longer exists', 'info');
-          }
-          break;
-        }
-        if (await deps.exists(parent)) {
-          deps.loadPath(parent);
-          deps.showToast('Folder no longer exists', 'info');
-          break;
-        }
-        checkPath = parent;
-      }
-    }
-
     test('navigates to immediate parent when parent exists', async () => {
       const loaded: string[] = [];
       const toasts: string[] = [];

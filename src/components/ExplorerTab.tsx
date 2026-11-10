@@ -13,6 +13,7 @@ import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDirWatch } from '../hooks/useDirWatch';
+import { pruneSelectedFiles, recoverMissingFolder } from '../utils/explorerTabUtils';
 import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
 import {
     createHistory,
@@ -156,23 +157,12 @@ export function ExplorerTab({
 
         isRecoveringRef.current = true;
         try {
-            let checkPath = missingPath;
-            while (checkPath) {
-                const parent = await window.electron.getParentPath(checkPath);
-                if (!parent || parent === checkPath) {
-                    if (await window.electron.exists(parent || '/')) {
-                        loadPath(parent || '/');
-                        showToast('Folder no longer exists', 'info');
-                    }
-                    break;
-                }
-                if (await window.electron.exists(parent)) {
-                    loadPath(parent);
-                    showToast('Folder no longer exists', 'info');
-                    break;
-                }
-                checkPath = parent;
-            }
+            await recoverMissingFolder(missingPath, {
+                exists: (p) => window.electron.exists(p),
+                getParentPath: (p) => window.electron.getParentPath(p),
+                loadPath,
+                showToast,
+            });
         } catch (err) {
             console.error('Error recovering from missing folder:', err);
         } finally {
@@ -193,20 +183,7 @@ export function ExplorerTab({
             }
 
             setFiles(items);
-            setSelectedFiles((prev) => {
-                if (prev.size === 0) return prev;
-                const validPaths = new Set(items.map((f) => f.path));
-                let changed = false;
-                const next = new Set<string>();
-                for (const p of prev) {
-                    if (validPaths.has(p)) {
-                        next.add(p);
-                    } else {
-                        changed = true;
-                    }
-                }
-                return changed ? next : prev;
-            });
+            setSelectedFiles((prev) => pruneSelectedFiles(prev, items));
         } catch {
             if (window.electron?.exists) {
                 const exists = await window.electron.exists(targetPath);
