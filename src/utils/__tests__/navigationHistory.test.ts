@@ -5,6 +5,7 @@ import {
   stepBack,
   stepForward,
   resolveTerminalTargetDir,
+  resolveAfterTabClose,
 } from '../navigationHistory';
 
 describe('navigationHistory', () => {
@@ -54,5 +55,48 @@ describe('resolveTerminalTargetDir', () => {
   test('returns parent directory when target is a file', () => {
     expect(resolveTerminalTargetDir('/home/stark/Downloads/report.pdf', false)).toBe('/home/stark/Downloads');
     expect(resolveTerminalTargetDir('/file-at-root.txt', false)).toBe('/');
+  });
+});
+
+describe('resolveAfterTabClose', () => {
+  test('syncs terminalCwd to newly active tab when closing active tab', () => {
+    const tabs = [
+      { id: '1', title: 'tmp', path: '/tmp' },
+      { id: '2', title: 'stark', path: '/home/stark' },
+    ];
+    expect(resolveAfterTabClose(tabs, '2', '2', '/home/stark')).toEqual({
+      tabs: [{ id: '1', title: 'tmp', path: '/tmp' }],
+      activeTabId: '1',
+      terminalCwd: '/tmp',
+    });
+  });
+
+  test('clears terminalCwd when newly active tab is app://dashboard or no tabs remain', () => {
+    const tabs = [
+      { id: '1', title: 'Dashboard', path: 'app://dashboard' },
+      { id: '2', title: 'tmp', path: '/tmp' },
+    ];
+    expect(resolveAfterTabClose(tabs, '2', '2', '/tmp')).toEqual({
+      tabs: [{ id: '1', title: 'Dashboard', path: 'app://dashboard' }],
+      activeTabId: '1',
+      terminalCwd: undefined,
+    });
+    expect(resolveAfterTabClose([{ id: '2', title: 'tmp', path: '/tmp' }], '2', '2', '/tmp')).toEqual({
+      tabs: [],
+      activeTabId: '',
+      terminalCwd: undefined,
+    });
+  });
+
+  test('preserves activeTabId and terminalCwd when closing an inactive tab', () => {
+    const tabs = [
+      { id: '1', title: 'tmp', path: '/tmp' },
+      { id: '2', title: 'stark', path: '/home/stark' },
+    ];
+    expect(resolveAfterTabClose(tabs, '2', '1', '/home/stark/Downloads')).toEqual({
+      tabs: [{ id: '2', title: 'stark', path: '/home/stark' }],
+      activeTabId: '2',
+      terminalCwd: '/home/stark/Downloads',
+    });
   });
 });

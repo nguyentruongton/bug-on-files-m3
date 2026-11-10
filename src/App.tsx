@@ -20,7 +20,7 @@ import { ExplorerTab } from './components/ExplorerTab';
 import { OpenWithDialog } from './components/OpenWithDialog';
 import { PropertiesDialog } from './components/PropertiesDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { resolveTerminalTargetDir } from './utils/navigationHistory';
+import { resolveTerminalTargetDir, resolveAfterTabClose } from './utils/navigationHistory';
 
 interface TabState {
   id: string;
@@ -144,12 +144,11 @@ function AppContent() {
   }, [currentPath]);
 
   const handleCloseTab = useCallback((id: string) => {
-    const newTabs = tabs.filter(t => t.id !== id);
-    setTabs(newTabs);
-    if (id === activeTabId) {
-      setActiveTabId(newTabs.length > 0 ? newTabs[newTabs.length - 1].id : '');
-    }
-  }, [tabs, activeTabId]);
+    const next = resolveAfterTabClose(tabs, activeTabId, id, terminalCwd);
+    setTabs(next.tabs);
+    setActiveTabId(next.activeTabId);
+    setTerminalCwd(next.terminalCwd);
+  }, [tabs, activeTabId, terminalCwd]);
 
   const handleTabPathUpdate = useCallback((id: string, path: string) => {
     const folderName = path === 'app://dashboard' ? 'Dashboard' : (path.split('/').pop() || path);

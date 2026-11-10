@@ -57,3 +57,33 @@ export function resolveTerminalTargetDir(targetPath: string, isDirectory: boolea
   if (lastSlash === 0) return '/';
   return trimmed.slice(0, lastSlash);
 }
+
+export function resolveAfterTabClose<T extends { id: string; path: string }>(
+  tabs: T[],
+  activeTabId: string,
+  closedId: string,
+  currentTerminalCwd: string | undefined
+): { tabs: T[]; activeTabId: string; terminalCwd: string | undefined } {
+  const newTabs = tabs.filter((t) => t.id !== closedId);
+  if (closedId !== activeTabId) {
+    return {
+      tabs: newTabs,
+      activeTabId,
+      terminalCwd: currentTerminalCwd,
+    };
+  }
+  if (newTabs.length === 0) {
+    return {
+      tabs: newTabs,
+      activeTabId: '',
+      terminalCwd: undefined,
+    };
+  }
+  const nextTab = newTabs[newTabs.length - 1];
+  const nextCwd = nextTab.path && !nextTab.path.startsWith('app://') ? nextTab.path : undefined;
+  return {
+    tabs: newTabs,
+    activeTabId: nextTab.id,
+    terminalCwd: nextCwd,
+  };
+}
