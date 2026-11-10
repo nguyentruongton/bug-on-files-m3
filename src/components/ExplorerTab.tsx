@@ -29,6 +29,7 @@ interface ExplorerTabProps {
     onPathChange: (id: string, path: string) => void;
     onContextMenu: (e: React.MouseEvent, file: IFile | null, selectedFiles: IFile[]) => void;
     onCreateFolderRequest?: () => void;
+    onPasteRequest?: (destDir: string) => void;
     showHiddenFiles: boolean;
     onToggleHiddenFiles?: () => void;
     iconSize: number;
@@ -45,6 +46,7 @@ export function ExplorerTab({
     onPathChange,
     onContextMenu,
     onCreateFolderRequest,
+    onPasteRequest,
     showHiddenFiles,
     onToggleHiddenFiles,
     iconSize,
@@ -59,7 +61,7 @@ export function ExplorerTab({
     const [files, setFiles] = useState<IFile[]>([]);
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
-    const { copy, cut, clipboard, clear: clearClipboard } = useClipboard();
+    const { copy, cut } = useClipboard();
 
     // Selection State
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -381,31 +383,8 @@ export function ExplorerTab({
 
             // Paste (Ctrl+V)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                if (clipboard && clipboard.files.length > 0 && currentPath !== 'app://dashboard') {
-                    let count = 0;
-                    for (const file of clipboard.files) {
-                        const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-                        try {
-                            if (clipboard.operation === 'copy') {
-                                await FileSystemService.copy(file.path, destPath);
-                            } else {
-                                await FileSystemService.move(file.path, destPath);
-                            }
-                            count++;
-                        } catch (err) {
-                            console.error('Paste error', err);
-                            showToast(`Failed to paste ${file.name}`, 'error');
-                        }
-                    }
-
-                    if (clipboard.operation === 'cut') {
-                        clearClipboard();
-                    }
-
-                    if (count > 0) {
-                        showToast(`Pasted ${count} items`, 'success');
-                        loadPath(currentPath, false);
-                    }
+                if (currentPath !== 'app://dashboard') {
+                    onPasteRequest?.(currentPath);
                 }
                 return;
             }
@@ -422,12 +401,11 @@ export function ExplorerTab({
         showToast,
         copy,
         cut,
-        clipboard,
-        clearClipboard,
         handleBack,
         handleForward,
         handleUp,
         onCreateFolderRequest,
+        onPasteRequest,
         onToggleHiddenFiles,
     ]);
 

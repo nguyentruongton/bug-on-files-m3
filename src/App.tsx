@@ -20,6 +20,7 @@ import { ExplorerTab } from './components/ExplorerTab';
 import { OpenWithDialog } from './components/OpenWithDialog';
 import { PropertiesDialog } from './components/PropertiesDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { usePaste } from './hooks/usePaste';
 import {
   resolveTerminalTargetDir,
   resolveAfterTabClose,
@@ -68,7 +69,7 @@ function AppContent() {
   const [openWithFile, setOpenWithFile] = useState<IFile | null>(null);
 
   // Clipboard & Toast State
-  const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
+  const { clipboard, copy, cut } = useClipboard();
   const { showToast } = useToast();
 
   // Settings & Layout State
@@ -236,30 +237,14 @@ function AppContent() {
     setContextMenu(null);
   };
 
-  const handlePaste = async () => {
-    if (!clipboard || clipboard.files.length === 0 || !currentPath || currentPath.startsWith('app://')) return;
+  const { paste, conflictDialog } = usePaste(refreshActiveTab);
 
-    try {
-      for (const file of clipboard.files) {
-        const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-        if (clipboard.operation === 'copy') {
-          await FileSystemService.copy(file.path, destPath);
-        } else {
-          await FileSystemService.move(file.path, destPath);
-        }
-      }
-
-      if (clipboard.operation === 'cut') {
-        clearClipboard();
-      }
-      showToast(`Pasted ${clipboard.files.length} item(s)`, 'success');
-      refreshActiveTab();
-    } catch (err) {
-      console.error('Paste failed', err);
-      showToast('Failed to paste items', 'error');
+  const handlePaste = useCallback(() => {
+    if (currentPath) {
+      void paste(currentPath);
     }
     setContextMenu(null);
-  };
+  }, [currentPath, paste]);
 
   const handleOpenNewFolder = useCallback(() => {
     if (!currentPath || currentPath.startsWith('app://')) return;
@@ -526,6 +511,7 @@ function AppContent() {
                 onPathChange={handleTabPathUpdate}
                 onContextMenu={handleContextMenu}
                 onCreateFolderRequest={handleOpenNewFolder}
+                onPasteRequest={paste}
                 showHiddenFiles={showHiddenFiles}
                 onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
                 iconSize={iconSize}
@@ -685,6 +671,8 @@ function AppContent() {
           customCssPath={customCssPath}
           onImportCss={handleImportCss}
         />
+
+        {conflictDialog}
       </main>
     </div>
   );
