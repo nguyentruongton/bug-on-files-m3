@@ -14,7 +14,12 @@ import { Dashboard } from './Dashboard';
 import { QuickLook } from './QuickLook';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDirWatch } from '../hooks/useDirWatch';
-import { pruneSelectedFiles, recoverMissingFolder } from '../utils/explorerTabUtils';
+import {
+    pruneSelectedFiles,
+    recoverMissingFolder,
+    shouldApplyReload,
+    resolveDragCompletion,
+} from '../utils/explorerTabUtils';
 import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
 import {
     resolveQuickLookTarget,
@@ -64,6 +69,10 @@ export function ExplorerTab({
     const [currentPath, setCurrentPath] = useState(initialPath);
     const currentPathRef = useRef(initialPath);
     const hasMountedRef = useRef(false);
+    const reloadSeqRef = useRef(0);
+    const isDraggingRef = useRef(false);
+    const pendingReloadAfterDragRef = useRef(false);
+    const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [historyState, setHistoryState] = useState<HistoryState>(() => createHistory(initialPath));
     const [files, setFiles] = useState<IFile[]>([]);
     const [loading, setLoading] = useState(false);
@@ -125,6 +134,8 @@ export function ExplorerTab({
     };
 
     const loadPath = useCallback(async (path: string, recordHistory = true) => {
+        reloadSeqRef.current += 1;
+        pendingReloadAfterDragRef.current = false;
         searchActiveRef.current = false;
         setSearchActive(false);
         setSearchQuery('');
@@ -185,17 +196,43 @@ export function ExplorerTab({
             return;
         }
 
+        const seq = ++reloadSeqRef.current;
+
         try {
             const items = await FileSystemService.listDir(targetPath);
-            if (currentPathRef.current !== targetPath || searchActiveRef.current) {
+            if (!shouldApplyReload({
+                seq,
+                expectedSeq: reloadSeqRef.current,
+                currentPath: currentPathRef.current,
+                targetPath,
+                searchActive: searchActiveRef.current,
+            })) {
                 return;
             }
 
             setFiles(items);
             setSelectedFiles((prev) => pruneSelectedFiles(prev, items));
         } catch {
+            if (!shouldApplyReload({
+                seq,
+                expectedSeq: reloadSeqRef.current,
+                currentPath: currentPathRef.current,
+                targetPath,
+                searchActive: searchActiveRef.current,
+            })) {
+                return;
+            }
             if (window.electron?.exists) {
                 const exists = await window.electron.exists(targetPath);
+                if (!shouldApplyReload({
+                    seq,
+                    expectedSeq: reloadSeqRef.current,
+                    currentPath: currentPathRef.current,
+                    targetPath,
+                    searchActive: searchActiveRef.current,
+                })) {
+                    return;
+                }
                 if (!exists) {
                     handleFolderMissing(targetPath);
                 }
@@ -204,16 +241,24 @@ export function ExplorerTab({
     }, [handleFolderMissing]);
 
     // Drag-in-progress tracking
-    const isDraggingRef = useRef(false);
-    const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const clearDrag = useCallback(() => {
-        isDraggingRef.current = false;
-        if (dragTimeoutRef.current) {
-            clearTimeout(dragTimeoutRef.current);
-            dragTimeoutRef.current = null;
-        }
-    }, []);
+    const clearDrag = useCallback(
+        (triggerPendingReload = true) => {
+            isDraggingRef.current = false;
+            if (dragTimeoutRef.current) {
+                clearTimeout(dragTimeoutRef.current);
+                dragTimeoutRef.current = null;
+            }
+            const { shouldReload, nextPendingReload } = resolveDragCompletion(
+                triggerPendingReload,
+                pendingReloadAfterDragRef.current
+            );
+            pendingReloadAfterDragRef.current = nextPendingReload;
+            if (shouldReload) {
+                reloadSilently();
+            }
+        },
+        [reloadSilently]
+    );
 
     const markDragStarted = useCallback(() => {
         isDraggingRef.current = true;
@@ -221,16 +266,15 @@ export function ExplorerTab({
             clearTimeout(dragTimeoutRef.current);
         }
         dragTimeoutRef.current = setTimeout(() => {
-            isDraggingRef.current = false;
-            dragTimeoutRef.current = null;
+            clearDrag(true);
         }, 5000);
-    }, []);
+    }, [clearDrag]);
 
     useEffect(() => {
         if (!isActive) return;
-        const handlePointerUp = () => clearDrag();
-        const handleFocus = () => clearDrag();
-        const handleDragEnd = () => clearDrag();
+        const handlePointerUp = () => clearDrag(true);
+        const handleFocus = () => clearDrag(true);
+        const handleDragEnd = () => clearDrag(true);
 
         window.addEventListener('pointerup', handlePointerUp);
         window.addEventListener('mouseup', handlePointerUp);
@@ -244,7 +288,7 @@ export function ExplorerTab({
             window.removeEventListener('dragend', handleDragEnd);
             window.removeEventListener('drop', handlePointerUp);
             window.removeEventListener('focus', handleFocus);
-            clearDrag();
+            clearDrag(false);
         };
     }, [isActive, clearDrag]);
 
@@ -264,7 +308,9 @@ export function ExplorerTab({
         useCallback(
             async (type: 'change' | 'error') => {
                 if (type === 'change') {
-                    if (!isDraggingRef.current) {
+                    if (isDraggingRef.current) {
+                        pendingReloadAfterDragRef.current = true;
+                    } else {
                         reloadSilently();
                     }
                 } else if (type === 'error') {
@@ -396,9 +442,9 @@ export function ExplorerTab({
         }
     }
 
-    if (prevSortedForQuickLook !== sortedFiles) {
+    if (quickLookPath !== null && prevSortedForQuickLook !== sortedFiles) {
         setPrevSortedForQuickLook(sortedFiles);
-        if (quickLookPath && !sortedFiles.some((f) => f.path === quickLookPath)) {
+        if (!sortedFiles.some((f) => f.path === quickLookPath)) {
             const fallback = resolveQuickLookFallback(
                 quickLookPath,
                 prevSortedForQuickLook,
@@ -577,6 +623,7 @@ export function ExplorerTab({
                     const targetFile = resolveQuickLookTarget(selectedFiles, lastSelectedPath, sortedFiles);
                     if (targetFile) {
                         setQuickLookPath(targetFile.path);
+                        setPrevSortedForQuickLook(sortedFiles);
                     }
                     return;
                 }
@@ -737,7 +784,7 @@ export function ExplorerTab({
                         style={{ flex: 1, overflow: 'auto' }}
                         onDragStartCapture={markDragStarted}
                         onDragStart={markDragStarted}
-                        onDragEnd={clearDrag}
+                        onDragEnd={() => clearDrag(true)}
                         onClick={(e) => {
                             if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('.file-list-item')) {
                                 setSelectedFiles(new Set());

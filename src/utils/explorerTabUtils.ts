@@ -45,3 +45,45 @@ export async function recoverMissingFolder(
     checkPath = parent;
   }
 }
+
+export interface ReloadGuardArgs {
+  seq: number;
+  expectedSeq: number;
+  currentPath: string | null;
+  targetPath: string;
+  searchActive: boolean;
+}
+
+export function shouldApplyReload({
+  seq,
+  expectedSeq,
+  currentPath,
+  targetPath,
+  searchActive,
+}: ReloadGuardArgs): boolean {
+  return seq === expectedSeq && currentPath === targetPath && !searchActive;
+}
+
+export interface DragCompletionResult {
+  shouldReload: boolean;
+  nextPendingReload: boolean;
+}
+
+export function resolveDragCompletion(
+  triggerPendingReload: boolean,
+  pendingReload: boolean
+): DragCompletionResult {
+  return {
+    shouldReload: triggerPendingReload && pendingReload,
+    nextPendingReload: false,
+  };
+}
+
+export function shouldSyncQuickLookOnRender<T>(
+  quickLookPath: string | null,
+  prevSorted: T[],
+  currentSorted: T[]
+): boolean {
+  return quickLookPath !== null && prevSorted !== currentSorted;
+}
+

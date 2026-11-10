@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { pruneSelectedFiles, recoverMissingFolder } from '../../utils/explorerTabUtils';
+import {
+  pruneSelectedFiles,
+  recoverMissingFolder,
+  shouldApplyReload,
+  resolveDragCompletion,
+  shouldSyncQuickLookOnRender,
+} from '../../utils/explorerTabUtils';
 
 describe('ExplorerTab silent reload & recovery logic', () => {
   describe('selection pruning', () => {
@@ -64,6 +70,107 @@ describe('ExplorerTab silent reload & recovery logic', () => {
 
       expect(loaded).toEqual(['/home/stark']);
       expect(toasts).toEqual(['Folder no longer exists']);
+    });
+  });
+
+  describe('reload sequencing guard (shouldApplyReload)', () => {
+    test('allows reload when seq, path match and search is inactive', () => {
+      expect(
+        shouldApplyReload({
+          seq: 1,
+          expectedSeq: 1,
+          currentPath: '/home/user/docs',
+          targetPath: '/home/user/docs',
+          searchActive: false,
+        })
+      ).toBe(true);
+    });
+
+    test('rejects reload when seq is stale (superseded by newer reload or navigation)', () => {
+      expect(
+        shouldApplyReload({
+          seq: 1,
+          expectedSeq: 2,
+          currentPath: '/home/user/docs',
+          targetPath: '/home/user/docs',
+          searchActive: false,
+        })
+      ).toBe(false);
+    });
+
+    test('rejects reload when user has navigated to another directory', () => {
+      expect(
+        shouldApplyReload({
+          seq: 1,
+          expectedSeq: 1,
+          currentPath: '/home/user/other',
+          targetPath: '/home/user/docs',
+          searchActive: false,
+        })
+      ).toBe(false);
+    });
+
+    test('rejects reload when search is active', () => {
+      expect(
+        shouldApplyReload({
+          seq: 1,
+          expectedSeq: 1,
+          currentPath: '/home/user/docs',
+          targetPath: '/home/user/docs',
+          searchActive: true,
+        })
+      ).toBe(false);
+    });
+  });
+
+  describe('drag completion resolution (resolveDragCompletion)', () => {
+    test('triggers reload and clears pending flag when drag ends normally with pending reload', () => {
+      const result = resolveDragCompletion(true, true);
+      expect(result).toEqual({
+        shouldReload: true,
+        nextPendingReload: false,
+      });
+    });
+
+    test('does not reload when drag ends without pending changes', () => {
+      const result = resolveDragCompletion(true, false);
+      expect(result).toEqual({
+        shouldReload: false,
+        nextPendingReload: false,
+      });
+    });
+
+    test('suppresses reload and clears pending flag on unmount or tab deactivation', () => {
+      const result = resolveDragCompletion(false, true);
+      expect(result).toEqual({
+        shouldReload: false,
+        nextPendingReload: false,
+      });
+    });
+
+    test('suppresses reload when neither trigger nor pending is true', () => {
+      const result = resolveDragCompletion(false, false);
+      expect(result).toEqual({
+        shouldReload: false,
+        nextPendingReload: false,
+      });
+    });
+  });
+
+  describe('render-phase quick look sync guard (shouldSyncQuickLookOnRender)', () => {
+    const listA = [{ path: '/a' }];
+    const listB = [{ path: '/b' }];
+
+    test('does not sync when quickLookPath is null (avoids double render on navigation/sort)', () => {
+      expect(shouldSyncQuickLookOnRender(null, listA, listB)).toBe(false);
+    });
+
+    test('does not sync when lists are identical reference', () => {
+      expect(shouldSyncQuickLookOnRender('/a', listA, listA)).toBe(false);
+    });
+
+    test('syncs when quickLookPath is open and sorted files reference changed', () => {
+      expect(shouldSyncQuickLookOnRender('/a', listA, listB)).toBe(true);
     });
   });
 });
