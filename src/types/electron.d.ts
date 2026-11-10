@@ -1,5 +1,9 @@
 import { IFile } from './files';
 
+export type WatchEvent =
+    | { id: number; type: 'change' }
+    | { id: number; type: 'error'; message: string };
+
 export interface IDrive {
     name: string;
     label: string;
@@ -37,6 +41,9 @@ export interface IElectronAPI {
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;
     getDrives: () => Promise<IDrive[]>;
     getRecommendedApps: (path: string) => Promise<{ name: string; icon: string | null; exec: string; path: string; }[]>;
+    watchStart: (dir: string) => Promise<number>;
+    watchStop: (id: number) => Promise<void>;
+    onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
 
     // PTY
     ptySpawn: (cwd: string) => Promise<number>;

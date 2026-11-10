@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { WatchEvent } from './dirWatcher';
 
 contextBridge.exposeInMainWorld('electron', {
   getThemeCss: () => ipcRenderer.invoke('theme:get-css'),
@@ -23,10 +24,17 @@ contextBridge.exposeInMainWorld('electron', {
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
-  search: (dir: string, query: string, options?: any) => ipcRenderer.invoke('system:search', dir, query, options),
+  search: (dir: string, query: string, options?: unknown) => ipcRenderer.invoke('system:search', dir, query, options),
   getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),
   getRecommendedApps: (path: string) => ipcRenderer.invoke('system:get-recommended-apps', path),
+  watchStart: (dir: string) => ipcRenderer.invoke('fs:watch-start', dir),
+  watchStop: (id: number) => ipcRenderer.invoke('fs:watch-stop', id),
+  onWatchEvent: (cb: (e: WatchEvent) => void) => {
+    const handler = (_event: unknown, e: WatchEvent) => cb(e);
+    ipcRenderer.on('fs:watch-event', handler);
+    return () => ipcRenderer.removeListener('fs:watch-event', handler);
+  },
 
   // PTY
   ptySpawn: (cwd: string) => ipcRenderer.invoke('terminal:spawn', cwd),
@@ -34,7 +42,7 @@ contextBridge.exposeInMainWorld('electron', {
   ptyResize: (pid: number, cols: number, rows: number) => ipcRenderer.send('terminal:resize', pid, cols, rows),
   ptyKill: (pid: number) => ipcRenderer.send('terminal:kill', pid),
   ptyOnData: (pid: number, callback: (data: string) => void) => {
-    const handler = (_: any, data: string) => callback(data);
+    const handler = (_: unknown, data: string) => callback(data);
     ipcRenderer.on(`terminal:data:${pid}`, handler);
     return () => ipcRenderer.removeListener(`terminal:data:${pid}`, handler);
   },

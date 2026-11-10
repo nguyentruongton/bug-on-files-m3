@@ -12,6 +12,7 @@ import type { IFile } from '../types/files';
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useDirWatch } from '../hooks/useDirWatch';
 import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
 import {
     createHistory,
@@ -91,10 +92,16 @@ export function ExplorerTab({
     // Search State
     const [searchActive, setSearchActive] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const searchActiveRef = useRef(false);
+
+    useEffect(() => {
+        searchActiveRef.current = searchActive;
+    }, [searchActive]);
 
     const handleSearch = async (query: string) => {
         setLoading(true);
         setSearchActive(true);
+        searchActiveRef.current = true;
         setSearchQuery(query);
         try {
             if (window.electron && window.electron.search) {
@@ -109,6 +116,7 @@ export function ExplorerTab({
     };
 
     const loadPath = useCallback(async (path: string, recordHistory = true) => {
+        searchActiveRef.current = false;
         setSearchActive(false);
         setSearchQuery('');
         setSelectedFiles(new Set());
@@ -139,6 +147,152 @@ export function ExplorerTab({
         }
         setLoading(false);
     }, [onPathChange, tabId, addToRecents, showToast]);
+
+    const isRecoveringRef = useRef(false);
+
+    const handleFolderMissing = useCallback(async (missingPath: string) => {
+        if (isRecoveringRef.current) return;
+        if (!window.electron?.exists || !window.electron?.getParentPath) return;
+
+        isRecoveringRef.current = true;
+        try {
+            let checkPath = missingPath;
+            while (checkPath) {
+                const parent = await window.electron.getParentPath(checkPath);
+                if (!parent || parent === checkPath) {
+                    if (await window.electron.exists(parent || '/')) {
+                        loadPath(parent || '/');
+                        showToast('Folder no longer exists', 'info');
+                    }
+                    break;
+                }
+                if (await window.electron.exists(parent)) {
+                    loadPath(parent);
+                    showToast('Folder no longer exists', 'info');
+                    break;
+                }
+                checkPath = parent;
+            }
+        } catch (err) {
+            console.error('Error recovering from missing folder:', err);
+        } finally {
+            isRecoveringRef.current = false;
+        }
+    }, [loadPath, showToast]);
+
+    const reloadSilently = useCallback(async () => {
+        const targetPath = currentPathRef.current;
+        if (!targetPath || targetPath === 'app://dashboard' || searchActiveRef.current) {
+            return;
+        }
+
+        try {
+            const items = await FileSystemService.listDir(targetPath);
+            if (currentPathRef.current !== targetPath || searchActiveRef.current) {
+                return;
+            }
+
+            setFiles(items);
+            setSelectedFiles((prev) => {
+                if (prev.size === 0) return prev;
+                const validPaths = new Set(items.map((f) => f.path));
+                let changed = false;
+                const next = new Set<string>();
+                for (const p of prev) {
+                    if (validPaths.has(p)) {
+                        next.add(p);
+                    } else {
+                        changed = true;
+                    }
+                }
+                return changed ? next : prev;
+            });
+        } catch {
+            if (window.electron?.exists) {
+                const exists = await window.electron.exists(targetPath);
+                if (!exists) {
+                    handleFolderMissing(targetPath);
+                }
+            }
+        }
+    }, [handleFolderMissing]);
+
+    // Drag-in-progress tracking
+    const isDraggingRef = useRef(false);
+    const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearDrag = useCallback(() => {
+        isDraggingRef.current = false;
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+            dragTimeoutRef.current = null;
+        }
+    }, []);
+
+    const markDragStarted = useCallback(() => {
+        isDraggingRef.current = true;
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+        }
+        dragTimeoutRef.current = setTimeout(() => {
+            isDraggingRef.current = false;
+            dragTimeoutRef.current = null;
+        }, 5000);
+    }, []);
+
+    useEffect(() => {
+        if (!isActive) return;
+        const handlePointerUp = () => clearDrag();
+        const handleFocus = () => clearDrag();
+        const handleDragEnd = () => clearDrag();
+
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('mouseup', handlePointerUp);
+        window.addEventListener('dragend', handleDragEnd);
+        window.addEventListener('drop', handlePointerUp);
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('mouseup', handlePointerUp);
+            window.removeEventListener('dragend', handleDragEnd);
+            window.removeEventListener('drop', handlePointerUp);
+            window.removeEventListener('focus', handleFocus);
+            clearDrag();
+        };
+    }, [isActive, clearDrag]);
+
+    // Step 4: Refresh on re-activation
+    const prevActiveRef = useRef(isActive);
+    useEffect(() => {
+        if (!prevActiveRef.current && isActive) {
+            reloadSilently();
+        }
+        prevActiveRef.current = isActive;
+    }, [isActive, reloadSilently]);
+
+    // Live directory watching
+    useDirWatch(
+        currentPath,
+        isActive,
+        useCallback(
+            async (type: 'change' | 'error') => {
+                if (type === 'change') {
+                    if (!isDraggingRef.current) {
+                        reloadSilently();
+                    }
+                } else if (type === 'error') {
+                    if (window.electron?.exists) {
+                        const exists = await window.electron.exists(currentPath);
+                        if (!exists) {
+                            handleFolderMissing(currentPath);
+                        }
+                    }
+                }
+            },
+            [currentPath, reloadSilently, handleFolderMissing]
+        )
+    );
 
     useEffect(() => {
         if (!initialPath) return;
@@ -541,6 +695,9 @@ export function ExplorerTab({
                     )}
                     <div
                         style={{ flex: 1, overflow: 'auto' }}
+                        onDragStartCapture={markDragStarted}
+                        onDragStart={markDragStarted}
+                        onDragEnd={clearDrag}
                         onClick={(e) => {
                             if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('.file-list-item')) {
                                 setSelectedFiles(new Set());
@@ -556,6 +713,7 @@ export function ExplorerTab({
                             e.dataTransfer.dropEffect = 'copy';
                         }}
                         onDrop={async (e) => {
+                            clearDrag();
                             e.preventDefault();
                             const droppedFiles = Array.from(e.dataTransfer.files);
                             if (droppedFiles.length > 0 && currentPath) {

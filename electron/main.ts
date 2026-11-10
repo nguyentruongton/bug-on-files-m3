@@ -7,11 +7,18 @@ import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { setupPtyHandlers, setMainWindow, killAllPty } from './pty';
 import { getExtractCommand, parseDesktopEntry, matchesMimeType, resolvePlaces } from './systemUtils';
+import { DirWatchers } from './dirWatcher';
 
 const execFileAsync = promisify(execFile);
 
 // --- State ---
 let mainWindow: BrowserWindow | null = null;
+
+const dirWatchers = new DirWatchers((event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('fs:watch-event', event);
+    }
+});
 
 // Initialize PTY handlers
 setupPtyHandlers();
@@ -135,6 +142,14 @@ ipcMain.handle('fs:extract', async (_, filePath: string) => {
         console.error('Extract failed', e);
         return false;
     }
+});
+
+ipcMain.handle('fs:watch-start', (_, dir: string) => {
+    return dirWatchers.start(dir);
+});
+
+ipcMain.handle('fs:watch-stop', (_, id: number) => {
+    dirWatchers.stop(id);
 });
 
 // Cache for apps
@@ -480,6 +495,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+    dirWatchers.stopAll();
     killAllPty();
     if (process.platform !== 'darwin') {
         app.quit();
