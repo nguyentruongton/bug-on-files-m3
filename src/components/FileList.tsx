@@ -2,7 +2,14 @@ import React from 'react';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
 import './FileList.css';
-import { getSemanticGroup } from '../utils/fileUtils';
+import {
+    getSemanticGroup,
+    getFileIconInfo,
+    isHiddenFile,
+    isImageFile,
+    formatFileSize,
+    formatFileDate,
+} from '../utils/fileUtils';
 
 interface FileListProps {
     files: IFile[];
@@ -14,25 +21,117 @@ interface FileListProps {
     iconSize: number;
     filledIcons: boolean;
     groupingEnabled?: boolean;
+    sortBy?: 'name' | 'size' | 'date';
+    sortOrder?: 'asc' | 'desc';
+    onSortChange?: (field: 'name' | 'size' | 'date') => void;
+    isSearch?: boolean;
 }
 
-export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSelect, onNavigate, onContextMenu, viewMode, iconSize, filledIcons, groupingEnabled }) => {
-    // Files are likely already sorted by group if groupingEnabled is true
+export const FileList: React.FC<FileListProps> = ({
+    files,
+    selectedFiles,
+    onSelect,
+    onNavigate,
+    onContextMenu,
+    viewMode,
+    iconSize,
+    filledIcons,
+    groupingEnabled,
+    sortBy = 'name',
+    sortOrder = 'asc',
+    onSortChange,
+    isSearch = false,
+}) => {
+    if (files.length === 0) {
+        return (
+            <div className="file-list-empty">
+                <Icon
+                    name={isSearch ? 'search_off' : 'folder_open'}
+                    size={56}
+                    className="file-list-empty-icon"
+                />
+                <div className="file-list-empty-title">
+                    {isSearch ? 'No matching files found' : 'This folder is empty'}
+                </div>
+                <div className="file-list-empty-subtitle">
+                    {isSearch
+                        ? 'Try a different keyword or clear the search filter.'
+                        : 'Drop files here or right-click to create a new folder.'}
+                </div>
+            </div>
+        );
+    }
+
     const sortedFiles = files;
     let lastGroup = '';
+    const listIconColWidth = Math.min(48, Math.max(36, Math.round(iconSize * 0.65) + 12));
+    const listIconRenderSize = Math.min(32, Math.max(20, Math.round(iconSize * 0.45)));
+    const listColumnsTemplate = `${listIconColWidth}px minmax(180px, 1fr) 156px 110px 96px`;
+
+    const renderSortArrow = (field: 'name' | 'size' | 'date') => {
+        if (sortBy !== field) return null;
+        return (
+            <Icon
+                name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                size={14}
+                className="file-list-sort-icon"
+            />
+        );
+    };
 
     return (
         <div
             className={`file-list ${viewMode}`}
             style={{
-                // Dynamically update grid columns based on iconSize + padding/gap
-                gridTemplateColumns: viewMode === 'grid' ? `repeat(auto-fill, minmax(${iconSize + 32}px, 1fr))` : '1fr'
+                gridTemplateColumns:
+                    viewMode === 'grid'
+                        ? `repeat(auto-fill, minmax(${Math.max(112, iconSize + 48)}px, 1fr))`
+                        : '1fr',
             }}
         >
+            {viewMode === 'list' && (
+                <div
+                    className="file-list-header"
+                    style={{ gridTemplateColumns: listColumnsTemplate }}
+                >
+                    <span className="file-list-header-spacer" />
+                    <button
+                        type="button"
+                        className={`file-list-header-cell ${sortBy === 'name' ? 'active' : ''}`}
+                        onClick={() => onSortChange?.('name')}
+                    >
+                        <span>Name</span>
+                        {renderSortArrow('name')}
+                    </button>
+                    <button
+                        type="button"
+                        className={`file-list-header-cell ${sortBy === 'date' ? 'active' : ''}`}
+                        onClick={() => onSortChange?.('date')}
+                    >
+                        <span>Date Modified</span>
+                        {renderSortArrow('date')}
+                    </button>
+                    <span className="file-list-header-cell static">Type</span>
+                    <button
+                        type="button"
+                        className={`file-list-header-cell align-right ${sortBy === 'size' ? 'active' : ''}`}
+                        onClick={() => onSortChange?.('size')}
+                    >
+                        <span>Size</span>
+                        {renderSortArrow('size')}
+                    </button>
+                </div>
+            )}
+
             {sortedFiles.map((file, index) => {
                 const currentGroup = groupingEnabled ? getSemanticGroup(file) : '';
                 const showHeader = groupingEnabled && currentGroup !== lastGroup;
                 if (showHeader) lastGroup = currentGroup;
+
+                const hidden = isHiddenFile(file.name);
+                const iconInfo = getFileIconInfo(file);
+                const effectiveIconSize = viewMode === 'list' ? listIconRenderSize : iconSize;
+                const fileGroupLabel = file.isDirectory ? 'Folder' : getSemanticGroup(file).replace(/s$/, '');
 
                 return (
                     <React.Fragment key={file.path}>
@@ -41,24 +140,16 @@ export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSele
                                 className="file-group-header"
                                 style={{
                                     gridColumn: '1 / -1',
-                                    padding: '16px 8px 8px',
-                                    fontWeight: 500,
-                                    color: 'var(--md-sys-color-primary)',
-                                    borderBottom: '1px solid var(--md-sys-color-outline-variant)',
-                                    marginBottom: '8px',
-                                    marginTop: index > 0 ? '16px' : '0'
+                                    marginTop: index > 0 ? '16px' : '4px',
                                 }}
                             >
-                                {currentGroup}
+                                <span>{currentGroup}</span>
                             </div>
                         )}
                         <div
-                            className={`file-list-item ${selectedFiles.has(file.path) ? 'selected' : ''}`}
+                            className={`file-list-item ${selectedFiles.has(file.path) ? 'selected' : ''} ${hidden ? 'is-hidden' : ''}`}
+                            title={file.name}
                             onClick={(e) => {
-                                // Click logic: 
-                                // 1. If modifier keys (Ctrl/Shift/Meta) -> standard selection logic
-                                // 2. If NOT modifier keys AND already selected -> Open (User Request)
-                                // 3. Otherwise -> Select
                                 const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
                                 const isSelected = selectedFiles.has(file.path);
 
@@ -79,13 +170,24 @@ export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSele
                             }}
                             tabIndex={0}
                             role="button"
-                            style={viewMode === 'list' ? {
-                                gridTemplateColumns: `${iconSize + 16}px 1fr 100px`,
-                                height: `${Math.max(52, iconSize + 16)}px`
-                            } : undefined}
+                            style={
+                                viewMode === 'list'
+                                    ? {
+                                          gridTemplateColumns: listColumnsTemplate,
+                                          height: '44px',
+                                      }
+                                    : undefined
+                            }
                         >
-                            <span className="file-icon" style={{ width: `${iconSize}px`, height: `${iconSize}px`, fontSize: `${iconSize}px` }}>
-                                {isImage(file.name) ? (
+                            <span
+                                className="file-icon"
+                                style={{
+                                    width: `${effectiveIconSize}px`,
+                                    height: `${effectiveIconSize}px`,
+                                    fontSize: `${effectiveIconSize}px`,
+                                }}
+                            >
+                                {isImageFile(file.name) ? (
                                     <img
                                         src={`media://${file.path}`}
                                         alt={file.name}
@@ -93,27 +195,32 @@ export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSele
                                         decoding="async"
                                         className="file-thumbnail"
                                         onError={(e) => {
-                                            (e.currentTarget).style.display = 'none';
+                                            e.currentTarget.style.display = 'none';
                                         }}
                                         style={{
-                                            width: viewMode === 'list' ? `${iconSize}px` : '100%',
-                                            height: viewMode === 'list' ? `${iconSize}px` : '100%'
+                                            width: viewMode === 'list' ? `${effectiveIconSize}px` : '100%',
+                                            height: viewMode === 'list' ? `${effectiveIconSize}px` : '100%',
                                         }}
                                     />
-                                ) : null}
-
-
-                                {!isImage(file.name) && (
+                                ) : (
                                     <Icon
-                                        name={file.isDirectory ? 'folder' : getFileIcon(file.name)}
-                                        filled={filledIcons}
-                                        className={file.isDirectory ? 'folder-icon' : 'doc-icon'}
-                                        style={{ fontSize: `${iconSize}px` }}
+                                        name={iconInfo.icon}
+                                        filled={filledIcons || file.isDirectory}
+                                        className={iconInfo.colorClass}
+                                        style={{ fontSize: `${effectiveIconSize}px` }}
                                     />
                                 )}
                             </span>
                             <span className="file-name">{file.name}</span>
-                            <span className="file-size">{file.isDirectory ? '' : formatSize(file.size)}</span>
+                            {viewMode === 'list' && (
+                                <>
+                                    <span className="file-date">{formatFileDate(file.mtime)}</span>
+                                    <span className="file-type">{fileGroupLabel}</span>
+                                </>
+                            )}
+                            <span className="file-size">
+                                {file.isDirectory ? '—' : formatFileSize(file.size)}
+                            </span>
                         </div>
                     </React.Fragment>
                 );
@@ -121,29 +228,3 @@ export const FileList: React.FC<FileListProps> = ({ files, selectedFiles, onSele
         </div>
     );
 };
-
-function getFileIcon(filename: string): string {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    switch (ext) {
-        case 'png': case 'jpg': case 'jpeg': case 'gif': return 'image';
-        case 'mp3': case 'wav': return 'audio_file';
-        case 'mp4': case 'mkv': return 'movie';
-        case 'pdf': return 'picture_as_pdf';
-        case 'txt': case 'md': return 'article';
-        case 'zip': case 'tar': case 'gz': return 'folder_zip';
-        default: return 'insert_drive_file';
-    }
-}
-
-function isImage(filename: string): boolean {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext || '');
-}
-
-function formatSize(bytes: number) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
