@@ -3,6 +3,7 @@ import { Icon } from './Icon';
 import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { IFile } from '../types/files';
+import { resolveInitialPins, type PinnedItem } from '../utils/dashboardUtils';
 
 interface DashboardProps {
     onNavigate: (path: string) => void;
@@ -14,22 +15,12 @@ interface StorageStats {
     free: number;
 }
 
-interface PinnedItem {
-    name: string;
-    path: string;
-    icon?: string;
-}
-
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     const [greeting, setGreeting] = useState('');
     const [storage, setStorage] = useState<StorageStats | null>(null);
 
     // Persisted State
-    const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', [
-        { name: 'Home', path: '/home/bhimio' },
-        { name: 'Downloads', path: '/home/bhimio/Downloads' },
-        { name: 'Documents', path: '/home/bhimio/Documents' }
-    ]);
+    const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', []);
 
     // Recent files
     const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
@@ -40,20 +31,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         else if (hour < 18) setGreeting('Good Afternoon');
         else setGreeting('Good Evening');
 
-        // Fetch storage
+        // Fetch storage & dynamic default pins
         if (window.electron) {
             window.electron.getStorageUsage().then(stats => {
                 if (stats) setStorage(stats);
             });
+            if (window.electron.getPlaces) {
+                window.electron.getPlaces().then(places => {
+                    setPinnedItems(prev => {
+                        const resolved = resolveInitialPins(prev, places);
+                        if (
+                            resolved.length === prev.length &&
+                            resolved.every((item, idx) => item.path === prev[idx].path && item.name === prev[idx].name)
+                        ) {
+                            return prev;
+                        }
+                        return resolved;
+                    });
+                });
+            }
         }
-    }, []);
+    }, [setPinnedItems]);
 
     const handleAddPin = async () => {
-        if (window.electron) {
-            const path = await window.electron.openFileDialog();
-            if (path) {
-                const name = path.split('/').pop() || path;
-                setPinnedItems(prev => [...prev, { name, path }]);
+        if (window.electron && window.electron.openDirectoryDialog) {
+            const dirPath = await window.electron.openDirectoryDialog();
+            if (dirPath) {
+                const name = dirPath.split('/').pop() || dirPath;
+                setPinnedItems(prev =>
+                    prev.some(item => item.path === dirPath) ? prev : [...prev, { name, path: dirPath }]
+                );
             }
         }
     };
