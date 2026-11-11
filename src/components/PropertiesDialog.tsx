@@ -67,7 +67,7 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
                         />
                     </div>
                     <div>
-                        <div style={{ fontSize: '18px', fontWeight: 500, wordBreak: 'break-all' }}>{file.name}</div>
+                        <div style={{ fontSize: '18px', fontWeight: 500, wordBreak: 'break-all', userSelect: 'text' }}>{file.name}</div>
                         <div style={{ fontSize: '14px', color: 'var(--md-sys-color-on-surface-variant)' }}>
                             {file.isDirectory ? 'Folder' : 'File'}
                         </div>

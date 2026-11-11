@@ -55,9 +55,7 @@
 
 input,
 textarea,
-[contenteditable="true"],
-.xterm,
-.xterm * {
+[contenteditable="true"] {
   -webkit-user-select: text;
   user-select: text;
 }
