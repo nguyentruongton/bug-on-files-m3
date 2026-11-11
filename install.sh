@@ -6,7 +6,7 @@ APP_NAME="Materials"
 INSTALL_DIR="/opt/$APP_NAME"
 ICON_DIR="/usr/share/icons/hicolor/512x512/apps"
 DESKTOP_FILE="/usr/share/applications/$APP_NAME.desktop"
-APP_IMAGE_SOURCE="./release/Materials-0.0.0.AppImage"
+APP_IMAGE_SOURCE=$(ls -1 ./release/Materials-*.AppImage 2>/dev/null | head -n 1)
 ICON_SOURCE="./assets/icon.png"
 
 if [ "$EUID" -ne 0 ]; then
