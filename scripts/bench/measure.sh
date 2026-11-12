@@ -122,6 +122,12 @@ if [ ! -f "dist/spike.html" ]; then
     bun run build:web
 fi
 
+# Ensure tauri release binary exists before timing starts
+TAURI_BIN="$REPO_ROOT/src-tauri/target/release/materials"
+if [ "$TARGET" = "tauri" ] && [ ! -f "$TAURI_BIN" ]; then
+    PATH="$HOME/.cargo/bin:$PATH" bun run tauri:build -- --no-bundle
+fi
+
 # Clean up any leftover processes on the benchmark port
 fuser -k "${PORT}/tcp" 2>/dev/null || true
 
@@ -184,10 +190,6 @@ echo "$T0" > "$T0_FILE"
 
 case "$TARGET" in
     tauri)
-        TAURI_BIN="$REPO_ROOT/src-tauri/target/release/materials"
-        if [ ! -f "$TAURI_BIN" ]; then
-            PATH="$HOME/.cargo/bin:$PATH" bun run tauri:build -- --no-bundle
-        fi
         MATERIALS_SPIKE_URL="spike.html?ping=http://127.0.0.1:${PORT}/ready" \
             "$TAURI_BIN" > /dev/null 2>&1 &
         TARGET_PID=$!
