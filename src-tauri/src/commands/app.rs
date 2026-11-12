@@ -55,13 +55,7 @@ pub fn resolve_icon_path(app_res_dir: Option<&Path>, icon_type: &str) -> Option<
     candidates.push(PathBuf::from("../assets").join(&file_name));
     candidates.push(PathBuf::from("src-tauri/icons").join(&file_name));
 
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    candidates.into_iter().find(|candidate| candidate.exists())
 }
 
 #[tauri::command(rename_all = "camelCase")]

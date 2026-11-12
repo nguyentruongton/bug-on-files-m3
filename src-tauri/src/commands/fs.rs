@@ -109,22 +109,22 @@ mod tests {
         let new_dir = temp.path().join("sub_dir");
 
         std::fs::write(&f1, "content").unwrap();
-        assert_eq!(exists(f1.to_str().unwrap().into()).unwrap(), true);
+        assert!(exists(f1.to_str().unwrap().into()).unwrap());
         assert_eq!(read_file(f1.to_str().unwrap().into()).unwrap(), Some("content".into()));
 
-        assert_eq!(copy_file(f1.to_str().unwrap().into(), f2.to_str().unwrap().into()).unwrap(), true);
-        assert_eq!(exists(f2.to_str().unwrap().into()).unwrap(), true);
+        assert!(copy_file(f1.to_str().unwrap().into(), f2.to_str().unwrap().into()).unwrap());
+        assert!(exists(f2.to_str().unwrap().into()).unwrap());
 
-        assert_eq!(rename_file(f2.to_str().unwrap().into(), f3.to_str().unwrap().into()).unwrap(), true);
-        assert_eq!(exists(f2.to_str().unwrap().into()).unwrap(), false);
-        assert_eq!(exists(f3.to_str().unwrap().into()).unwrap(), true);
+        assert!(rename_file(f2.to_str().unwrap().into(), f3.to_str().unwrap().into()).unwrap());
+        assert!(!exists(f2.to_str().unwrap().into()).unwrap());
+        assert!(exists(f3.to_str().unwrap().into()).unwrap());
 
-        assert_eq!(create_directory(new_dir.to_str().unwrap().into()).unwrap(), true);
-        assert_eq!(exists(new_dir.to_str().unwrap().into()).unwrap(), true);
+        assert!(create_directory(new_dir.to_str().unwrap().into()).unwrap());
+        assert!(exists(new_dir.to_str().unwrap().into()).unwrap());
 
         let dest_moved = new_dir.join("f3.txt");
-        assert_eq!(move_file(f3.to_str().unwrap().into(), dest_moved.to_str().unwrap().into()).unwrap(), true);
-        assert_eq!(exists(dest_moved.to_str().unwrap().into()).unwrap(), true);
+        assert!(move_file(f3.to_str().unwrap().into(), dest_moved.to_str().unwrap().into()).unwrap());
+        assert!(exists(dest_moved.to_str().unwrap().into()).unwrap());
 
         let list = list_dir(new_dir.to_str().unwrap().into()).unwrap();
         assert_eq!(list.len(), 1);

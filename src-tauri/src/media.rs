@@ -33,7 +33,7 @@ pub fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
         if n == 0 {
             return None;
         }
-        let start = if n >= len { 0 } else { len - n };
+        let start = len.saturating_sub(n);
         Some((start, len - 1))
     } else if let Some((start_str, end_str)) = spec.split_once('-') {
         let start: u64 = start_str.trim().parse().ok()?;
@@ -145,11 +145,10 @@ pub fn extract_media_path(uri: &str) -> Option<PathBuf> {
     }
 
     // Ensure leading slash for absolute path unless it's a Windows drive letter path (e.g. C:/...)
-    let normalized = if without_scheme.starts_with('/') {
-        without_scheme
-    } else if without_scheme.len() >= 2
-        && without_scheme.as_bytes()[1] == b':'
-        && without_scheme.as_bytes()[0].is_ascii_alphabetic()
+    let normalized = if without_scheme.starts_with('/')
+        || (without_scheme.len() >= 2
+            && without_scheme.as_bytes()[1] == b':'
+            && without_scheme.as_bytes()[0].is_ascii_alphabetic())
     {
         without_scheme
     } else {
