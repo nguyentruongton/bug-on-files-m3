@@ -2,6 +2,7 @@ pub mod commands;
 pub mod desktop_entry;
 pub mod extract;
 pub mod fs_ops;
+pub mod media;
 pub mod places;
 pub mod search;
 pub mod system_info;
@@ -38,6 +39,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("media", |_ctx, req| {
+            media::handle_media_request(&req)
+        })
         .invoke_handler(tauri::generate_handler![
             commands::fs::list_dir,
             commands::fs::get_parent,

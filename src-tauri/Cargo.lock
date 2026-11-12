@@ -2145,6 +2145,7 @@ version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
  "notify",
+ "percent-encoding",
  "portable-pty",
  "serde",
  "serde_json",
