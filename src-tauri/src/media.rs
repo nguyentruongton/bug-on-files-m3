@@ -2,6 +2,10 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use tauri::http::{header, Request, Response, StatusCode};
 
+/// Maximum chunk size served per `206 Partial Content` response (8 MiB).
+/// Protects against unbounded memory allocations and OOM spikes on open-ended range requests (`bytes=0-`).
+pub const MAX_RANGE_CHUNK: u64 = 8 * 1024 * 1024;
+
 /// Parses a byte range specification according to RFC 7233 / HTTP Range.
 /// Supports:
 /// - `bytes=a-b` (inclusive byte range, clamped to `len - 1` if `b >= len`)
@@ -109,7 +113,7 @@ pub fn guess_mime(path: &str) -> &'static str {
 /// - `media:///abs/path` (strips `media://` leaving `/abs/path`)
 /// - `media://localhost/abs/path`
 /// - `http://media.localhost/abs/path`
-/// - `media:/abs/path`
+/// - `media:/abs/path` or `media://abs/path` (guarantees absolute path prefix)
 /// - Direct absolute paths
 /// - Strips unencoded query strings (`?`) or fragments (`#`)
 /// - Percent-decodes UTF-8 characters (`%20` -> space, `%23` -> `#`, `%3F` -> `?`, `%25` -> `%`, etc.)
@@ -136,10 +140,26 @@ pub fn extract_media_path(uri: &str) -> Option<PathBuf> {
         raw.to_string()
     };
 
+    if without_scheme.is_empty() {
+        return None;
+    }
+
+    // Ensure leading slash for absolute path unless it's a Windows drive letter path (e.g. C:/...)
+    let normalized = if without_scheme.starts_with('/') {
+        without_scheme
+    } else if without_scheme.len() >= 2
+        && without_scheme.as_bytes()[1] == b':'
+        && without_scheme.as_bytes()[0].is_ascii_alphabetic()
+    {
+        without_scheme
+    } else {
+        format!("/{}", without_scheme)
+    };
+
     // Strip unencoded query string or fragment if present
-    let path_part = match without_scheme.find(['?', '#']) {
-        Some(idx) => &without_scheme[..idx],
-        None => &without_scheme,
+    let path_part = match normalized.find(['?', '#']) {
+        Some(idx) => &normalized[..idx],
+        None => &normalized,
     };
 
     if path_part.is_empty() {
@@ -164,7 +184,7 @@ pub fn decode_media_path(uri: &str) -> Option<PathBuf> {
 
 /// Handles incoming `media://` protocol requests, returning:
 /// - `200 OK` for full file reads
-/// - `206 Partial Content` when a valid `Range` header is present
+/// - `206 Partial Content` when a valid `Range` header is present (capped at `MAX_RANGE_CHUNK` per RFC 7233 §4.1)
 /// - `416 Range Not Satisfiable` for out-of-range requests
 /// - `404 Not Found` for nonexistent files, unreadable files, or directories
 pub fn handle_media_request(req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
@@ -195,10 +215,13 @@ pub fn handle_media_request(req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     if let Some(range_header) = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok()) {
         match parse_range(range_header, len) {
             Some((start, end)) => {
+                // Cap chunk to MAX_RANGE_CHUNK (RFC 7233 §4.1 allows serving a bounded subrange)
+                let count = (end - start + 1).min(MAX_RANGE_CHUNK);
+                let actual_end = start + count - 1;
+
                 if file.seek(SeekFrom::Start(start)).is_err() {
                     return internal_error_response();
                 }
-                let count = end - start + 1;
                 let mut buf = Vec::with_capacity(count as usize);
                 if file.take(count).read_to_end(&mut buf).is_err() {
                     return internal_error_response();
@@ -207,7 +230,7 @@ pub fn handle_media_request(req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
                 Response::builder()
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, mime)
-                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{actual_end}/{len}"))
                     .header(header::CONTENT_LENGTH, count.to_string())
                     .header(header::ACCEPT_RANGES, "bytes")
                     .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
@@ -333,6 +356,19 @@ mod tests {
             path_unicode.as_deref().and_then(|p| p.to_str()),
             Some("/home/u/ünï.png")
         );
+
+        // media:/ and media:// normalization to absolute path
+        let path_single_slash = extract_media_path("media:/home/u/file.txt");
+        assert_eq!(
+            path_single_slash.as_deref().and_then(|p| p.to_str()),
+            Some("/home/u/file.txt")
+        );
+
+        let path_double_slash = extract_media_path("media://home/u/file.txt");
+        assert_eq!(
+            path_double_slash.as_deref().and_then(|p| p.to_str()),
+            Some("/home/u/file.txt")
+        );
     }
 
     #[test]
@@ -342,6 +378,36 @@ mod tests {
         assert_eq!(parse_range("bytes=0-200", 100), Some((0, 99)));
         assert_eq!(parse_range("invalid", 100), None);
         assert_eq!(parse_range("characters=0-10", 100), None);
+    }
+
+    #[test]
+    fn handle_media_request_caps_large_range_to_max_range_chunk() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        // File size = 9 MiB (exceeds MAX_RANGE_CHUNK of 8 MiB)
+        let total_size = (MAX_RANGE_CHUNK + 1024 * 1024) as usize;
+        let data = vec![0x42u8; total_size];
+        temp_file.write_all(&data).unwrap();
+        let path_str = temp_file.path().to_str().unwrap();
+
+        // Open-ended range request: bytes=0-
+        let req_open = Request::builder()
+            .uri(format!("media://localhost{path_str}"))
+            .header("Range", "bytes=0-")
+            .body(Vec::new())
+            .unwrap();
+        let resp = handle_media_request(&req_open);
+
+        assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(resp.body().len(), MAX_RANGE_CHUNK as usize);
+        let expected_range = format!("bytes 0-{}/{}", MAX_RANGE_CHUNK - 1, total_size);
+        assert_eq!(
+            resp.headers().get("Content-Range").unwrap().to_str().unwrap(),
+            expected_range
+        );
+        assert_eq!(
+            resp.headers().get("Content-Length").unwrap().to_str().unwrap(),
+            MAX_RANGE_CHUNK.to_string()
+        );
     }
 
     #[test]
