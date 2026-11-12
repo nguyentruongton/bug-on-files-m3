@@ -6,6 +6,10 @@ use tauri::http::{header, Request, Response, StatusCode};
 /// Protects against unbounded memory allocations and OOM spikes on open-ended range requests (`bytes=0-`).
 pub const MAX_RANGE_CHUNK: u64 = 8 * 1024 * 1024;
 
+/// Maximum file size served in a single `200 OK` response without a Range header (64 MiB).
+/// Files exceeding this limit require Range requests (returning `413 Payload Too Large` with `Accept-Ranges: bytes`).
+pub const MAX_FULL_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Parses a byte range specification according to RFC 7233 / HTTP Range.
 /// Supports:
 /// - `bytes=a-b` (inclusive byte range, clamped to `len - 1` if `b >= len`)
@@ -249,8 +253,18 @@ pub fn handle_media_request(req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
                 .unwrap_or_else(|_| internal_error_response()),
         }
     } else {
-        let mut body = Vec::with_capacity(len.min(16 * 1024 * 1024) as usize);
-        if file.read_to_end(&mut body).is_err() {
+        if len > MAX_FULL_RESPONSE_BYTES {
+            return Response::builder()
+                .status(StatusCode::PAYLOAD_TOO_LARGE)
+                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(b"Payload Too Large".to_vec())
+                .unwrap_or_else(|_| internal_error_response());
+        }
+
+        let mut body = Vec::with_capacity(len as usize);
+        if file.take(MAX_FULL_RESPONSE_BYTES).read_to_end(&mut body).is_err() {
             return internal_error_response();
         }
 
@@ -500,5 +514,30 @@ mod tests {
             .unwrap();
         let resp_dir = handle_media_request(&req_dir);
         assert_eq!(resp_dir.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn handle_media_request_rejects_oversized_non_range_request() {
+        let file = NamedTempFile::new().unwrap();
+        file.as_file()
+            .set_len(MAX_FULL_RESPONSE_BYTES + 1)
+            .unwrap();
+        let path_str = file.path().to_str().unwrap();
+
+        let req = Request::builder()
+            .uri(format!("media://localhost{path_str}"))
+            .body(Vec::new())
+            .unwrap();
+
+        let resp = handle_media_request(&req);
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            resp.headers()
+                .get("Accept-Ranges")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "bytes"
+        );
     }
 }

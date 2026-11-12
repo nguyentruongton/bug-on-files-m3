@@ -66,19 +66,21 @@ pub fn copy_path(source: &str, dest: &str) -> Result<(), String> {
 }
 
 fn copy_path_recursive(source: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
-    let src_meta = std::fs::metadata(source)
+    let src_meta = std::fs::symlink_metadata(source)
         .map_err(|e| format!("Failed to read metadata for '{}': {}", source.display(), e))?;
 
     if src_meta.is_dir() {
-        if !dest.exists() {
+        if dest.symlink_metadata().is_ok() {
+            if !dest.is_dir() {
+                return Err(format!(
+                    "Cannot copy directory '{}' to non-directory '{}'",
+                    source.display(),
+                    dest.display()
+                ));
+            }
+        } else {
             std::fs::create_dir_all(dest)
                 .map_err(|e| format!("Failed to create directory '{}': {}", dest.display(), e))?;
-        } else if !dest.is_dir() {
-            return Err(format!(
-                "Cannot copy directory '{}' to non-directory '{}'",
-                source.display(),
-                dest.display()
-            ));
         }
 
         let entries = std::fs::read_dir(source)
@@ -91,9 +93,50 @@ fn copy_path_recursive(source: &std::path::Path, dest: &std::path::Path) -> Resu
             copy_path_recursive(&child_src, &child_dest)?;
         }
         Ok(())
+    } else if src_meta.file_type().is_symlink() {
+        // Force: false semantics - existing destination files or symlinks are kept
+        if dest.symlink_metadata().is_ok() {
+            return Ok(());
+        }
+        if let Some(parent) = dest.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create directory '{}': {}", parent.display(), e))?;
+            }
+        }
+        let target = std::fs::read_link(source)
+            .map_err(|e| format!("Failed to read symlink '{}': {}", source.display(), e))?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, dest).map_err(|e| {
+            format!(
+                "Failed to recreate symlink at '{}': {}",
+                dest.display(),
+                e
+            )
+        })?;
+        #[cfg(windows)]
+        {
+            if target.is_dir() {
+                std::os::windows::fs::symlink_dir(&target, dest).map_err(|e| {
+                    format!("Failed to recreate symlink dir at '{}': {}", dest.display(), e)
+                })?;
+            } else {
+                std::os::windows::fs::symlink_file(&target, dest).map_err(|e| {
+                    format!("Failed to recreate symlink file at '{}': {}", dest.display(), e)
+                })?;
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            return Err(format!(
+                "Symlink recreation unsupported on this platform: {}",
+                dest.display()
+            ));
+        }
+        Ok(())
     } else {
         // Force: false semantics - existing destination files are kept
-        if dest.try_exists().unwrap_or(false) {
+        if dest.symlink_metadata().is_ok() {
             return Ok(());
         }
         if let Some(parent) = dest.parent() {
@@ -329,6 +372,56 @@ mod tests {
             std::fs::read_to_string(dest_root.join("sub").join("sub_file.txt")).unwrap(),
             "sub content"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn copy_dir_preserves_nested_broken_symlink() {
+        let temp_src = tempfile::tempdir().unwrap();
+        let src_dir = temp_src.path().join("source_dir");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        let hello_file = src_dir.join("hello.txt");
+        std::fs::write(&hello_file, "hello world").unwrap();
+
+        let dangling_symlink = src_dir.join("dangling");
+        let nonexistent_target = std::path::Path::new("/nonexistent/target");
+        std::os::unix::fs::symlink(nonexistent_target, &dangling_symlink).unwrap();
+
+        let temp_dest = tempfile::tempdir().unwrap();
+        let dest_dir = temp_dest.path().join("dest_dir");
+
+        copy_path(src_dir.to_str().unwrap(), dest_dir.to_str().unwrap()).unwrap();
+
+        let copied_hello = dest_dir.join("hello.txt");
+        assert_eq!(std::fs::read_to_string(&copied_hello).unwrap(), "hello world");
+
+        let copied_dangling = dest_dir.join("dangling");
+        let meta = copied_dangling
+            .symlink_metadata()
+            .expect("dest/dangling must exist");
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(
+            std::fs::read_link(&copied_dangling).unwrap(),
+            nonexistent_target
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn copy_path_keeps_existing_destination_broken_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let src_file = temp.path().join("src.txt");
+        std::fs::write(&src_file, "new data").unwrap();
+
+        let dest_symlink = temp.path().join("dest_symlink.txt");
+        let non_target = temp.path().join("missing.txt");
+        std::os::unix::fs::symlink(&non_target, &dest_symlink).unwrap();
+
+        copy_path(src_file.to_str().unwrap(), dest_symlink.to_str().unwrap()).unwrap();
+
+        assert!(dest_symlink.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_link(&dest_symlink).unwrap(), non_target);
     }
 
     #[test]
