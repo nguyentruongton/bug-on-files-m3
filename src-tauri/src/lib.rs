@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod extract;
 pub mod fs_ops;
 pub mod places;
 pub mod text_preview;
@@ -26,6 +27,8 @@ pub fn resolve_target_url(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::fs::list_dir,
             commands::fs::get_parent,
@@ -39,6 +42,13 @@ pub fn run() {
             commands::fs::read_file,
             commands::fs::get_places,
             commands::fs::read_text_preview,
+            commands::app::extract_file,
+            commands::app::open_path,
+            commands::app::open_file_dialog,
+            commands::app::open_directory_dialog,
+            commands::app::get_startup_path,
+            commands::app::get_theme_css,
+            commands::app::set_icon,
         ])
         .setup(|app| {
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
