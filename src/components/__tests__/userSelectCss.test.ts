@@ -25,7 +25,6 @@ function parseCssRules(css: string): CssRule[] {
 
 describe('Global user-select CSS rules', () => {
   const indexCss = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
-  const quickLookCss = readFileSync(resolve(__dirname, '../QuickLook.css'), 'utf-8');
   const propertiesDialogTsx = readFileSync(resolve(__dirname, '../PropertiesDialog.tsx'), 'utf-8');
   const indexRules = parseCssRules(indexCss);
 
@@ -57,7 +56,7 @@ describe('Global user-select CSS rules', () => {
   });
 
   test('retains text selection in QuickLook text preview', () => {
-    expect(quickLookCss).toMatch(/\.quicklook-text-content\s*\{[^}]*user-select:\s*text/s);
+    expect(indexCss).toMatch(/\.quicklook-text-content\s*\{[^}]*user-select:\s*text/s);
   });
 
   test('retains text selection for file name and location in PropertiesDialog', () => {

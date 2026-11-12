@@ -13,35 +13,35 @@ interface PropertiesDialogProps {
 }
 
 export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, onClose }) => {
-    const [calculatedSize, setCalculatedSize] = useState<number | null>(null);
-    const [isCalculating, setIsCalculating] = useState(false);
+    const [dirSizeState, setDirSizeState] = useState<{ path: string; size: number } | null>(null);
 
     useEffect(() => {
-        if (open && file) {
-            if (file.isDirectory) {
-                setCalculatedSize(null);
-                setIsCalculating(true);
-                if (api && api.getDirectorySize) {
-                    api.getDirectorySize(file.path)
-                        .then((size) => {
-                            setCalculatedSize(size);
-                            setIsCalculating(false);
-                        })
-                        .catch(() => {
-                            setCalculatedSize(0);
-                            setIsCalculating(false);
-                        });
-                } else {
-                    setIsCalculating(false);
+        if (!open || !file || !file.isDirectory || !api?.getDirectorySize) return;
+        let cancelled = false;
+        api.getDirectorySize(file.path)
+            .then((size) => {
+                if (!cancelled) {
+                    setDirSizeState({ path: file.path, size });
                 }
-            } else {
-                setCalculatedSize(file.size);
-                setIsCalculating(false);
-            }
-        }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setDirSizeState({ path: file.path, size: 0 });
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [open, file]);
 
     if (!file) return null;
+
+    const calculatedSize = !file.isDirectory
+        ? file.size
+        : dirSizeState?.path === file.path
+            ? dirSizeState.size
+            : null;
+    const isCalculating = Boolean(open && file.isDirectory && calculatedSize === null && api?.getDirectorySize);
 
     return (
         <Dialog

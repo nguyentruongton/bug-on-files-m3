@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { Breadcrumbs } from './Breadcrumbs';
 
@@ -12,12 +12,6 @@ export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSea
     const [isEditing, setIsEditing] = useState(false);
     const [inputVal, setInputVal] = useState(currentPath);
     const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (!isEditing) {
-            setInputVal(currentPath);
-        }
-    }, [currentPath, isEditing]);
 
     const handleContainerClick = () => {
         if (!isEditing) {

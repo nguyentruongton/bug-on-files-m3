@@ -35,18 +35,20 @@ const formatBytes = (bytes: number): string => {
     return `${parseFloat((bytes / Math.pow(k, n)).toFixed(1))} ${units[n]}`;
 };
 
+function getTimeGreeting(): string {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+}
+
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-    const [greeting, setGreeting] = useState('Welcome');
+    const [greeting] = useState<string>(() => getTimeGreeting());
     const [storage, setStorage] = useState<StorageStats | null>(null);
     const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', []);
     const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
     useEffect(() => {
-        const hour = new Date().getHours();
-        if (hour < 12) setGreeting('Good Morning');
-        else if (hour < 18) setGreeting('Good Afternoon');
-        else setGreeting('Good Evening');
-
         if (!api) return;
 
         api.getStorageUsage().then((stats) => {

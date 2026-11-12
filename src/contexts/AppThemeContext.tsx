@@ -138,8 +138,16 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [setCustomCssPath]);
 
   useEffect(() => {
-    void refreshMatugen();
-  }, [refreshMatugen]);
+    let cancelled = false;
+    ThemeService.getMatugenCss().then((css) => {
+      if (!cancelled) {
+        setMatugenSeedColor(extractMatugenSeedColor(css));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (customCssPath) {
@@ -205,6 +213,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppTheme(): AppThemeContextValue {
   const ctx = useContext(AppThemeContext);
   if (!ctx) {

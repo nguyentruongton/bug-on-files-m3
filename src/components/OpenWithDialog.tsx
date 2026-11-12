@@ -29,14 +29,23 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
     const [selectedApp, setSelectedApp] = useState<AppEntry | null>(null);
 
     useEffect(() => {
-        if (open) {
-            api.getApps().then(setAllApps);
-            if (path) {
-                api.getRecommendedApps(path).then(setRecommendedApps);
-            } else {
-                setRecommendedApps([]);
-            }
+        if (!open) return;
+        let cancelled = false;
+        api.getApps().then((apps) => {
+            if (!cancelled) setAllApps(apps);
+        });
+        if (path) {
+            api.getRecommendedApps(path).then((apps) => {
+                if (!cancelled) setRecommendedApps(apps);
+            });
+        } else {
+            Promise.resolve([]).then((apps) => {
+                if (!cancelled) setRecommendedApps(apps);
+            });
         }
+        return () => {
+            cancelled = true;
+        };
     }, [open, path]);
 
     const filteredAllApps = useMemo(() => {
