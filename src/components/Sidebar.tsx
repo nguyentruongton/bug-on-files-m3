@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { normalizePath, getActiveDriveMountpoint } from '../utils/navigationHistory';
+import { api } from '../api';
 import './Sidebar.css';
 
 interface Place {
@@ -30,14 +31,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath, colla
     const [drives, setDrives] = useState<Drive[]>([]);
 
     useEffect(() => {
-        if (window.electron) {
-            if (window.electron.getPlaces) {
-                window.electron.getPlaces().then(setPlaces);
+        if (api) {
+            if (api.getPlaces) {
+                api.getPlaces().then(setPlaces);
             }
 
             const fetchDrives = async () => {
-                if (window.electron.getDrives) {
-                    const d = await window.electron.getDrives();
+                if (api.getDrives) {
+                    const d = await api.getDrives();
                     setDrives(d);
                 }
             };

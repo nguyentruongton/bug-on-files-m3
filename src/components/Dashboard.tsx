@@ -4,6 +4,7 @@ import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { IFile } from '../types/files';
 import { resolveInitialPins, type PinnedItem } from '../utils/dashboardUtils';
+import { api } from '../api';
 
 interface DashboardProps {
     onNavigate: (path: string) => void;
@@ -32,12 +33,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         else setGreeting('Good Evening');
 
         // Fetch storage & dynamic default pins
-        if (window.electron) {
-            window.electron.getStorageUsage().then(stats => {
+        if (api) {
+            api.getStorageUsage().then(stats => {
                 if (stats) setStorage(stats);
             });
-            if (window.electron.getPlaces) {
-                window.electron.getPlaces().then(places => {
+            if (api.getPlaces) {
+                api.getPlaces().then(places => {
                     setPinnedItems(prev => {
                         const resolved = resolveInitialPins(prev, places);
                         if (
@@ -54,8 +55,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }, [setPinnedItems]);
 
     const handleAddPin = async () => {
-        if (window.electron && window.electron.openDirectoryDialog) {
-            const dirPath = await window.electron.openDirectoryDialog();
+        if (api && api.openDirectoryDialog) {
+            const dirPath = await api.openDirectoryDialog();
             if (dirPath) {
                 const name = dirPath.split('/').pop() || dirPath;
                 setPinnedItems(prev =>

@@ -3,6 +3,7 @@ import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import type { IFile } from '../types/files';
+import { api } from '../api';
 
 interface PropertiesDialogProps {
     file: IFile | null;
@@ -20,8 +21,8 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
                 setCalculatedSize(null);
                 setIsCalculating(true);
                 // Fetch size
-                if (window.electron && window.electron.getDirectorySize) {
-                    window.electron.getDirectorySize(file.path)
+                if (api && api.getDirectorySize) {
+                    api.getDirectorySize(file.path)
                         .then(size => {
                             setCalculatedSize(size);
                             setIsCalculating(false);

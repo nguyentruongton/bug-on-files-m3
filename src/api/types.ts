@@ -63,8 +63,3 @@ export interface IApi {
 
 export type IElectronAPI = IApi;
 
-declare global {
-    interface Window {
-        electron: IApi;
-    }
-}

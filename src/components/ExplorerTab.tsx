@@ -8,6 +8,7 @@ import { IconButton } from './IconButton';
 import { Icon } from './Icon';
 import { FileSystemService } from '../services/FileSystemService';
 import type { IFile } from '../types/files';
+import { api } from '../api';
 
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
@@ -122,8 +123,8 @@ export function ExplorerTab({
         searchActiveRef.current = true;
         setSearchQuery(query);
         try {
-            if (window.electron && window.electron.search) {
-                const results = await window.electron.search(currentPath, query);
+            if (api && api.search) {
+                const results = await api.search(currentPath, query);
                 setFiles(results);
             }
         } catch (e) {
@@ -173,13 +174,13 @@ export function ExplorerTab({
 
     const handleFolderMissing = useCallback(async (missingPath: string) => {
         if (isRecoveringRef.current) return;
-        if (!window.electron?.exists || !window.electron?.getParentPath) return;
+        if (!api?.exists || !api?.getParentPath) return;
 
         isRecoveringRef.current = true;
         try {
             await recoverMissingFolder(missingPath, {
-                exists: (p) => window.electron.exists(p),
-                getParentPath: (p) => window.electron.getParentPath(p),
+                exists: (p) => api.exists(p),
+                getParentPath: (p) => api.getParentPath(p),
                 loadPath,
                 showToast,
             });
@@ -222,8 +223,8 @@ export function ExplorerTab({
             })) {
                 return;
             }
-            if (window.electron?.exists) {
-                const exists = await window.electron.exists(targetPath);
+            if (api?.exists) {
+                const exists = await api.exists(targetPath);
                 if (!shouldApplyReload({
                     seq,
                     expectedSeq: reloadSeqRef.current,
@@ -314,8 +315,8 @@ export function ExplorerTab({
                         reloadSilently();
                     }
                 } else if (type === 'error') {
-                    if (window.electron?.exists) {
-                        const exists = await window.electron.exists(currentPath);
+                    if (api?.exists) {
+                        const exists = await api.exists(currentPath);
                         if (!exists) {
                             handleFolderMissing(currentPath);
                         }
@@ -367,8 +368,8 @@ export function ExplorerTab({
     };
 
     const handleUp = useCallback(async () => {
-        if (window.electron && currentPath && currentPath !== 'app://dashboard') {
-            const parent = await window.electron.getParentPath(currentPath);
+        if (api && currentPath && currentPath !== 'app://dashboard') {
+            const parent = await api.getParentPath(currentPath);
             if (parent !== currentPath) {
                 loadPath(parent);
             }
@@ -810,8 +811,8 @@ export function ExplorerTab({
                                     if (sourcePath) {
                                         const fileName = sourcePath.split(/[/\\]/).pop();
                                         const destPath = `${currentPath}/${fileName}`.replace(/\\+/g, '/');
-                                        if (window.electron && window.electron.copyFile) {
-                                            await window.electron.copyFile(sourcePath, destPath);
+                                        if (api && api.copyFile) {
+                                            await api.copyFile(sourcePath, destPath);
                                             count++;
                                         }
                                     }

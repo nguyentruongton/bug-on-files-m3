@@ -27,6 +27,7 @@ import {
   normalizePath,
 } from './utils/navigationHistory';
 import { isArchiveFile, validateFileName } from './utils/fileUtils';
+import { api } from './api';
 
 interface TabState {
   id: string;
@@ -87,7 +88,7 @@ function AppContent() {
 
   const handleLoadCustomCss = useCallback(async (path: string) => {
     try {
-      const css = await window.electron.readFile(path);
+      const css = await api.readFile(path);
       if (css) {
         let style = document.getElementById('custom-user-css');
         if (!style) {
@@ -105,7 +106,7 @@ function AppContent() {
   }, []);
 
   const handleImportCss = async () => {
-    const path = await window.electron.openFileDialog();
+    const path = await api.openFileDialog();
     if (path) {
       handleLoadCustomCss(path);
     }
@@ -135,9 +136,9 @@ function AppContent() {
     ThemeService.init();
 
     const init = async () => {
-      if (window.electron) {
+      if (api) {
         try {
-          const resolvedHome = await window.electron.getHomePath();
+          const resolvedHome = await api.getHomePath();
           if (resolvedHome) {
             setHomePath(resolvedHome);
           }
@@ -145,7 +146,7 @@ function AppContent() {
           console.error('Failed to get home path', err);
         }
 
-        const startupPath = await window.electron.getStartupPath();
+        const startupPath = await api.getStartupPath();
         const initialPath = startupPath || 'app://dashboard';
         const initialTitle =
           initialPath === 'app://dashboard'
@@ -323,7 +324,7 @@ function AppContent() {
             const file = contextMenu.item!;
             setContextMenu(null);
             try {
-              const ok = await window.electron.extractFile(file.path);
+              const ok = await api.extractFile(file.path);
               if (!ok) {
                 throw new Error('Extract command returned false');
               }
@@ -438,7 +439,7 @@ function AppContent() {
             label: 'Home',
             active: isInHome,
             onClick: async () => {
-              const home = await window.electron.getHomePath();
+              const home = await api.getHomePath();
               if (home) setHomePath(home);
               const existingHomeTab = tabs.find((t) => normalizePath(t.path) === normalizePath(home));
               if (existingHomeTab) {
@@ -650,7 +651,7 @@ function AppContent() {
             onClose={() => setOpenWithFile(null)}
             onSelect={(exec) => {
               if (openWithFile) {
-                window.electron.openWith(exec, openWithFile.path);
+                api.openWith(exec, openWithFile.path);
               }
               setOpenWithFile(null);
             }}

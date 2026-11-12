@@ -1,8 +1,10 @@
+import { api } from '../api';
+
 export const ThemeService = {
     async loadTheme() {
         try {
-            if (window.electron && window.electron.getThemeCss) {
-                const css = await window.electron.getThemeCss();
+            if (api.getThemeCss) {
+                const css = await api.getThemeCss();
                 if (css) {
                     const styleId = 'matugen-theme';
                     let styleTag = document.getElementById(styleId);
@@ -25,8 +27,8 @@ export const ThemeService = {
     init() {
         const updateIcon = () => {
             const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            if (window.electron && window.electron.setIcon) {
-                window.electron.setIcon(isDark ? 'dark' : 'light');
+            if (api.setIcon) {
+                api.setIcon(isDark ? 'dark' : 'light');
             }
         };
 

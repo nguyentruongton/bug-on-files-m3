@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { FileSystemService } from '../services/FileSystemService';
 import { runPaste, type ConflictAction, type PasteDeps } from '../utils/pasteRunner';
 import { ConflictDialog } from '../components/ConflictDialog';
+import { api } from '../api';
 
 interface ConflictPromptState {
   fileName: string;
@@ -64,7 +65,7 @@ export function usePaste(onFinished: () => void): {
       isPastingRef.current = true;
       try {
         const deps: PasteDeps = {
-          exists: (path: string) => window.electron.exists(path),
+          exists: (path: string) => api.exists(path),
           copy: (src: string, dest: string) => FileSystemService.copy(src, dest),
           move: (src: string, dest: string) => FileSystemService.move(src, dest),
           trash: (path: string) => FileSystemService.trash(path),

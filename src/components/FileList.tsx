@@ -1,6 +1,7 @@
 import React from 'react';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
+import { api } from '../api';
 import './FileList.css';
 import {
     getSemanticGroup,
@@ -164,8 +165,8 @@ export const FileList: React.FC<FileListProps> = ({
                             draggable={true}
                             onDragStart={(e) => {
                                 e.preventDefault();
-                                if (window.electron && window.electron.startDrag) {
-                                    window.electron.startDrag(file.path, file.path);
+                                if (api && api.startDrag) {
+                                    api.startDrag(file.path, file.path);
                                 }
                             }}
                             tabIndex={0}

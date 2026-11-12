@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
+import { api } from '../api';
 
 interface TerminalPaneProps {
     cwd?: string;
@@ -43,7 +44,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
         const handleResize = () => {
             fitAddon.fit();
             if (pidRef.current) {
-                window.electron.ptyResize(pidRef.current, term.cols, term.rows);
+                api.ptyResize(pidRef.current, term.cols, term.rows);
             }
         };
 
@@ -51,44 +52,44 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
 
         const dataDisposable = term.onData((data: string) => {
             if (pidRef.current) {
-                window.electron.ptyWrite(pidRef.current, data);
+                api.ptyWrite(pidRef.current, data);
             }
         });
 
         const resizeDisposable = term.onResize((size: { cols: number; rows: number }) => {
             if (pidRef.current) {
-                window.electron.ptyResize(pidRef.current, size.cols, size.rows);
+                api.ptyResize(pidRef.current, size.cols, size.rows);
             }
         });
 
         const spawnTarget = latestCwdRef.current;
         const initialCwd = spawnTarget && !spawnTarget.startsWith('app://') ? spawnTarget : '';
 
-        window.electron.ptySpawn(initialCwd).then((pid) => {
+        api.ptySpawn(initialCwd).then((pid) => {
             if (!pid) return;
             if (disposed) {
-                window.electron.ptyKill(pid);
+                api.ptyKill(pid);
                 return;
             }
 
             pidRef.current = pid;
 
-            cleanupData = window.electron.ptyOnData(pid, (data: string) => {
+            cleanupData = api.ptyOnData(pid, (data: string) => {
                 term.write(data);
             });
 
-            cleanupExit = window.electron.ptyOnExit(pid, () => {
+            cleanupExit = api.ptyOnExit(pid, () => {
                 term.write('\r\nProcess exited.\r\n');
                 cleanupData?.();
                 pidRef.current = null;
             });
 
-            window.electron.ptyResize(pid, term.cols, term.rows);
+            api.ptyResize(pid, term.cols, term.rows);
 
             const targetCwd = latestCwdRef.current;
             if (targetCwd && !targetCwd.startsWith('app://') && targetCwd !== initialCwd) {
                 const safePath = targetCwd.replace(/'/g, "'\\''");
-                window.electron.ptyWrite(pid, `cd '${safePath}'\r`);
+                api.ptyWrite(pid, `cd '${safePath}'\r`);
             }
         });
 
@@ -101,7 +102,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
             cleanupExit?.();
             term.dispose();
             if (pidRef.current) {
-                window.electron.ptyKill(pidRef.current);
+                api.ptyKill(pidRef.current);
                 pidRef.current = null;
             }
         };
@@ -113,7 +114,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
             // Escape path for shell safety - wrap in single quotes, replacing single quotes with '\''
             const safePath = cwd.replace(/'/g, "'\\''");
             const cmd = `cd '${safePath}'\r`;
-            window.electron.ptyWrite(pidRef.current, cmd);
+            api.ptyWrite(pidRef.current, cmd);
         }
     }, [cwd]);
 

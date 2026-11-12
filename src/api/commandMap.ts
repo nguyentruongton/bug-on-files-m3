@@ -1,0 +1,41 @@
+import type { IApi } from './types';
+
+export type CommandKey = Exclude<
+    keyof IApi,
+    'startDrag' | 'onWatchEvent' | 'ptyOnData' | 'ptyOnExit'
+>;
+
+export const COMMAND_MAP: Record<CommandKey, string> = {
+    getThemeCss: 'get_theme_css',
+    listDir: 'list_dir',
+    getParentPath: 'get_parent',
+    getHomePath: 'get_home',
+    getPlaces: 'get_places',
+    copyFile: 'copy_file',
+    moveFile: 'move_file',
+    trashFile: 'trash_file',
+    renameFile: 'rename_file',
+    createDirectory: 'create_directory',
+    openPath: 'open_path',
+    extractFile: 'extract_file',
+    getApps: 'get_apps',
+    openWith: 'open_with',
+    openFileDialog: 'open_file_dialog',
+    openDirectoryDialog: 'open_directory_dialog',
+    readFile: 'read_file',
+    readTextPreview: 'read_text_preview',
+    getStartupPath: 'get_startup_path',
+    search: 'search',
+    getDirectorySize: 'get_directory_size',
+    setIcon: 'set_icon',
+    exists: 'exists',
+    getStorageUsage: 'get_storage_usage',
+    getDrives: 'get_drives',
+    getRecommendedApps: 'get_recommended_apps',
+    watchStart: 'watch_start',
+    watchStop: 'watch_stop',
+    ptySpawn: 'pty_spawn',
+    ptyWrite: 'pty_write',
+    ptyResize: 'pty_resize',
+    ptyKill: 'pty_kill',
+};

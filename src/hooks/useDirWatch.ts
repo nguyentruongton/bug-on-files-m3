@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { api } from '../api';
 
 export function useDirWatch(
   dir: string | null,
@@ -12,7 +13,7 @@ export function useDirWatch(
   }, [onEvent]);
 
   useEffect(() => {
-    if (!enabled || !dir || dir.startsWith('app://') || !window.electron?.watchStart) {
+    if (!enabled || !dir || dir.startsWith('app://') || !api?.watchStart) {
       return;
     }
 
@@ -20,7 +21,7 @@ export function useDirWatch(
     let watcherId: number | null = null;
     const pendingEvents: Array<{ id: number; type: 'change' | 'error' }> = [];
 
-    const unsubscribe = window.electron.onWatchEvent?.((e) => {
+    const unsubscribe = api.onWatchEvent?.((e) => {
       if (!active) return;
       if (watcherId !== null) {
         if (e.id === watcherId) {
@@ -31,12 +32,12 @@ export function useDirWatch(
       }
     });
 
-    window.electron
+    api
       .watchStart(dir)
       .then((id) => {
         if (!active) {
           // Late resolution after cleanup/unmount: stop the late id immediately
-          window.electron?.watchStop?.(id).catch(() => {});
+          api.watchStop?.(id).catch(() => {});
           return;
         }
         watcherId = id;
@@ -55,7 +56,7 @@ export function useDirWatch(
       active = false;
       unsubscribe?.();
       if (watcherId !== null) {
-        window.electron?.watchStop?.(watcherId).catch(() => {});
+        api.watchStop?.(watcherId).catch(() => {});
       }
     };
   }, [dir, enabled]);

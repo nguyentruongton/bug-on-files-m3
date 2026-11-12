@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { api } from '../api';
 
 interface OpenWithDialogProps {
     open: boolean;
@@ -23,9 +24,9 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
 
     useEffect(() => {
         if (open) {
-            window.electron.getApps().then(setAllApps);
+            api.getApps().then(setAllApps);
             if (path) {
-                window.electron.getRecommendedApps(path).then(setRecommendedApps);
+                api.getRecommendedApps(path).then(setRecommendedApps);
             } else {
                 setRecommendedApps([]);
             }

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { useDirWatch } from '../useDirWatch';
 import type { WatchEvent } from '../../api/types';
+import { api } from '../../api';
 
 // Setup minimal DOM environment for React 19 testing in Bun
 class Node {}
@@ -48,7 +49,6 @@ interface MockWindow {
   HTMLIFrameElement: typeof HTMLIFrameElement;
   addEventListener: () => void;
   removeEventListener: () => void;
-  electron?: unknown;
 }
 
 function setupDOM() {
@@ -139,7 +139,7 @@ describe('useDirWatch', () => {
       },
     };
 
-    (window as unknown as { electron: typeof electronMock }).electron = electronMock;
+    Object.assign(api, electronMock);
   });
 
   afterEach(() => {
@@ -277,8 +277,7 @@ describe('useDirWatch', () => {
 
   test('tolerates watchStart resolving after unmount by immediately calling watchStop', async () => {
     let resolveLateStart!: (id: number) => void;
-    const electronRef = window.electron as { watchStart: (dir: string) => Promise<number> };
-    electronRef.watchStart = () =>
+    api.watchStart = () =>
       new Promise<number>((resolve) => {
         resolveLateStart = resolve;
       });

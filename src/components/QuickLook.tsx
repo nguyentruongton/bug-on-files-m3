@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { IFile } from '../types/files';
 import type { TextPreview } from '../api/types';
+import { api } from '../api';
 import {
     getPreviewKind,
     toMediaUrl,
@@ -59,8 +60,8 @@ export const QuickLook: React.FC<QuickLookProps> = ({
 
         let cancelled = false;
 
-        if (window.electron && typeof window.electron.readTextPreview === 'function') {
-            window.electron.readTextPreview(file.path)
+        if (api && typeof api.readTextPreview === 'function') {
+            api.readTextPreview(file.path)
                 .then((data) => {
                     if (!cancelled) {
                         setTextPreview({ path: file.path, data });
@@ -112,8 +113,8 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 }
             });
 
-        if (window.electron && typeof window.electron.getDirectorySize === 'function') {
-            window.electron.getDirectorySize(file.path)
+        if (api && typeof api.getDirectorySize === 'function') {
+            api.getDirectorySize(file.path)
                 .then((size) => {
                     if (!cancelled) {
                         setFolderInfo((prev) =>

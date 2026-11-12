@@ -1,38 +1,39 @@
 import type { IFile } from '../types/files';
+import { api } from '../api';
 
 export const FileSystemService = {
     async getPlaces(): Promise<Array<{ name: string; path: string; icon: string }>> {
-        return window.electron.getPlaces();
+        return api.getPlaces();
     },
 
     async copy(source: string, dest: string): Promise<boolean> {
-        return window.electron.copyFile(source, dest);
+        return api.copyFile(source, dest);
     },
 
     async move(source: string, dest: string): Promise<boolean> {
-        return window.electron.moveFile(source, dest);
+        return api.moveFile(source, dest);
     },
 
     async trash(path: string): Promise<boolean> {
-        return window.electron.trashFile(path);
+        return api.trashFile(path);
     },
 
     async rename(oldPath: string, newPath: string): Promise<boolean> {
-        return window.electron.renameFile(oldPath, newPath);
+        return api.renameFile(oldPath, newPath);
     },
 
     async mkdir(path: string): Promise<boolean> {
-        return window.electron.createDirectory(path);
+        return api.createDirectory(path);
     },
 
     async open(path: string): Promise<string> {
-        return window.electron.openPath(path);
+        return api.openPath(path);
     },
 
     async listDir(path: string): Promise<IFile[]> {
-        if (window.electron && window.electron.listDir) {
+        if (api && api.listDir) {
             try {
-                return await window.electron.listDir(path);
+                return await api.listDir(path);
             } catch (error) {
                 console.error('FS Error:', error);
                 return [];
