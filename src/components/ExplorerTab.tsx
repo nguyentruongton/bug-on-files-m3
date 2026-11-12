@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+    FAST_SPATIAL_SPRING,
+    HorizontalFloatingToolbar,
+    ToolbarDivider,
+    ToolbarIconButton,
+} from '@bug-on/m3-expressive';
 import { useToast } from '../contexts/ToastContext';
 import { useClipboard } from '../contexts/ClipboardContext';
 import { StatusBar } from './StatusBar';
@@ -9,6 +16,7 @@ import { Icon } from './Icon';
 import { FileSystemService } from '../services/FileSystemService';
 import type { IFile } from '../types/files';
 import { api } from '../api';
+import { isModalDialogOpen } from '../utils/themeUtils';
 
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
@@ -43,6 +51,9 @@ interface ExplorerTabProps {
     onContextMenu: (e: React.MouseEvent, file: IFile | null, selectedFiles: IFile[]) => void;
     onCreateFolderRequest?: () => void;
     onPasteRequest?: (destDir: string) => void;
+    onRenameRequest?: (file: IFile) => void;
+    onPropertiesRequest?: (file: IFile) => void;
+    onOpenWithRequest?: (file: IFile) => void;
     showHiddenFiles: boolean;
     onToggleHiddenFiles?: () => void;
     iconSize: number;
@@ -60,6 +71,9 @@ export function ExplorerTab({
     onContextMenu,
     onCreateFolderRequest,
     onPasteRequest,
+    onRenameRequest,
+    onPropertiesRequest,
+    onOpenWithRequest,
     showHiddenFiles,
     onToggleHiddenFiles,
     iconSize,
@@ -466,12 +480,17 @@ export function ExplorerTab({
         return sortedFiles.find((f) => f.path === quickLookPath) ?? null;
     }, [quickLookPath, sortedFiles]);
 
-    const selectedSize = useMemo(() => {
-        if (selectedFiles.size === 0) return 0;
-        return sortedFiles
-            .filter((f) => selectedFiles.has(f.path) && !f.isDirectory)
-            .reduce((acc, f) => acc + (f.size || 0), 0);
+    const selectedItems = useMemo(() => {
+        if (selectedFiles.size === 0) return [];
+        return sortedFiles.filter((f) => selectedFiles.has(f.path));
     }, [sortedFiles, selectedFiles]);
+
+    const selectedSize = useMemo(() => {
+        if (selectedItems.length === 0) return 0;
+        return selectedItems
+            .filter((f) => !f.isDirectory)
+            .reduce((acc, f) => acc + (f.size || 0), 0);
+    }, [selectedItems]);
 
     const handleSelect = (file: IFile, toggle: boolean, range: boolean) => {
         const newSelection = new Set(toggle ? selectedFiles : []);
@@ -552,6 +571,11 @@ export function ExplorerTab({
                 return;
             }
 
+            // Guard destructive / selection / QuickLook shortcuts when a modal dialog is open
+            if (isModalDialogOpen()) {
+                return;
+            }
+
             // Select All (Ctrl+A)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
                 e.preventDefault();
@@ -612,13 +636,6 @@ export function ExplorerTab({
 
             // Quick Look (Space)
             if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-                if (
-                    target?.closest('dialog') ||
-                    document.querySelector('dialog[open]')
-                ) {
-                    return;
-                }
-
                 if (currentPath !== 'app://dashboard' && selectedFiles.size > 0) {
                     e.preventDefault();
                     const targetFile = resolveQuickLookTarget(selectedFiles, lastSelectedPath, sortedFiles);
@@ -652,15 +669,18 @@ export function ExplorerTab({
     ]);
 
     return (
-        <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
+        <div
+            className={`flex-col flex-1 h-full overflow-hidden ${isActive ? 'flex' : 'hidden'}`}
+        >
             {/* Top Bar (Breadcrumb/Path + Quick Actions) */}
             {currentPath !== 'app://dashboard' && (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '10px 20px 0' }}>
-                    <div style={{ display: 'flex', gap: '2px' }}>
+                <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-m3-surface-container-low border-b border-m3-outline-variant/30">
+                    <div className="flex items-center gap-0.5 shrink-0">
                         <IconButton
                             onClick={handleBack}
                             disabled={historyState.index <= 0}
                             variant="standard"
+                            aria-label="Back"
                             title="Back (Alt+Left)"
                         >
                             <Icon name="arrow_back" />
@@ -669,6 +689,7 @@ export function ExplorerTab({
                             onClick={handleForward}
                             disabled={historyState.index >= historyState.entries.length - 1}
                             variant="standard"
+                            aria-label="Forward"
                             title="Forward (Alt+Right)"
                         >
                             <Icon name="arrow_forward" />
@@ -677,24 +698,28 @@ export function ExplorerTab({
                             onClick={handleUp}
                             disabled={!currentPath || currentPath === '/'}
                             variant="standard"
+                            aria-label="Up"
                             title="Up (Alt+Up)"
                         >
                             <Icon name="arrow_upward" />
                         </IconButton>
                     </div>
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
+
+                    <div className="flex-1 min-w-0">
                         <Omnibar
                             currentPath={currentPath}
                             onNavigate={loadPath}
                             onSearch={handleSearch}
                         />
                     </div>
+
                     {/* Quick Action & Sort Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div className="flex items-center gap-1 shrink-0">
                         {onCreateFolderRequest && (
                             <IconButton
                                 variant="standard"
                                 onClick={onCreateFolderRequest}
+                                aria-label="New Folder"
                                 title="New Folder (Ctrl+Shift+N)"
                             >
                                 <Icon name="create_new_folder" />
@@ -704,6 +729,7 @@ export function ExplorerTab({
                             <IconButton
                                 variant={showHiddenFiles ? 'tonal' : 'standard'}
                                 onClick={onToggleHiddenFiles}
+                                aria-label={showHiddenFiles ? 'Hide Hidden Files' : 'Show Hidden Files'}
                                 title={showHiddenFiles ? 'Hide Hidden Files (Ctrl+H)' : 'Show Hidden Files (Ctrl+H)'}
                             >
                                 <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} />
@@ -712,16 +738,18 @@ export function ExplorerTab({
                         <IconButton
                             variant={groupingEnabled ? 'tonal' : 'standard'}
                             onClick={() => setGroupingEnabled(!groupingEnabled)}
+                            aria-label={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
                             title={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
                         >
                             <Icon name="view_agenda" />
                         </IconButton>
 
-                        <div style={{ width: '1px', height: '24px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+                        <div className="w-px h-6 bg-m3-outline-variant/50 mx-1" />
 
                         <IconButton
                             variant={sortBy === 'name' ? 'tonal' : 'standard'}
                             onClick={() => handleSortChange('name')}
+                            aria-label="Sort by Name"
                             title={`Sort by Name (${sortBy === 'name' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
                         >
                             <Icon name="sort_by_alpha" />
@@ -729,6 +757,7 @@ export function ExplorerTab({
                         <IconButton
                             variant={sortBy === 'date' ? 'tonal' : 'standard'}
                             onClick={() => handleSortChange('date')}
+                            aria-label="Sort by Date"
                             title={`Sort by Date (${sortBy === 'date' ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'click to sort'})`}
                         >
                             <Icon name="calendar_today" />
@@ -736,6 +765,7 @@ export function ExplorerTab({
                         <IconButton
                             variant={sortBy === 'size' ? 'tonal' : 'standard'}
                             onClick={() => handleSortChange('size')}
+                            aria-label="Sort by Size"
                             title={`Sort by Size (${sortBy === 'size' ? (sortOrder === 'asc' ? 'Smallest' : 'Largest') : 'click to sort'})`}
                         >
                             <Icon name="straighten" />
@@ -743,6 +773,7 @@ export function ExplorerTab({
                         <IconButton
                             variant="standard"
                             onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                            aria-label="Toggle Sort Order"
                             title={sortOrder === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
                         >
                             <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} />
@@ -750,10 +781,11 @@ export function ExplorerTab({
 
                         {onViewModeChange && (
                             <>
-                                <div style={{ width: '1px', height: '24px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+                                <div className="w-px h-6 bg-m3-outline-variant/50 mx-1" />
                                 <IconButton
                                     variant="tonal"
                                     onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
+                                    aria-label={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
                                     title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
                                 >
                                     <Icon name={viewMode === 'grid' ? 'view_list' : 'grid_view'} />
@@ -765,24 +797,31 @@ export function ExplorerTab({
             )}
 
             {currentPath === 'app://dashboard' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
+                <div className="flex flex-col flex-1 h-full overflow-hidden">
                     <Dashboard onNavigate={loadPath} />
                 </div>
             ) : loading ? (
                 <FileListSkeleton viewMode={viewMode} iconSize={iconSize} />
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <div className="relative flex flex-col flex-1 overflow-hidden">
                     {searchActive && (
-                        <div style={{ padding: '8px 20px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Icon name="search" />
-                            <span>Found {sortedFiles.length} results for "{searchQuery}"</span>
-                            <IconButton onClick={() => loadPath(currentPath, false)} variant="standard" title="Clear Search">
-                                <Icon name="close" />
+                        <div className="px-5 py-2 bg-m3-surface-container text-m3-on-surface-variant text-sm flex items-center gap-2 shrink-0 border-b border-m3-outline-variant/30">
+                            <Icon name="search" size={18} />
+                            <span className="flex-1 truncate">
+                                Found {sortedFiles.length} results for &ldquo;{searchQuery}&rdquo;
+                            </span>
+                            <IconButton
+                                onClick={() => loadPath(currentPath, false)}
+                                variant="standard"
+                                aria-label="Clear Search"
+                                title="Clear Search"
+                            >
+                                <Icon name="close" size={18} />
                             </IconButton>
                         </div>
                     )}
                     <div
-                        style={{ flex: 1, overflow: 'auto' }}
+                        className="flex-1 overflow-auto"
                         onDragStartCapture={markDragStarted}
                         onDragStart={markDragStarted}
                         onDragEnd={() => clearDrag(true)}
@@ -849,6 +888,136 @@ export function ExplorerTab({
                             isSearch={searchActive}
                         />
                     </div>
+
+                    <AnimatePresence>
+                        {selectedItems.length > 0 && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 20, scale: 0.96 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                                transition={FAST_SPATIAL_SPRING}
+                                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20"
+                            >
+                                <HorizontalFloatingToolbar
+                                    expanded
+                                    variant="vibrant"
+                                    shape="full"
+                                    aria-label="Selection actions"
+                                    startContent={
+                                        <div className="flex items-center gap-1 pl-2 pr-1">
+                                            <span className="text-xs font-semibold whitespace-nowrap">
+                                                {selectedItems.length} selected
+                                            </span>
+                                            <ToolbarIconButton
+                                                aria-label="Clear selection"
+                                                title="Clear selection"
+                                                width="narrow"
+                                                onClick={() => setSelectedFiles(new Set())}
+                                            >
+                                                <Icon name="close" size={18} />
+                                            </ToolbarIconButton>
+                                            <ToolbarDivider />
+                                        </div>
+                                    }
+                                >
+                                    {selectedItems.length === 1 && (
+                                        <>
+                                            <ToolbarIconButton
+                                                emphasis="tonal"
+                                                aria-label="Open"
+                                                title="Open"
+                                                onClick={() => handleNavigate(selectedItems[0])}
+                                            >
+                                                <Icon name="open_in_new" size={20} />
+                                            </ToolbarIconButton>
+                                            <ToolbarIconButton
+                                                aria-label="Quick Look"
+                                                title="Quick Look (Space)"
+                                                onClick={() => {
+                                                    setQuickLookPath(selectedItems[0].path);
+                                                    setPrevSortedForQuickLook(sortedFiles);
+                                                }}
+                                            >
+                                                <Icon name="visibility" size={20} />
+                                            </ToolbarIconButton>
+                                            {!selectedItems[0].isDirectory && onOpenWithRequest && (
+                                                <ToolbarIconButton
+                                                    aria-label="Open With"
+                                                    title="Open With..."
+                                                    onClick={() => onOpenWithRequest(selectedItems[0])}
+                                                >
+                                                    <Icon name="apps" size={20} />
+                                                </ToolbarIconButton>
+                                            )}
+                                            <ToolbarDivider />
+                                        </>
+                                    )}
+
+                                    <ToolbarIconButton
+                                        aria-label="Copy"
+                                        title="Copy (Ctrl+C)"
+                                        onClick={() => {
+                                            copy(selectedItems);
+                                            showToast(`Copied ${selectedItems.length} item(s)`, 'info');
+                                        }}
+                                    >
+                                        <Icon name="content_copy" size={20} />
+                                    </ToolbarIconButton>
+                                    <ToolbarIconButton
+                                        aria-label="Cut"
+                                        title="Cut (Ctrl+X)"
+                                        onClick={() => {
+                                            cut(selectedItems);
+                                            showToast(`Cut ${selectedItems.length} item(s)`, 'info');
+                                        }}
+                                    >
+                                        <Icon name="content_cut" size={20} />
+                                    </ToolbarIconButton>
+
+                                    {selectedItems.length === 1 && onRenameRequest && (
+                                        <ToolbarIconButton
+                                            aria-label="Rename"
+                                            title="Rename"
+                                            onClick={() => onRenameRequest(selectedItems[0])}
+                                        >
+                                            <Icon name="edit" size={20} />
+                                        </ToolbarIconButton>
+                                    )}
+                                    {selectedItems.length === 1 && onPropertiesRequest && (
+                                        <ToolbarIconButton
+                                            aria-label="Properties"
+                                            title="Properties"
+                                            onClick={() => onPropertiesRequest(selectedItems[0])}
+                                        >
+                                            <Icon name="info" size={20} />
+                                        </ToolbarIconButton>
+                                    )}
+
+                                    <ToolbarDivider />
+
+                                    <ToolbarIconButton
+                                        aria-label="Move to Trash"
+                                        title="Move to Trash (Del)"
+                                        onClick={async () => {
+                                            try {
+                                                for (const item of selectedItems) {
+                                                    await FileSystemService.trash(item.path);
+                                                }
+                                                showToast(`Moved ${selectedItems.length} item(s) to Trash`, 'success');
+                                                setSelectedFiles(new Set());
+                                                loadPath(currentPath, false);
+                                            } catch (err) {
+                                                console.error('Delete failed', err);
+                                                showToast('Failed to delete selected item(s)', 'error');
+                                            }
+                                        }}
+                                    >
+                                        <Icon name="delete" size={20} />
+                                    </ToolbarIconButton>
+                                </HorizontalFloatingToolbar>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             )}
 

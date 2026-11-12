@@ -19,36 +19,22 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     const shownCount = visibleItems ?? totalItems;
 
     return (
-        <div
-            style={{
-                height: '28px',
-                borderTop: '1px solid var(--md-sys-color-outline-variant)',
-                background: 'var(--md-sys-color-surface-container-low)',
-                color: 'var(--md-sys-color-on-surface-variant)',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 20px',
-                gap: '16px',
-                flexShrink: 0,
-                userSelect: 'none',
-            }}
-        >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span>
+        <div className="h-8 px-5 bg-m3-surface-container border-t border-m3-outline-variant/40 text-xs text-m3-on-surface-variant flex items-center justify-between select-none shrink-0">
+            <div className="flex items-center gap-2.5">
+                <span className="font-medium">
                     {shownCount} {shownCount === 1 ? 'item' : 'items'}
                 </span>
                 {hiddenCount > 0 && (
-                    <span style={{ opacity: 0.75 }}>
-                        ({hiddenCount} hidden)
+                    <span className="px-2 py-0.5 rounded-full bg-m3-surface-container-highest text-[11px] text-m3-on-surface-variant">
+                        {hiddenCount} hidden
                     </span>
                 )}
             </div>
+
             {selectedCount > 0 && (
-                <div style={{ color: 'var(--md-sys-color-primary)', fontWeight: 500 }}>
+                <div className="px-2.5 py-0.5 rounded-full bg-m3-primary-container text-m3-on-primary-container font-medium text-[11px]">
                     {selectedCount} selected
-                    {selectedSize > 0 ? ` (${formatFileSize(selectedSize)})` : ''}
+                    {selectedSize > 0 ? ` · ${formatFileSize(selectedSize)}` : ''}
                 </div>
             )}
         </div>

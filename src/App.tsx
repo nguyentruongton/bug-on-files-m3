@@ -518,6 +518,16 @@ function AppContent() {
                 onContextMenu={handleContextMenu}
                 onCreateFolderRequest={handleOpenNewFolder}
                 onPasteRequest={paste}
+                onRenameRequest={(file) => {
+                  setRenameFile(file);
+                  setNewName(file.name);
+                  setRenameDialogOpen(true);
+                }}
+                onPropertiesRequest={(file) => {
+                  setPropertiesFile(file);
+                  setPropertiesDialogOpen(true);
+                }}
+                onOpenWithRequest={(file) => setOpenWithFile(file)}
                 showHiddenFiles={showHiddenFiles}
                 onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
                 iconSize={iconSize}
