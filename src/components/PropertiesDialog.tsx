@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { ShapeMedia } from '@bug-on/m3-expressive';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -20,10 +21,9 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
             if (file.isDirectory) {
                 setCalculatedSize(null);
                 setIsCalculating(true);
-                // Fetch size
                 if (api && api.getDirectorySize) {
                     api.getDirectorySize(file.path)
-                        .then(size => {
+                        .then((size) => {
                             setCalculatedSize(size);
                             setIsCalculating(false);
                         })
@@ -32,7 +32,7 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
                             setIsCalculating(false);
                         });
                 } else {
-                    setIsCalculating(false); // Fallback
+                    setIsCalculating(false);
                 }
             } else {
                 setCalculatedSize(file.size);
@@ -46,61 +46,61 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
     return (
         <Dialog
             title="Properties"
+            icon={<Icon name="info" size={24} />}
             open={open}
             onClose={onClose}
-            actions={
-                <Button onClick={onClose}>Close</Button>
-            }
+            maxWidth="max-w-md"
+            actions={<Button onClick={onClose}>Close</Button>}
         >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '350px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{
-                        width: '64px', height: '64px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        // background: 'var(--md-sys-color-secondary-container)',
-                        // color: 'var(--md-sys-color-on-secondary-container)',
-                        borderRadius: '12px'
-                    }}>
+            <div className="flex flex-col gap-5 min-w-[320px]">
+                <div className="flex items-center gap-4">
+                    <ShapeMedia
+                        shape="cookie4Sided"
+                        morphTo="flower"
+                        morphOn="hover"
+                        width={64}
+                        height={64}
+                        className="bg-m3-primary-container text-m3-on-primary-container flex items-center justify-center shrink-0"
+                    >
                         <Icon
                             name={file.isDirectory ? 'folder' : 'insert_drive_file'}
                             filled={file.isDirectory}
-                            style={{ fontSize: '32px' }}
+                            size={32}
                         />
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '18px', fontWeight: 500, wordBreak: 'break-all', userSelect: 'text' }}>{file.name}</div>
-                        <div style={{ fontSize: '14px', color: 'var(--md-sys-color-on-surface-variant)' }}>
+                    </ShapeMedia>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-lg font-medium text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.name}</div>
+                        <div className="text-xs font-medium text-m3-on-surface-variant">
                             {file.isDirectory ? 'Folder' : 'File'}
                         </div>
                     </div>
                 </div>
 
-                <div className="properties-grid" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '12px', fontSize: '14px' }}>
+                <div className="grid grid-cols-[96px_1fr] gap-y-3 gap-x-3 text-sm rounded-m3-lg bg-m3-surface-container-high/50 p-4">
+                    <div className="text-m3-on-surface-variant font-medium">Location</div>
+                    <div className="text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.path}</div>
 
-                    <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Location:</div>
-                    <div style={{ wordBreak: 'break-all', userSelect: 'text' }}>{file.path}</div>
-
-                    <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Size:</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="text-m3-on-surface-variant font-medium">Size</div>
+                    <div className="flex items-center gap-2 text-m3-on-surface">
                         {isCalculating ? (
-                            <span style={{ fontStyle: 'italic', color: 'var(--md-sys-color-primary)' }}>Calculating...</span>
+                            <span className="italic text-m3-primary">Calculating...</span>
                         ) : (
                             <span>
                                 {calculatedSize !== null ? formatSize(calculatedSize) : '-'}
-                                <span style={{ color: 'var(--md-sys-color-on-surface-variant)', marginLeft: '4px' }}>
+                                <span className="text-m3-on-surface-variant ml-1.5 text-xs">
                                     ({calculatedSize?.toLocaleString()} bytes)
                                 </span>
                             </span>
                         )}
                     </div>
 
-                    <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Modified:</div>
-                    <div>{new Date(file.mtime).toLocaleString()}</div>
+                    <div className="text-m3-on-surface-variant font-medium">Modified</div>
+                    <div className="text-m3-on-surface">{new Date(file.mtime).toLocaleString()}</div>
 
-                    {/* Placeholder for Perms or Type details */}
-                    <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Type:</div>
-                    <div>{file.isDirectory ? 'Directory' : file.name.split('.').pop()?.toUpperCase() || 'File'}</div>
-
+                    <div className="text-m3-on-surface-variant font-medium">Type</div>
+                    <div className="text-m3-on-surface">
+                        {file.isDirectory ? 'Directory' : file.name.split('.').pop()?.toUpperCase() || 'File'}
+                    </div>
                 </div>
             </div>
         </Dialog>

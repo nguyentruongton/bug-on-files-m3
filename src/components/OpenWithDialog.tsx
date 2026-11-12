@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ScrollArea, TextField } from '@bug-on/m3-expressive';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -16,7 +17,12 @@ interface AppEntry {
     exec: string;
 }
 
-export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = ({ open, onClose, onSelect, path }) => {
+export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = ({
+    open,
+    onClose,
+    onSelect,
+    path,
+}) => {
     const [allApps, setAllApps] = useState<AppEntry[]>([]);
     const [recommendedApps, setRecommendedApps] = useState<AppEntry[]>([]);
     const [search, setSearch] = useState('');
@@ -34,7 +40,9 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
     }, [open, path]);
 
     const filteredAllApps = useMemo(() => {
-        return allApps.filter(app => app.name.toLowerCase().includes(search.toLowerCase()));
+        return allApps.filter((app) =>
+            app.name.toLowerCase().includes(search.toLowerCase()),
+        );
     }, [allApps, search]);
 
     const handleConfirm = () => {
@@ -43,69 +51,75 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
         }
     };
 
-    const renderAppItem = (app: AppEntry, idx: number) => (
-        <div
-            key={`${app.name}-${idx}`}
-            onClick={() => setSelectedApp(app)}
-            style={{
-                display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                background: selectedApp === app ? 'var(--md-sys-color-secondary-container)' : 'transparent',
-                color: selectedApp === app ? 'var(--md-sys-color-on-secondary-container)' : 'var(--md-sys-color-on-surface)'
-            }}
-        >
-            <div style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(128,128,128,0.2)', borderRadius: '4px' }}>
-                <Icon name="apps" style={{ fontSize: '20px' }} />
-            </div>
-            <div style={{ fontWeight: 500 }}>{app.name}</div>
-        </div>
-    );
+    const renderAppItem = (app: AppEntry, idx: number) => {
+        const isSelected = selectedApp === app;
+        return (
+            <button
+                key={`${app.name}-${idx}`}
+                type="button"
+                onClick={() => setSelectedApp(app)}
+                onDoubleClick={() => onSelect(app.exec)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-md text-left transition-colors cursor-pointer ${
+                    isSelected
+                        ? 'bg-m3-secondary-container text-m3-on-secondary-container'
+                        : 'hover:bg-m3-surface-container-highest text-m3-on-surface'
+                }`}
+            >
+                <div className="w-8 h-8 rounded-m3-sm bg-m3-surface-container-highest flex items-center justify-center shrink-0">
+                    <Icon name="apps" size={20} />
+                </div>
+                <span className="font-medium text-sm truncate">{app.name}</span>
+            </button>
+        );
+    };
 
     return (
         <Dialog
             title="Open With..."
+            icon={<Icon name="open_in_new" size={24} />}
             open={open}
             onClose={onClose}
+            maxWidth="max-w-md"
             actions={
                 <>
-                    <Button onClick={onClose} variant="text">Cancel</Button>
-                    <Button onClick={handleConfirm} variant="filled" disabled={!selectedApp}>Open</Button>
+                    <Button onClick={onClose} variant="text">
+                        Cancel
+                    </Button>
+                    <Button onClick={handleConfirm} variant="filled" disabled={!selectedApp}>
+                        Open
+                    </Button>
                 </>
             }
         >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '500px', width: '400px' }}>
-                <input
-                    type="text"
-                    placeholder="Search applications..."
+            <div className="flex flex-col gap-3 h-[420px] w-full">
+                <TextField
+                    variant="outlined"
+                    label="Search applications"
+                    placeholder="Type app name..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="md3-text-field"
-                    style={{
-                        padding: '12px',
-                        borderRadius: '4px',
-                        border: '1px solid var(--md-sys-color-outline)',
-                        background: 'var(--md-sys-color-surface)',
-                        color: 'var(--md-sys-color-on-surface)'
-                    }}
-                    autoFocus
+                    onChange={(val) => setSearch(val)}
+                    fullWidth
+                    leadingIcon={<Icon name="search" size={18} />}
+                    trailingIconMode={search ? 'clear' : 'none'}
                 />
 
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {recommendedApps.length > 0 && !search && (
-                        <>
-                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', marginTop: '8px', paddingLeft: '12px' }}>
-                                Recommended
-                            </div>
-                            {recommendedApps.map((app, idx) => renderAppItem(app, idx))}
-                            <div style={{ height: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '8px 0' }} />
-                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', paddingLeft: '12px' }}>
-                                All Applications
-                            </div>
-                        </>
-                    )}
-                    {filteredAllApps.map((app, idx) => renderAppItem(app, idx))}
-                </div>
+                <ScrollArea className="flex-1 min-h-0 pr-1" type="hover">
+                    <div className="flex flex-col gap-1">
+                        {recommendedApps.length > 0 && !search && (
+                            <>
+                                <div className="text-xs font-semibold text-m3-primary px-3 pt-1 pb-0.5">
+                                    Recommended
+                                </div>
+                                {recommendedApps.map((app, idx) => renderAppItem(app, idx))}
+                                <div className="h-px bg-m3-outline-variant/50 my-2" />
+                                <div className="text-xs font-semibold text-m3-primary px-3 pb-0.5">
+                                    All Applications
+                                </div>
+                            </>
+                        )}
+                        {filteredAllApps.map((app, idx) => renderAppItem(app, idx))}
+                    </div>
+                </ScrollArea>
             </div>
         </Dialog>
     );

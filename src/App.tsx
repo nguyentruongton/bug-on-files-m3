@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
-import { AppThemeProvider, useAppTheme } from './contexts/AppThemeContext';
+import { AppThemeProvider } from './contexts/AppThemeContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ClipboardProvider, useClipboard } from './contexts/ClipboardContext';
 import { FileSystemService } from './services/FileSystemService';
@@ -81,7 +81,6 @@ function AppContent() {
   const [iconSize, setIconSize] = useLocalStorage<number>('settings.iconSize', 64);
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
   const [filledIcons, setFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
-  const { customCssPath, importCustomCss } = useAppTheme();
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   const currentPath = tabs.find((t) => t.id === activeTabId)?.path || '';
@@ -654,8 +653,6 @@ function AppContent() {
           onViewModeChange={setViewMode}
           filledIcons={filledIcons}
           onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
-          customCssPath={customCssPath}
-          onImportCss={importCustomCss}
         />
 
         {conflictDialog}
