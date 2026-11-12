@@ -31,4 +31,6 @@ test_large_dir
 pkg/
 src-pkg/
 src-tauri/target
+.superpowers/
+
 
