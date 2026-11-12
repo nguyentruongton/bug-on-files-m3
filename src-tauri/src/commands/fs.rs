@@ -1,6 +1,7 @@
 use crate::fs_ops::{self, FileEntry};
 use crate::places::{self, PlaceItem, PlaceKey};
 use crate::text_preview::{self, TextPreview};
+use crate::watcher::Watchers;
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
@@ -80,6 +81,16 @@ pub fn get_places() -> Result<Vec<PlaceItem>, String> {
 #[tauri::command(rename_all = "camelCase")]
 pub fn read_text_preview(path: String) -> TextPreview {
     text_preview::read_text_preview(&path, text_preview::TEXT_PREVIEW_MAX_BYTES)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn watch_start(state: tauri::State<'_, Watchers>, dir: String) -> u32 {
+    state.start(&dir)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn watch_stop(state: tauri::State<'_, Watchers>, id: u32) {
+    state.stop(id);
 }
 
 #[cfg(test)]

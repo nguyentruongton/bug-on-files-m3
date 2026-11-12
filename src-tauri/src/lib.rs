@@ -6,8 +6,12 @@ pub mod places;
 pub mod search;
 pub mod system_info;
 pub mod text_preview;
+pub mod watcher;
 
-use tauri::Manager;
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::{Emitter, Manager};
+use watcher::Watchers;
 
 pub fn resolve_target_url(
     raw: &str,
@@ -45,6 +49,8 @@ pub fn run() {
             commands::fs::read_file,
             commands::fs::get_places,
             commands::fs::read_text_preview,
+            commands::fs::watch_start,
+            commands::fs::watch_stop,
             commands::app::extract_file,
             commands::app::open_path,
             commands::app::open_file_dialog,
@@ -61,6 +67,15 @@ pub fn run() {
             commands::system::search,
         ])
         .setup(|app| {
+            let app_handle = app.handle().clone();
+            let watchers = Watchers::new(
+                Arc::new(move |ev| {
+                    let _ = app_handle.emit("fs:watch-event", ev);
+                }),
+                Duration::from_millis(150),
+            );
+            app.manage(watchers);
+
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
                 if let Some(window) = app.get_webview_window("main") {
                     let current = window.url().ok();
