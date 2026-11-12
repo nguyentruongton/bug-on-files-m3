@@ -118,10 +118,6 @@ pub fn move_path(source: &str, dest: &str) -> Result<(), String> {
     let src_path = std::path::Path::new(source);
     let dest_path = std::path::Path::new(dest);
 
-    if !src_path.exists() {
-        return Err(format!("Source '{}' does not exist", source));
-    }
-
     match std::fs::rename(src_path, dest_path) {
         Ok(()) => Ok(()),
         Err(err) => {
@@ -130,14 +126,37 @@ pub fn move_path(source: &str, dest: &str) -> Result<(), String> {
                 || err.to_string().to_lowercase().contains("cross-device");
 
             if is_cross_device {
-                copy_path(source, dest)?;
-                let meta = std::fs::metadata(src_path)
+                let meta = src_path
+                    .symlink_metadata()
                     .map_err(|e| format!("Failed to read metadata for '{}': {}", source, e))?;
-                if meta.is_dir() {
+
+                if meta.file_type().is_symlink() {
+                    let target = std::fs::read_link(src_path)
+                        .map_err(|e| format!("Failed to read symlink '{}': {}", source, e))?;
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(&target, dest_path)
+                        .map_err(|e| format!("Failed to recreate symlink at '{}': {}", dest, e))?;
+                    #[cfg(windows)]
+                    {
+                        if target.is_dir() {
+                            std::os::windows::fs::symlink_dir(&target, dest_path).map_err(|e| {
+                                format!("Failed to recreate symlink dir at '{}': {}", dest, e)
+                            })?;
+                        } else {
+                            std::os::windows::fs::symlink_file(&target, dest_path).map_err(|e| {
+                                format!("Failed to recreate symlink file at '{}': {}", dest, e)
+                            })?;
+                        }
+                    }
+                    std::fs::remove_file(src_path)
+                        .map_err(|e| format!("Failed to remove source symlink '{}': {}", source, e))?;
+                } else if meta.is_dir() {
+                    copy_path(source, dest)?;
                     std::fs::remove_dir_all(src_path).map_err(|e| {
                         format!("Failed to remove source directory '{}': {}", source, e)
                     })?;
                 } else {
+                    copy_path(source, dest)?;
                     std::fs::remove_file(src_path)
                         .map_err(|e| format!("Failed to remove source file '{}': {}", source, e))?;
                 }
@@ -160,7 +179,7 @@ pub fn make_dir(path: &str) -> Result<(), String> {
 }
 
 pub fn exists(path: &str) -> bool {
-    std::path::Path::new(path).exists()
+    std::path::Path::new(path).symlink_metadata().is_ok()
 }
 
 pub fn parent_of(path: &str) -> String {
@@ -326,6 +345,30 @@ mod tests {
     }
 
     #[test]
+    fn move_path_moves_broken_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let broken_src = temp.path().join("broken_symlink.txt");
+        let broken_dest = temp.path().join("moved_broken_symlink.txt");
+
+        std::os::unix::fs::symlink(temp.path().join("does_not_exist.txt"), &broken_src).unwrap();
+        assert!(broken_src.symlink_metadata().is_ok());
+        assert!(!broken_src.exists());
+
+        move_path(
+            broken_src.to_str().unwrap(),
+            broken_dest.to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert!(!broken_src.symlink_metadata().is_ok());
+        assert!(broken_dest.symlink_metadata().is_ok());
+        assert_eq!(
+            std::fs::read_link(&broken_dest).unwrap(),
+            temp.path().join("does_not_exist.txt")
+        );
+    }
+
+    #[test]
     fn make_dir_is_recursive() {
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join("deeply").join("nested").join("directory");
@@ -355,6 +398,10 @@ mod tests {
 
         assert!(exists(file.to_str().unwrap()));
         assert!(!exists(temp.path().join("missing.txt").to_str().unwrap()));
+
+        let broken_symlink = temp.path().join("broken.txt");
+        std::os::unix::fs::symlink(temp.path().join("nonexistent.txt"), &broken_symlink).unwrap();
+        assert!(exists(broken_symlink.to_str().unwrap()));
     }
 
     #[test]
@@ -381,5 +428,17 @@ mod tests {
         rename_path(old_f.to_str().unwrap(), new_f.to_str().unwrap()).unwrap();
         assert!(!old_f.exists());
         assert_eq!(std::fs::read_to_string(&new_f).unwrap(), "rename me");
+    }
+
+    #[test]
+    fn rename_path_renames_broken_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let broken_src = temp.path().join("broken_orig.txt");
+        let broken_dest = temp.path().join("broken_renamed.txt");
+
+        std::os::unix::fs::symlink(temp.path().join("target_missing.txt"), &broken_src).unwrap();
+        rename_path(broken_src.to_str().unwrap(), broken_dest.to_str().unwrap()).unwrap();
+        assert!(!broken_src.symlink_metadata().is_ok());
+        assert!(broken_dest.symlink_metadata().is_ok());
     }
 }
