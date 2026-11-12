@@ -14,35 +14,14 @@ import {
   FAST_SPATIAL_SPRING,
 } from '@bug-on/m3-expressive'
 import { motion } from 'motion/react'
+import {
+  type SpikeRow,
+  calculateVirtualWindow,
+  generateRows,
+  triggerReadyPing,
+} from './spikeUtils.ts'
 
-export interface SpikeRow {
-  id: number
-  name: string
-  size: string
-  mtime: string
-}
-
-function generateRows(count: number): SpikeRow[] {
-  const rows: SpikeRow[] = new Array(count)
-  const baseTime = 1731400000000
-  for (let i = 0; i < count; i++) {
-    const sizeBytes = ((i * 7919) % 5000000) + 1024
-    const sizeFormatted =
-      sizeBytes > 1048576
-        ? `${(sizeBytes / 1048576).toFixed(1)} MB`
-        : `${(sizeBytes / 1024).toFixed(1)} KB`
-    const d = new Date(baseTime + i * 137000)
-    const mtimeFormatted = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-
-    rows[i] = {
-      id: i,
-      name: `item_${String(i).padStart(5, '0')}.${i % 3 === 0 ? 'tsx' : i % 3 === 1 ? 'rs' : 'json'}`,
-      size: sizeFormatted,
-      mtime: mtimeFormatted,
-    }
-  }
-  return rows
-}
+export type { SpikeRow }
 
 const ROW_HEIGHT = 40
 const VIEWPORT_HEIGHT = 480
@@ -52,13 +31,14 @@ function VirtualList({ items }: { items: SpikeRow[] }) {
   const [scrollTop, setScrollTop] = useState(0)
   const totalHeight = items.length * ROW_HEIGHT
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-  const endIndex = Math.min(
+  const { startIndex, endIndex, translateY } = calculateVirtualWindow(
+    scrollTop,
+    VIEWPORT_HEIGHT,
+    ROW_HEIGHT,
     items.length,
-    Math.ceil((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + OVERSCAN,
+    OVERSCAN,
   )
   const visibleItems = items.slice(startIndex, endIndex)
-  const translateY = startIndex * ROW_HEIGHT
 
   return (
     <div
@@ -107,12 +87,7 @@ function SpikeContent() {
     if (pingSentRef.current) return
     pingSentRef.current = true
 
-    const pingUrl = new URLSearchParams(window.location.search).get('ping')
-    if (pingUrl) {
-      fetch(pingUrl).catch((err: unknown) => {
-        console.warn('Ready ping failed:', err)
-      })
-    }
+    triggerReadyPing(window.location.search)
   }, [])
 
   return (
