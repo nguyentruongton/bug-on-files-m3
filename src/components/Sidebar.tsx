@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import {
+    FAST_SPATIAL_SPRING,
+    NavigationDrawer,
+    NavigationDrawerContent,
+    NavigationDrawerDivider,
+    NavigationDrawerItem,
+    NavigationDrawerSectionHeader,
+    ScrollArea,
+} from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { normalizePath, getActiveDriveMountpoint } from '../utils/navigationHistory';
 import { api } from '../api';
-import './Sidebar.css';
 
 interface Place {
     name: string;
@@ -26,83 +35,7 @@ interface Drive {
     usb: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath, collapsed = false }) => {
-    const [places, setPlaces] = useState<Place[]>([]);
-    const [drives, setDrives] = useState<Drive[]>([]);
-
-    useEffect(() => {
-        if (api) {
-            if (api.getPlaces) {
-                api.getPlaces().then(setPlaces);
-            }
-
-            const fetchDrives = async () => {
-                if (api.getDrives) {
-                    const d = await api.getDrives();
-                    setDrives(d);
-                }
-            };
-
-            fetchDrives();
-            const interval = setInterval(fetchDrives, 5000);
-            return () => clearInterval(interval);
-        }
-    }, []);
-
-    const normalizedCurrent = normalizePath(currentPath);
-    const activeMountpoint = getActiveDriveMountpoint(
-        currentPath,
-        drives.map((d) => d.mountpoint)
-    );
-
-    return (
-        <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`} aria-hidden={collapsed}>
-            <div className="sidebar-section">
-                <h3 className="sidebar-title">Places</h3>
-                <div className="sidebar-list">
-                    {places.map((place) => {
-                        const isActive = normalizedCurrent === normalizePath(place.path);
-                        return (
-                            <button
-                                key={`${place.name}:${place.path}`}
-                                className={`sidebar-item ${isActive ? 'active' : ''}`}
-                                onClick={() => onNavigate(place.path)}
-                                title={place.path}
-                            >
-                                <Icon name={getPlaceIcon(place.name)} className="sidebar-icon" filled={isActive} />
-                                <span className="sidebar-label">{place.name}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {drives.length > 0 && (
-                <div className="sidebar-section">
-                    <h3 className="sidebar-title">Devices</h3>
-                    <div className="sidebar-list">
-                        {drives.map((drive) => {
-                            const isActive = activeMountpoint !== null && normalizePath(drive.mountpoint) === normalizePath(activeMountpoint);
-                            return (
-                                <button
-                                    key={`${drive.name}:${drive.mountpoint}`}
-                                    className={`sidebar-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => onNavigate(drive.mountpoint)}
-                                    title={`${drive.label || drive.name} (${drive.mountpoint})`}
-                                >
-                                    <Icon name={drive.usb ? 'usb' : 'hard_drive'} className="sidebar-icon" filled={isActive} />
-                                    <span className="sidebar-label">{drive.label || drive.name}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-        </aside>
-    );
-};
-
-function getPlaceIcon(name: string): string {
+const getPlaceIconName = (name: string): string => {
     switch (name) {
         case 'Home': return 'home';
         case 'Desktop': return 'desktop_windows';
@@ -113,4 +46,131 @@ function getPlaceIcon(name: string): string {
         case 'Videos': return 'movie';
         default: return 'folder';
     }
-}
+};
+
+export const Sidebar: React.FC<SidebarProps> = ({
+    onNavigate,
+    currentPath,
+    collapsed = false,
+}) => {
+    const [places, setPlaces] = useState<Place[]>([]);
+    const [drives, setDrives] = useState<Drive[]>([]);
+
+    useEffect(() => {
+        if (!api) return;
+
+        if (api.getPlaces) {
+            api.getPlaces()
+                .then((res) => {
+                    if (res) setPlaces(res);
+                })
+                .catch(console.error);
+        }
+
+        const fetchDrives = () => {
+            if (api.getDrives) {
+                api.getDrives()
+                    .then((res) => {
+                        if (res) setDrives(res);
+                    })
+                    .catch(console.error);
+            }
+        };
+
+        fetchDrives();
+        const interval = setInterval(fetchDrives, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const normCurrent = normalizePath(currentPath);
+    const activeMountpoint = getActiveDriveMountpoint(
+        normCurrent,
+        drives.map((d) => d.mountpoint),
+    );
+
+    return (
+        <motion.aside
+            initial={false}
+            animate={{
+                width: collapsed ? 0 : 244,
+                opacity: collapsed ? 0 : 1,
+            }}
+            transition={FAST_SPATIAL_SPRING}
+            aria-hidden={collapsed}
+            className="h-full shrink-0 overflow-hidden select-none"
+        >
+            <NavigationDrawer
+                variant="standard"
+                width={244}
+                className="h-full bg-m3-surface-container-low/70 rounded-m3-xl border-0"
+                aria-label="Places and devices"
+            >
+                <ScrollArea className="h-full" type="hover">
+                    <NavigationDrawerContent className="px-2 py-3">
+                        <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
+                            Places
+                        </NavigationDrawerSectionHeader>
+                        {places.map((place) => {
+                            const isSelected = normalizePath(place.path) === normCurrent;
+                            return (
+                                <NavigationDrawerItem
+                                    key={place.path}
+                                    selected={isSelected}
+                                    shape="pill"
+                                    icon={<Icon name={getPlaceIconName(place.name)} size={20} />}
+                                    activeIcon={<Icon name={getPlaceIconName(place.name)} size={20} filled />}
+                                    label={place.name}
+                                    onClick={() => onNavigate(place.path)}
+                                />
+                            );
+                        })}
+
+                        <NavigationDrawerDivider className="my-2" />
+
+                        <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
+                            Devices
+                        </NavigationDrawerSectionHeader>
+                        {drives.map((drive) => {
+                            const isSelected =
+                                !!activeMountpoint &&
+                                normalizePath(drive.mountpoint) === activeMountpoint;
+                            const iconName = drive.usb
+                                ? 'usb'
+                                : drive.mountpoint === '/'
+                                    ? 'hard_drive'
+                                    : 'sd_storage';
+                            const label = drive.label || (drive.mountpoint === '/' ? 'System' : drive.name);
+                            return (
+                                <NavigationDrawerItem
+                                    key={drive.mountpoint}
+                                    selected={isSelected}
+                                    shape="pill"
+                                    icon={<Icon name={iconName} size={20} />}
+                                    activeIcon={<Icon name={iconName} size={20} filled />}
+                                    label={label}
+                                    badge={
+                                        <span className="text-[11px] font-medium text-m3-on-surface-variant">
+                                            {drive.size}
+                                        </span>
+                                    }
+                                    onClick={() => onNavigate(drive.mountpoint)}
+                                />
+                            );
+                        })}
+
+                        {drives.length === 0 && (
+                            <NavigationDrawerItem
+                                selected={normCurrent === '/'}
+                                shape="pill"
+                                icon={<Icon name="hard_drive" size={20} />}
+                                activeIcon={<Icon name="hard_drive" size={20} filled />}
+                                label="Computer"
+                                onClick={() => onNavigate('/')}
+                            />
+                        )}
+                    </NavigationDrawerContent>
+                </ScrollArea>
+            </NavigationDrawer>
+        </motion.aside>
+    );
+};

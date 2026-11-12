@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
+import { AppThemeProvider, useAppTheme } from './contexts/AppThemeContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ClipboardProvider, useClipboard } from './contexts/ClipboardContext';
-import { ThemeService } from './services/ThemeService';
 import { FileSystemService } from './services/FileSystemService';
+import { FABMenu, TextField } from '@bug-on/m3-expressive';
 import { NavigationRail } from './components/NavigationRail';
 import { Sidebar } from './components/Sidebar';
 import { Icon } from './components/Icon';
@@ -80,37 +81,12 @@ function AppContent() {
   const [iconSize, setIconSize] = useLocalStorage<number>('settings.iconSize', 64);
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
   const [filledIcons, setFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
-  const [customCssPath, setCustomCssPath] = useState<string>('');
+  const { customCssPath, importCustomCss } = useAppTheme();
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   const currentPath = tabs.find((t) => t.id === activeTabId)?.path || '';
 
   // -- Handlers --
-
-  const handleLoadCustomCss = useCallback(async (path: string) => {
-    try {
-      const css = await api.readFile(path);
-      if (css) {
-        let style = document.getElementById('custom-user-css');
-        if (!style) {
-          style = document.createElement('style');
-          style.id = 'custom-user-css';
-          document.head.appendChild(style);
-        }
-        style.textContent = css;
-        setCustomCssPath(path);
-        localStorage.setItem('customCssPath', path);
-      }
-    } catch (err) {
-      console.error('Failed to load custom css', err);
-    }
-  }, []);
-
-  const handleImportCss = async () => {
-    const path = await api.openFileDialog();
-    if (path) {
-      handleLoadCustomCss(path);
-    }
-  };
 
   // Tab Handlers
   const handleAddTab = useCallback((path?: string) => {
@@ -132,9 +108,6 @@ function AppContent() {
   // -- Effects --
 
   useEffect(() => {
-    ThemeService.loadTheme();
-    ThemeService.init();
-
     const init = async () => {
       if (api) {
         try {
@@ -158,13 +131,7 @@ function AppContent() {
       }
     };
     init();
-
-    const storedCssPath = localStorage.getItem('customCssPath');
-    if (storedCssPath) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      handleLoadCustomCss(storedCssPath);
-    }
-  }, [handleLoadCustomCss]);
+  }, []);
 
   const handleCloseTab = useCallback((id: string) => {
     const next = resolveAfterTabClose(tabs, activeTabId, id, terminalCwd);
@@ -406,24 +373,65 @@ function AppContent() {
     !isInHome
   );
 
+  const isExplorerDir = Boolean(currentPath && !currentPath.startsWith('app://') && !currentPath.startsWith('search://'));
+
   return (
-    <div className="app-shell" style={{ display: 'flex', height: '100vh', width: '100vw', background: 'var(--md-sys-color-background)' }} onClick={() => setContextMenu(null)}>
+    <div
+      className="flex h-screen w-screen bg-m3-surface text-m3-on-surface p-2 gap-2 overflow-hidden"
+      onClick={() => setContextMenu(null)}
+    >
       <NavigationRail
         headerAction={
           <IconButton
             variant="standard"
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Collapse Places Sidebar' : 'Expand Places Sidebar'}
             title={sidebarOpen ? 'Collapse Places Sidebar' : 'Expand Places Sidebar'}
           >
             <Icon name={sidebarOpen ? 'menu_open' : 'menu'} />
           </IconButton>
         }
+        fab={
+          <FABMenu
+            expanded={fabMenuOpen}
+            onToggle={setFabMenuOpen}
+            alignment="start"
+            size="sm"
+            colorVariant="primary"
+            aria-label="Quick create actions"
+            icon={<Icon name="add" />}
+            expandedIcon={<Icon name="close" />}
+            items={[
+              {
+                id: 'new-folder',
+                label: 'New Folder',
+                icon: <Icon name="create_new_folder" />,
+                disabled: !isExplorerDir,
+                onClick: () => {
+                  setFabMenuOpen(false);
+                  handleOpenNewFolder();
+                },
+              },
+              {
+                id: 'paste',
+                label: 'Paste',
+                icon: <Icon name="content_paste" />,
+                disabled: !isExplorerDir || !clipboard || clipboard.files.length === 0,
+                onClick: () => {
+                  setFabMenuOpen(false);
+                  handlePaste();
+                },
+              },
+            ]}
+          />
+        }
         items={[
           {
+            id: 'dashboard',
             icon: <Icon name="dashboard" />,
             activeIcon: <Icon name="dashboard" filled />,
             label: 'Dashboard',
-            active: currentPath === 'app://dashboard',
+            isActive: currentPath === 'app://dashboard',
             onClick: () => {
               const existing = tabs.find((t) => t.path.startsWith('app://dashboard'));
               if (existing) {
@@ -434,10 +442,11 @@ function AppContent() {
             }
           },
           {
+            id: 'home',
             icon: <Icon name="home" />,
             activeIcon: <Icon name="home" filled />,
             label: 'Home',
-            active: isInHome,
+            isActive: isInHome,
             onClick: async () => {
               const home = await api.getHomePath();
               if (home) setHomePath(home);
@@ -450,23 +459,27 @@ function AppContent() {
             }
           },
           {
+            id: 'files',
             icon: <Icon name="folder" />,
             activeIcon: <Icon name="folder" filled />,
             label: 'Files',
-            active: isRootOrSystemFiles,
+            isActive: isRootOrSystemFiles,
             onClick: () => handleSidebarNavigate('/')
           },
           {
+            id: 'terminal',
             icon: <Icon name="terminal" />,
             activeIcon: <Icon name="terminal" filled />,
             label: 'Terminal',
-            active: terminalOpen,
+            isActive: terminalOpen,
             onClick: toggleTerminal
           },
           {
+            id: 'settings',
             icon: <Icon name="settings" />,
             activeIcon: <Icon name="settings" filled />,
             label: 'Settings',
+            isActive: settingsDialogOpen,
             onClick: () => setSettingsDialogOpen(true)
           }
         ]}
@@ -480,17 +493,9 @@ function AppContent() {
       />
 
       {/* Main Content Area */}
-      <main className="main-content" style={{
-        flex: 1,
-        height: '100%',
-        background: 'var(--md-sys-color-background)',
-        borderRadius: '24px 0 0 0',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
+      <main className="flex-1 min-w-0 h-full bg-m3-surface-container-low rounded-m3-xl overflow-hidden flex flex-col border border-m3-outline-variant/30 shadow-sm">
         {/* Top Bar */}
-        <header style={{ height: 'auto', display: 'flex', flexDirection: 'column', background: 'var(--md-sys-color-surface)' }}>
+        <header className="flex flex-col bg-m3-surface-container-low shrink-0">
           <TabBar
             tabs={tabs}
             activeTabId={activeTabId}
@@ -501,7 +506,7 @@ function AppContent() {
         </header>
 
         {/* File Tabs Content */}
-        <div className="content-area" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div className="relative flex-1 min-h-0 overflow-hidden">
           {tabs.map((tab) => (
             <div key={tab.id} style={{ display: tab.id === activeTabId ? 'block' : 'none', height: '100%' }}>
               <ExplorerTab
@@ -569,34 +574,19 @@ function AppContent() {
             </>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <input
-              type="text"
-              placeholder="Folder name"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              className="md3-text-field"
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '8px',
-                border: `1px solid ${newFolderValidation.error ? 'var(--md-sys-color-error)' : 'var(--md-sys-color-outline)'}`,
-                background: 'var(--md-sys-color-surface)',
-                color: 'var(--md-sys-color-on-surface)',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newFolderValidation.valid) handleCreateFolder();
-              }}
-            />
-            {newFolderValidation.error && (
-              <span style={{ fontSize: '12px', color: 'var(--md-sys-color-error)' }}>
-                {newFolderValidation.error}
-              </span>
-            )}
-          </div>
+          <TextField
+            variant="outlined"
+            label="Folder name"
+            placeholder="Untitled folder"
+            value={newFolderName}
+            onChange={(val) => setNewFolderName(val)}
+            fullWidth
+            error={Boolean(newFolderName && newFolderValidation.error)}
+            errorText={newFolderName ? (newFolderValidation.error ?? undefined) : undefined}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newFolderValidation.valid) handleCreateFolder();
+            }}
+          />
         </Dialog>
 
         <Dialog
@@ -610,33 +600,18 @@ function AppContent() {
             </>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="md3-text-field"
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '8px',
-                border: `1px solid ${renameValidation.error ? 'var(--md-sys-color-error)' : 'var(--md-sys-color-outline)'}`,
-                background: 'var(--md-sys-color-surface)',
-                color: 'var(--md-sys-color-on-surface)',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && renameValidation.valid) handleRename();
-              }}
-            />
-            {renameValidation.error && (
-              <span style={{ fontSize: '12px', color: 'var(--md-sys-color-error)' }}>
-                {renameValidation.error}
-              </span>
-            )}
-          </div>
+          <TextField
+            variant="outlined"
+            label="New name"
+            value={newName}
+            onChange={(val) => setNewName(val)}
+            fullWidth
+            error={Boolean(newName && renameValidation.error)}
+            errorText={newName ? (renameValidation.error ?? undefined) : undefined}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && renameValidation.valid) handleRename();
+            }}
+          />
         </Dialog>
 
         <PropertiesDialog
@@ -670,7 +645,7 @@ function AppContent() {
           filledIcons={filledIcons}
           onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
           customCssPath={customCssPath}
-          onImportCss={handleImportCss}
+          onImportCss={importCustomCss}
         />
 
         {conflictDialog}
@@ -681,11 +656,13 @@ function AppContent() {
 
 function App() {
   return (
-    <ToastProvider>
-      <ClipboardProvider>
-        <AppContent />
-      </ClipboardProvider>
-    </ToastProvider>
+    <AppThemeProvider>
+      <ToastProvider>
+        <ClipboardProvider>
+          <AppContent />
+        </ClipboardProvider>
+      </ToastProvider>
+    </AppThemeProvider>
   );
 }
 

@@ -1,13 +1,17 @@
 import React from 'react';
-import { IconButton } from './IconButton';
-import './NavigationRail.css';
+import {
+    NavigationRail as M3NavigationRail,
+    NavigationRailItem,
+} from '@bug-on/m3-expressive';
 
-interface NavigationItem {
+export interface NavigationItem {
+    id: string;
+    label: string;
     icon: React.ReactNode;
     activeIcon?: React.ReactNode;
-    label?: string;
-    onClick?: () => void;
-    active?: boolean;
+    isActive: boolean;
+    onClick: () => void;
+    badge?: React.ReactNode;
 }
 
 interface NavigationRailProps {
@@ -16,26 +20,33 @@ interface NavigationRailProps {
     headerAction?: React.ReactNode;
 }
 
-export const NavigationRail: React.FC<NavigationRailProps> = ({ items, fab, headerAction }) => {
+export const NavigationRail: React.FC<NavigationRailProps> = ({
+    items,
+    fab,
+    headerAction,
+}) => {
     return (
-        <nav className="m3-navigation-rail">
-            {headerAction && <div className="m3-navigation-rail__header">{headerAction}</div>}
-            {fab && <div className="m3-navigation-rail__fab">{fab}</div>}
-            <div className="m3-navigation-rail__menu">
-                {items.map((item, index) => (
-                    <div key={index} className="m3-navigation-rail__item">
-                        <IconButton
-                            variant={item.active ? 'filled' : 'standard'}
-                            selected={item.active}
-                            onClick={item.onClick}
-                            aria-label={item.label}
-                        >
-                            {item.active && item.activeIcon ? item.activeIcon : item.icon}
-                        </IconButton>
-                        {item.label && <span className="m3-navigation-rail__label">{item.label}</span>}
-                    </div>
-                ))}
-            </div>
-        </nav>
+        <M3NavigationRail
+            variant="collapsed"
+            shape="pill"
+            alignment="top"
+            narrow
+            header={headerAction}
+            fab={fab}
+            className="h-full shrink-0 bg-m3-surface border-0 select-none"
+        >
+            {items.map((item) => (
+                <NavigationRailItem
+                    key={item.id}
+                    selected={item.isActive}
+                    icon={item.icon}
+                    activeIcon={item.activeIcon}
+                    label={item.label}
+                    badge={item.badge}
+                    onClick={item.onClick}
+                    shape="pill"
+                />
+            ))}
+        </M3NavigationRail>
     );
 };
