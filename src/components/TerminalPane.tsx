@@ -9,6 +9,17 @@ interface TerminalPaneProps {
     onClose?: () => void;
 }
 
+function readTerminalTheme() {
+    const styles = getComputedStyle(document.documentElement);
+    const background =
+        styles.getPropertyValue('--md-sys-color-surface-container-lowest').trim() || '#141218';
+    const foreground =
+        styles.getPropertyValue('--md-sys-color-on-surface').trim() || '#E6E0E9';
+    const cursor =
+        styles.getPropertyValue('--md-sys-color-primary').trim() || '#D0BCFF';
+    return { background, foreground, cursor };
+}
+
 export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
@@ -23,14 +34,12 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
         let cleanupData: (() => void) | undefined;
         let cleanupExit: (() => void) | undefined;
 
+        const theme = readTerminalTheme();
         const term = new Terminal({
             cursorBlink: true,
             fontFamily: 'Consolas, monospace',
             fontSize: 14,
-            theme: {
-                background: '#1e1e1e',
-                foreground: '#ffffff'
-            }
+            theme,
         });
 
         const fitAddon = new FitAddon();
@@ -49,6 +58,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
         };
 
         window.addEventListener('resize', handleResize);
+        const resizeObserver =
+            typeof ResizeObserver !== 'undefined'
+                ? new ResizeObserver(() => handleResize())
+                : null;
+        resizeObserver?.observe(containerRef.current);
 
         const dataDisposable = term.onData((data: string) => {
             if (pidRef.current) {
@@ -96,6 +110,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
         return () => {
             disposed = true;
             window.removeEventListener('resize', handleResize);
+            resizeObserver?.disconnect();
             dataDisposable.dispose();
             resizeDisposable.dispose();
             cleanupData?.();
@@ -106,12 +121,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
                 pidRef.current = null;
             }
         };
-    }, []); // Only mount once
+    }, []);
 
     useEffect(() => {
         latestCwdRef.current = cwd;
         if (cwd && !cwd.startsWith('app://') && pidRef.current) {
-            // Escape path for shell safety - wrap in single quotes, replacing single quotes with '\''
             const safePath = cwd.replace(/'/g, "'\\''");
             const cmd = `cd '${safePath}'\r`;
             api.ptyWrite(pidRef.current, cmd);
@@ -119,6 +133,9 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
     }, [cwd]);
 
     return (
-        <div style={{ width: '100%', height: '100%', background: '#1e1e1e', overflow: 'hidden' }} ref={containerRef} />
+        <div
+            ref={containerRef}
+            className="w-full h-full bg-m3-surface-container-lowest overflow-hidden px-2 py-1"
+        />
     );
 };

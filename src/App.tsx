@@ -549,15 +549,27 @@ function AppContent() {
 
         {/* Terminal Panel */}
         {terminalOpen && (
-          <div style={{ height: '300px', borderTop: '1px solid var(--md-sys-color-outline-variant)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', padding: '4px 12px', background: 'var(--md-sys-color-surface-container-high)', color: 'var(--md-sys-color-on-surface)' }}>
-              <span style={{ fontSize: '12px', fontWeight: 500 }}>Terminal</span>
-              <div style={{ flex: 1 }} />
-              <IconButton onClick={() => setTerminalOpen(false)} style={{ width: 24, height: 24 }}>
+          <div className="h-[300px] shrink-0 border-t border-m3-outline-variant/40 flex flex-col bg-m3-surface-container-lowest">
+            <div className="bg-m3-surface-container-high border-b border-m3-outline-variant/40 px-4 py-1.5 flex items-center justify-between text-m3-on-surface">
+              <div className="flex items-center gap-2 min-w-0">
+                <Icon name="terminal" size={16} className="text-m3-primary shrink-0" />
+                <span className="text-xs font-semibold">Terminal</span>
+                {(terminalCwd || (currentPath && !currentPath.startsWith('app://'))) && (
+                  <span className="px-2 py-0.5 rounded-full bg-m3-surface-container text-[11px] text-m3-on-surface-variant truncate max-w-[360px]">
+                    {terminalCwd || currentPath}
+                  </span>
+                )}
+              </div>
+              <IconButton
+                size="xs"
+                onClick={() => setTerminalOpen(false)}
+                aria-label="Close Terminal"
+                title="Close Terminal"
+              >
                 <Icon name="close" size={16} />
               </IconButton>
             </div>
-            <div style={{ flex: 1, position: 'relative' }}>
+            <div className="flex-1 min-h-0 relative">
               <TerminalPane cwd={terminalCwd || (currentPath && !currentPath.startsWith('app://') ? currentPath : undefined)} />
             </div>
           </div>
