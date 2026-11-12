@@ -42,7 +42,7 @@ fi
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
 Name=$APP_NAME
-Exec="$INSTALL_DIR/$APP_NAME.AppImage" --appimage-extract-and-run %U
+Exec="$INSTALL_DIR/$APP_NAME.AppImage" %U
 Icon=$APP_NAME
 Type=Application
 Categories=Utility;FileManager;
