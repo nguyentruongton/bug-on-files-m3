@@ -1,3 +1,6 @@
+pub mod commands;
+pub mod fs_ops;
+
 use tauri::Manager;
 
 pub fn resolve_target_url(
@@ -21,6 +24,18 @@ pub fn resolve_target_url(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            commands::fs::list_dir,
+            commands::fs::get_parent,
+            commands::fs::get_home,
+            commands::fs::copy_file,
+            commands::fs::move_file,
+            commands::fs::trash_file,
+            commands::fs::rename_file,
+            commands::fs::create_directory,
+            commands::fs::exists,
+            commands::fs::read_file,
+        ])
         .setup(|app| {
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
                 if let Some(window) = app.get_webview_window("main") {
