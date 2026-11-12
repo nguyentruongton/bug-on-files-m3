@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod desktop_entry;
 pub mod extract;
 pub mod fs_ops;
 pub mod places;
@@ -49,6 +50,9 @@ pub fn run() {
             commands::app::get_startup_path,
             commands::app::get_theme_css,
             commands::app::set_icon,
+            commands::apps::get_apps,
+            commands::apps::get_recommended_apps,
+            commands::apps::open_with,
         ])
         .setup(|app| {
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
