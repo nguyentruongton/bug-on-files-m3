@@ -273,7 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 >
                                     {recentFiles.slice(0, 10).map((file) => {
                                         const group = getSemanticGroup(file);
-                                        const shapePair = getFileGroupShapePair(group, file.isDirectory);
+                                        const shapePair = getFileGroupShapePair(group, file.isDirectory, file.name);
                                         return (
                                             <ListItem
                                                 key={file.path}

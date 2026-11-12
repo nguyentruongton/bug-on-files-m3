@@ -29,7 +29,7 @@ import {
     shouldApplyReload,
     resolveDragCompletion,
 } from '../utils/explorerTabUtils';
-import { getSemanticGroup, GROUP_ORDER, isHiddenFile } from '../utils/fileUtils';
+import { getSemanticGroup, GROUP_ORDER, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
 import {
     resolveQuickLookTarget,
     resolveQuickLookFallback,
@@ -538,6 +538,11 @@ export function ExplorerTab({
                 return;
             }
 
+            // Guard all explorer shortcuts while a modal dialog or QuickLook overlay is active
+            if (isModalDialogOpen() || quickLookPath !== null) {
+                return;
+            }
+
             if (e.altKey && e.key === 'ArrowLeft') {
                 e.preventDefault();
                 handleBack();
@@ -568,11 +573,6 @@ export function ExplorerTab({
             if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'h') {
                 e.preventDefault();
                 onToggleHiddenFiles?.();
-                return;
-            }
-
-            // Guard destructive / selection / QuickLook shortcuts when a modal dialog is open
-            if (isModalDialogOpen()) {
                 return;
             }
 
@@ -666,6 +666,7 @@ export function ExplorerTab({
         onCreateFolderRequest,
         onPasteRequest,
         onToggleHiddenFiles,
+        quickLookPath,
     ]);
 
     return (
@@ -947,6 +948,26 @@ export function ExplorerTab({
                                                     onClick={() => onOpenWithRequest(selectedItems[0])}
                                                 >
                                                     <Icon name="apps" size={20} />
+                                                </ToolbarIconButton>
+                                            )}
+                                            {!selectedItems[0].isDirectory && isArchiveFile(selectedItems[0].name) && (
+                                                <ToolbarIconButton
+                                                    aria-label="Extract Here"
+                                                    title="Extract Here"
+                                                    onClick={async () => {
+                                                        const archiveFile = selectedItems[0];
+                                                        try {
+                                                            const ok = await api.extractFile(archiveFile.path);
+                                                            if (!ok) throw new Error('Extract returned false');
+                                                            showToast(`Extracted "${archiveFile.name}"`, 'success');
+                                                            loadPath(currentPath, false);
+                                                        } catch (err) {
+                                                            console.error('Extract failed', err);
+                                                            showToast(`Failed to extract "${archiveFile.name}"`, 'error');
+                                                        }
+                                                    }}
+                                                >
+                                                    <Icon name="unarchive" size={20} />
                                                 </ToolbarIconButton>
                                             )}
                                             <ToolbarDivider />

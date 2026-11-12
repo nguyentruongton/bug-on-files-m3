@@ -13,7 +13,7 @@ export const PRESET_SEED_COLORS: readonly { name: string; hex: string }[] = [
 
 const HEX_6_REGEX = /^#[0-9A-F]{6}$/i;
 const HEX_3_REGEX = /^#[0-9A-F]{3}$/i;
-const MATUGEN_PRIMARY_REGEX = /--md-sys-color-primary\s*:\s*(#[0-9a-fA-F]{3,6})\b/;
+const MATUGEN_PRIMARY_REGEX = /--md-sys-color-primary\s*:\s*(#[0-9a-fA-F]{3,6})\b/i;
 
 export function normalizeHexColor(hex: string | null | undefined): string | null {
   if (!hex) return null;

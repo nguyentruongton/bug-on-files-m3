@@ -9,14 +9,27 @@ import {
 } from '../shapeUtils';
 
 describe('shapeUtils', () => {
-  test('every semantic group in GROUP_ORDER maps to valid MD3Shapes keys', () => {
+  test('every semantic group in GROUP_ORDER maps to valid, distinct MD3Shapes keys', () => {
     const validKeys = new Set(Object.keys(MD3Shapes));
+    const othersPair = getFileGroupShapePair('Others', false);
+    expect(othersPair.rest).toBe('square');
+
     for (const group of GROUP_ORDER) {
       const pair = getFileGroupShapePair(group, group === 'Folders');
       expect(validKeys.has(pair.rest)).toBe(true);
       expect(validKeys.has(pair.morph)).toBe(true);
       expect(pair.containerClass.length).toBeGreaterThan(0);
+      if (group !== 'Others') {
+        expect(pair.rest).not.toBe(othersPair.rest);
+      }
     }
+  });
+
+  test('Media group distinguishes images, videos, and audio files when fileName is given', () => {
+    expect(getFileGroupShapePair('Media', false, 'photo.png').rest).toBe('clover4Leaf');
+    expect(getFileGroupShapePair('Media', false, 'clip.mp4').rest).toBe('pill');
+    expect(getFileGroupShapePair('Media', false, 'song.mp3').rest).toBe('cookie6Sided');
+    expect(getFileGroupShapePair('Executables', false).rest).toBe('softBurst');
   });
 
   test('getPinnedIndexShapePair cycles through valid MD3Shapes keys', () => {

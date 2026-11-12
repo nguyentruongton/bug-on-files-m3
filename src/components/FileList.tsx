@@ -160,7 +160,7 @@ export const FileList: React.FC<FileListProps> = ({
                             const hidden = isHiddenFile(file.name);
                             const iconInfo = getFileIconInfo(file);
                             const groupName = getSemanticGroup(file);
-                            const shapePair = getFileGroupShapePair(groupName, file.isDirectory);
+                            const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name);
                             const enableMorph = shouldEnableItemMorph(sortedFiles.length, isSelected);
                             const fileGroupLabel = file.isDirectory
                                 ? 'Folder'
@@ -265,7 +265,7 @@ export const FileList: React.FC<FileListProps> = ({
                 const hidden = isHiddenFile(file.name);
                 const iconInfo = getFileIconInfo(file);
                 const groupName = getSemanticGroup(file);
-                const shapePair = getFileGroupShapePair(groupName, file.isDirectory);
+                const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name);
                 const enableMorph = shouldEnableItemMorph(sortedFiles.length, isSelected);
                 const containerSize = iconSize + 16;
 

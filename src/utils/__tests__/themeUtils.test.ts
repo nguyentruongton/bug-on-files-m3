@@ -19,6 +19,10 @@ describe('themeUtils', () => {
       expect(extractMatugenSeedColor(css)).toBe('#AABBCC');
     });
 
+    test('matches --md-sys-color-primary case-insensitively', () => {
+      expect(extractMatugenSeedColor(':root { --MD-SYS-COLOR-PRIMARY: #006a6a; }')).toBe('#006A6A');
+    });
+
     test('returns null when css is null, empty, or lacks a valid hex primary token', () => {
       expect(extractMatugenSeedColor(null)).toBeNull();
       expect(extractMatugenSeedColor('')).toBeNull();
