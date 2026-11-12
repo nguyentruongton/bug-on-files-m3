@@ -3,6 +3,8 @@ pub mod desktop_entry;
 pub mod extract;
 pub mod fs_ops;
 pub mod places;
+pub mod search;
+pub mod system_info;
 pub mod text_preview;
 
 use tauri::Manager;
@@ -53,6 +55,10 @@ pub fn run() {
             commands::apps::get_apps,
             commands::apps::get_recommended_apps,
             commands::apps::open_with,
+            commands::system::get_drives,
+            commands::system::get_storage_usage,
+            commands::system::get_directory_size,
+            commands::system::search,
         ])
         .setup(|app| {
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
