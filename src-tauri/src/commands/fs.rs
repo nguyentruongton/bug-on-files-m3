@@ -1,4 +1,6 @@
 use crate::fs_ops::{self, FileEntry};
+use crate::places::{self, PlaceItem, PlaceKey};
+use crate::text_preview::{self, TextPreview};
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
@@ -53,6 +55,33 @@ pub fn read_file(path: String) -> Result<Option<String>, String> {
     Ok(fs_ops::read_file_text(&path))
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_places() -> Result<Vec<PlaceItem>, String> {
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| "Failed to resolve home directory".to_string())?;
+
+    let places = places::resolve_places(&home, |key| {
+        match key {
+            PlaceKey::Home => dirs::home_dir(),
+            PlaceKey::Desktop => dirs::desktop_dir(),
+            PlaceKey::Documents => dirs::document_dir(),
+            PlaceKey::Downloads => dirs::download_dir(),
+            PlaceKey::Music => dirs::audio_dir(),
+            PlaceKey::Pictures => dirs::picture_dir(),
+            PlaceKey::Videos => dirs::video_dir(),
+        }
+        .map(|p| p.to_string_lossy().into_owned())
+    });
+
+    Ok(places)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn read_text_preview(path: String) -> TextPreview {
+    text_preview::read_text_preview(&path, text_preview::TEXT_PREVIEW_MAX_BYTES)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +131,33 @@ mod tests {
             assert!(res);
             assert!(!f.exists());
         }
+    }
+
+    #[test]
+    fn test_get_places_and_read_text_preview_commands() {
+        let places = get_places().unwrap();
+        assert_eq!(places.len(), 7);
+        assert_eq!(places[0].name, "Home");
+        assert_eq!(places[1].name, "Desktop");
+        assert_eq!(places[2].name, "Documents");
+        assert_eq!(places[3].name, "Downloads");
+        assert_eq!(places[4].name, "Music");
+        assert_eq!(places[5].name, "Pictures");
+        assert_eq!(places[6].name, "Videos");
+
+        let temp = tempfile::tempdir().unwrap();
+        let f = temp.path().join("preview.txt");
+        std::fs::write(&f, "hello preview").unwrap();
+
+        let preview = read_text_preview(f.to_str().unwrap().into());
+        assert_eq!(
+            preview,
+            TextPreview::Text {
+                content: "hello preview".to_string()
+            }
+        );
+
+        let err_preview = read_text_preview("/nonexistent/file/path".into());
+        assert_eq!(err_preview, TextPreview::Error);
     }
 }

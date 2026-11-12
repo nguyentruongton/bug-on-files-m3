@@ -1,5 +1,7 @@
 pub mod commands;
 pub mod fs_ops;
+pub mod places;
+pub mod text_preview;
 
 use tauri::Manager;
 
@@ -35,6 +37,8 @@ pub fn run() {
             commands::fs::create_directory,
             commands::fs::exists,
             commands::fs::read_file,
+            commands::fs::get_places,
+            commands::fs::read_text_preview,
         ])
         .setup(|app| {
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
