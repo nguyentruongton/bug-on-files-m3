@@ -1,27 +1,63 @@
 import React from 'react';
-import './IconButton.css';
+import { IconButton as M3IconButton } from '@bug-on/m3-expressive';
 
-interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variant?: 'filled' | 'tonal' | 'outlined' | 'standard';
-    toggle?: boolean;
-    selected?: boolean;
+export interface IconButtonProps
+  extends Omit<
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
+    'color' | 'onAnimationStart' | 'onDrag' | 'onDragStart' | 'onDragEnd'
+  > {
+  variant?: 'standard' | 'filled' | 'tonal' | 'outlined';
+  colorStyle?: 'standard' | 'filled' | 'tonal' | 'outlined';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  toggle?: boolean;
+  selected?: boolean;
 }
 
 export const IconButton: React.FC<IconButtonProps> = ({
-    variant = 'standard',
-    toggle,
-    selected,
-    className = '',
-    children,
-    ...props
+  variant = 'standard',
+  colorStyle,
+  size = 'sm',
+  toggle,
+  selected,
+  className = '',
+  children,
+  title,
+  'aria-label': ariaLabel,
+  type = 'button',
+  ...props
 }) => {
-    const selectedClass = selected ? 'm3-icon-button--selected' : '';
+  const resolvedColorStyle = colorStyle ?? variant;
+  const resolvedAriaLabel = ariaLabel ?? title ?? 'Action';
+
+  if (toggle || selected !== undefined) {
     return (
-        <button
-            className={`m3-icon-button m3-icon-button--${variant} ${selectedClass} ${className}`}
-            {...props}
-        >
-            {children}
-        </button>
+      <M3IconButton
+        type={type}
+        variant="toggle"
+        selected={Boolean(selected)}
+        colorStyle={resolvedColorStyle}
+        size={size}
+        className={className}
+        title={title}
+        aria-label={resolvedAriaLabel}
+        {...props}
+      >
+        {children}
+      </M3IconButton>
     );
+  }
+
+  return (
+    <M3IconButton
+      type={type}
+      colorStyle={resolvedColorStyle}
+      size={size}
+      className={className}
+      title={title}
+      aria-label={resolvedAriaLabel}
+      {...props}
+    >
+      {children}
+    </M3IconButton>
+  );
 };

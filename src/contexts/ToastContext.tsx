@@ -1,42 +1,49 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { Toast } from '../components/Toast';
-import type { ToastType } from '../components/Toast';
+import React, { createContext, useCallback, useContext } from 'react';
+import { SnackbarContext, SnackbarProvider, useSnackbar } from '@bug-on/m3-expressive';
+
+export type ToastType = 'info' | 'success' | 'error';
 
 interface ToastContextType {
-    showToast: (message: string, type?: ToastType) => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+const ToastBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { showSnackbar } = useSnackbar();
+
+  const showToast = useCallback(
+    (message: string, type: ToastType = 'info') => {
+      void showSnackbar({
+        message,
+        duration: type === 'error' ? 'long' : 'short',
+        withDismissAction: type === 'error',
+      });
+    },
+    [showSnackbar]
+  );
+
+  return <ToastContext.Provider value={{ showToast }}>{children}</ToastContext.Provider>;
+};
+
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const existingSnackbar = useContext(SnackbarContext);
 
-    const showToast = useCallback((message: string, type: ToastType = 'info') => {
-        setToast({ message, type });
-    }, []);
+  if (existingSnackbar) {
+    return <ToastBridge>{children}</ToastBridge>;
+  }
 
-    const hideToast = useCallback(() => {
-        setToast(null);
-    }, []);
-
-    return (
-        <ToastContext.Provider value={{ showToast }}>
-            {children}
-            {toast && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={hideToast}
-                />
-            )}
-        </ToastContext.Provider>
-    );
+  return (
+    <SnackbarProvider>
+      <ToastBridge>{children}</ToastBridge>
+    </SnackbarProvider>
+  );
 };
 
 export const useToast = () => {
-    const context = useContext(ToastContext);
-    if (!context) {
-        throw new Error('useToast must be used within a ToastProvider');
-    }
-    return context;
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
 };
