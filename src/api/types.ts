@@ -1,4 +1,4 @@
-import { IFile } from './files';
+import type { IFile } from '../types/files';
 
 export type WatchEvent =
     | { id: number; type: 'change' }
@@ -20,7 +20,7 @@ export interface IDrive {
     usb: boolean;
 }
 
-export interface IElectronAPI {
+export interface IApi {
     getThemeCss: () => Promise<string | null>;
     listDir: (path: string) => Promise<IFile[]>;
     getParentPath: (path: string) => Promise<string>;
@@ -61,8 +61,10 @@ export interface IElectronAPI {
     ptyOnExit: (pid: number, callback: () => void) => () => void;
 }
 
+export type IElectronAPI = IApi;
+
 declare global {
     interface Window {
-        electron: IElectronAPI;
+        electron: IApi;
     }
 }

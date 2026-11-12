@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import React, { useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { useDirWatch } from '../useDirWatch';
-import type { WatchEvent } from '../../types/electron';
+import type { WatchEvent } from '../../api/types';
 
 // Setup minimal DOM environment for React 19 testing in Bun
 class Node {}

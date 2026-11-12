@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { IFile } from '../types/files';
-import type { TextPreview } from '../types/electron';
+import type { TextPreview } from '../api/types';
 import {
     getPreviewKind,
     toMediaUrl,
