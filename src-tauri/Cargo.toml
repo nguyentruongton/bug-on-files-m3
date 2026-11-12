@@ -1,0 +1,16 @@
+[package]
+name = "materials"
+version = "0.1.0"
+description = "Materials"
+authors = ["Materials Developers"]
+edition = "2021"
+
+[lib]
+name = "materials_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

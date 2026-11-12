@@ -7,13 +7,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
+    "build:web": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && node scripts/set-cjs.cjs && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "npm run build && node scripts/set-cjs.cjs && electron-builder"
+    "electron:build": "npm run build && node scripts/set-cjs.cjs && electron-builder",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@fontsource/material-symbols-rounded": "^5.2.30",
+    "@tauri-apps/api": "^2.12.4",
     "node-pty": "^1.2.0-beta.18",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -22,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
