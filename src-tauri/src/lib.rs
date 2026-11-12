@@ -6,11 +6,13 @@ pub mod places;
 pub mod search;
 pub mod system_info;
 pub mod text_preview;
+pub mod pty;
 pub mod watcher;
 
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
+use pty::PtySessions;
 use watcher::Watchers;
 
 pub fn resolve_target_url(
@@ -65,6 +67,10 @@ pub fn run() {
             commands::system::get_storage_usage,
             commands::system::get_directory_size,
             commands::system::search,
+            commands::pty::pty_spawn,
+            commands::pty::pty_write,
+            commands::pty::pty_resize,
+            commands::pty::pty_kill,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -76,6 +82,9 @@ pub fn run() {
             );
             app.manage(watchers);
 
+            let pty_sessions = PtySessions::new();
+            app.manage(pty_sessions);
+
             if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
                 if let Some(window) = app.get_webview_window("main") {
                     let current = window.url().ok();
@@ -85,6 +94,17 @@ pub fn run() {
                 }
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let app = window.app_handle();
+                if let Some(pty) = app.try_state::<PtySessions>() {
+                    pty.kill_all();
+                }
+                if let Some(watchers) = app.try_state::<Watchers>() {
+                    watchers.stop_all();
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
