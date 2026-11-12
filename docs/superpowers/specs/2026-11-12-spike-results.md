@@ -13,10 +13,10 @@ Benchmark Page: Identical `dist/spike.html` (5,000 item virtualized list + `@bug
 
 | Metric | Target / Gate Threshold | Electron (Spike) | Tauri (Wayland) | Tauri (X11) | Delta (Wayland vs Electron) | Gate Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Startup (cold, ms)** | $\ge 30\%$ faster | 858 ms | **637 ms** | 730 ms | **25.8% faster** (-221 ms) | Close to target (25.8% vs 30%) |
-| **Idle RAM (RSS, MB)** | $\ge 40\%$ lower | 881.5 MB | **626.8 MB** | 622.1 MB | **28.9% lower** (-254.7 MB) | Substantial win (28.9% vs 40%) |
+| **Startup (cold, ms)** | $\ge 30\%$ faster | 858 ms | **637 ms** | 730 ms | **25.8% faster** (-221 ms) | Below threshold (Missed: 25.8% < 30%) |
+| **Idle RAM (RSS, MB)** | $\ge 40\%$ lower | 881.5 MB | **626.8 MB** | 622.1 MB | **28.9% lower** (-254.7 MB) | Below threshold (Missed: 28.9% < 40%) |
 | **Binary Size** | Low tens of MB | ~110 MB (AppImage) | **15 MB** | 15 MB | **86.4% smaller** (-95 MB) | Exceeds goal |
-| **Process Count** | Lower process count | 8 processes | **3 processes** | 3 processes | **62.5% fewer processes** | Massive reduction |
+| **Process Count** | Lower process count | 8 processes | **3 processes** | 3 processes | **62.5% fewer processes** | Substantial reduction |
 | **Animation Smoothness**| Owner visual judgment| Smooth (Chromium) | Pending Owner | Pending Owner | *Pending owner manual check* | Pending Owner Check |
 
 *Reference: Current real Electron app (`electron-app`) idle RSS: **870.4 MB** (median over 5 runs).*
@@ -96,14 +96,16 @@ Benchmark Page: Identical `dist/spike.html` (5,000 item virtualized list + `@bug
 ## 5. Threshold Analysis and Findings
 
 1. **Cold Startup**:
+   - **Gate Status:** **Below threshold (Missed: 25.8% < 30% on Wayland, 14.9% < 30% on X11)**.
    - Tauri on Wayland achieved a median startup of **637 ms**, saving **221 ms (25.8% faster)** compared to Electron's 858 ms.
    - On X11, Tauri cold start was **730 ms (14.9% faster)**.
-   - While just under the 30% threshold (-4.2% delta), cold launch feels noticeably snappier due to skipping Chromium zygote and GPU-broker handshakes.
+   - While cold launch is noticeably snappier (saving 221 ms on Wayland and skipping Chromium zygote and GPU-broker handshakes), it falls short of the strict 30% gate threshold by a 4.2% margin on Wayland and 15.1% margin on X11.
 
 2. **Idle RAM / System Footprint**:
-   - Tauri uses **626.8 MB**, saving **254.7 MB of RAM (28.9% reduction)** compared to the Electron spike, and saving **243.6 MB (28.0% reduction)** compared to the current Electron production app.
+   - **Gate Status:** **Below threshold (Missed: 28.9% < 40% on Wayland, 29.4% < 40% on X11)**.
+   - Tauri uses **626.8 MB**, saving **254.7 MB of RAM (28.9% reduction)** compared to the Electron spike, and saving **243.6 MB (28.0% reduction)** compared to the current Electron production app (870.4 MB).
    - Process count dropped from 8 down to 3, significantly simplifying process management and decreasing thread scheduling overhead.
-   - Note on Linux RSS: WebKitGTK and Mesa GPU drivers map shared memory buffers directly into WebKitWebProcess space. Real resident memory efficiency is substantially improved.
+   - Although memory usage is reduced by ~255 MB, the reduction does not reach the owner's 40% threshold. Note on Linux RSS accounting: WebKitGTK and Mesa GPU drivers map shared memory buffers directly into WebKitWebProcess space in `/proc/<pid>/status`. Regardless of accounting nuances, against the agreed threshold it is below target.
 
 3. **Disk and Package Size**:
    - The standalone release binary is **15 MB**, compared to the **~110 MB** Electron AppImage bundle—an **86.4% reduction** in distribution size.
