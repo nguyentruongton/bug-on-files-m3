@@ -8,6 +8,39 @@ pub struct FileEntry {
     pub is_directory: bool,
     pub size: u64,
     pub mtime_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_kind: Option<String>,
+}
+
+pub fn sniff_ts_media_kind(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    if !ext.eq_ignore_ascii_case("ts") {
+        return None;
+    }
+
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 576];
+    let mut n = 0;
+    while n < buf.len() {
+        match file.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(bytes_read) => n += bytes_read,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        }
+    }
+
+    let is_188 = (n >= 377 && buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47)
+        || (n >= 189 && n < 377 && buf[0] == 0x47 && buf[188] == 0x47 && buf[..n].contains(&0));
+
+    let is_192 = n >= 389 && buf[4] == 0x47 && buf[196] == 0x47 && buf[388] == 0x47;
+
+    if is_188 || is_192 {
+        Some("video".to_string())
+    } else {
+        None
+    }
 }
 
 pub fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
@@ -45,12 +78,19 @@ pub fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
+        let media_kind = if is_directory {
+            None
+        } else {
+            sniff_ts_media_kind(&full_path)
+        };
+
         result.push(FileEntry {
             name,
             path: path_str,
             is_directory,
             size,
             mtime_ms,
+            media_kind,
         });
     }
 
@@ -533,5 +573,102 @@ mod tests {
         rename_path(broken_src.to_str().unwrap(), broken_dest.to_str().unwrap()).unwrap();
         assert!(!broken_src.symlink_metadata().is_ok());
         assert!(broken_dest.symlink_metadata().is_ok());
+    }
+
+    #[test]
+    fn sniff_ts_media_kind_distinguishes_mpeg_ts_from_typescript() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // TypeScript file starting with 'G' (0x47) must stay None
+        let ts_code = dir.path().join("generator.ts");
+        std::fs::write(&ts_code, "Generator function export const x = 1;\n".repeat(12)).unwrap();
+        assert_eq!(sniff_ts_media_kind(&ts_code), None);
+
+        // Short TypeScript file (< 189 bytes) starting with 'G' must stay None
+        let short_ts = dir.path().join("short.ts");
+        std::fs::write(&short_ts, b"G").unwrap();
+        assert_eq!(sniff_ts_media_kind(&short_ts), None);
+
+        // Non-.ts file with 0x47 sync bytes is ignored (None)
+        let txt_file = dir.path().join("data.txt");
+        let mut ts_bytes = vec![0u8; 564];
+        ts_bytes[0] = 0x47;
+        ts_bytes[188] = 0x47;
+        ts_bytes[376] = 0x47;
+        std::fs::write(&txt_file, &ts_bytes).unwrap();
+        assert_eq!(sniff_ts_media_kind(&txt_file), None);
+
+        // Standard 188-byte MPEG-TS stream in .ts file returns Some("video")
+        let ts_video = dir.path().join("clip.ts");
+        std::fs::write(&ts_video, &ts_bytes).unwrap();
+        assert_eq!(sniff_ts_media_kind(&ts_video), Some("video".to_string()));
+
+        // 192-byte BDAV MPEG-TS stream (4-byte timestamp + 0x47 sync) returns Some("video")
+        let bdav_video = dir.path().join("bdav.ts");
+        let mut bdav_bytes = vec![0u8; 576];
+        bdav_bytes[4] = 0x47;
+        bdav_bytes[196] = 0x47;
+        bdav_bytes[388] = 0x47;
+        std::fs::write(&bdav_video, &bdav_bytes).unwrap();
+        assert_eq!(sniff_ts_media_kind(&bdav_video), Some("video".to_string()));
+    }
+
+    #[test]
+    fn file_entry_serde_skips_none_media_kind() {
+        let entry_none = FileEntry {
+            name: "test.txt".to_string(),
+            path: "/path/test.txt".to_string(),
+            is_directory: false,
+            size: 10,
+            mtime_ms: 100,
+            media_kind: None,
+        };
+        let json_none = serde_json::to_string(&entry_none).unwrap();
+        assert!(!json_none.contains("mediaKind"));
+
+        let entry_video = FileEntry {
+            name: "test.ts".to_string(),
+            path: "/path/test.ts".to_string(),
+            is_directory: false,
+            size: 564,
+            mtime_ms: 200,
+            media_kind: Some("video".to_string()),
+        };
+        let json_video = serde_json::to_string(&entry_video).unwrap();
+        assert!(json_video.contains(r#""mediaKind":"video""#));
+
+        let deserialized_none: FileEntry = serde_json::from_str(&json_none).unwrap();
+        assert_eq!(deserialized_none.media_kind, None);
+        let deserialized_video: FileEntry = serde_json::from_str(&json_video).unwrap();
+        assert_eq!(deserialized_video.media_kind, Some("video".to_string()));
+    }
+
+    #[test]
+    fn list_dir_populates_media_kind_for_ts_video_only() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut ts_bytes = vec![0u8; 564];
+        ts_bytes[0] = 0x47;
+        ts_bytes[188] = 0x47;
+        ts_bytes[376] = 0x47;
+        let video_path = temp.path().join("stream.ts");
+        std::fs::write(&video_path, &ts_bytes).unwrap();
+
+        let ts_code_path = temp.path().join("index.ts");
+        std::fs::write(&ts_code_path, "export const a = 1;").unwrap();
+
+        let dir_ts_path = temp.path().join("folder.ts");
+        std::fs::create_dir(&dir_ts_path).unwrap();
+
+        let entries = list_dir(temp.path().to_str().unwrap()).unwrap();
+
+        let video_entry = entries.iter().find(|e| e.name == "stream.ts").unwrap();
+        assert_eq!(video_entry.media_kind, Some("video".to_string()));
+
+        let code_entry = entries.iter().find(|e| e.name == "index.ts").unwrap();
+        assert_eq!(code_entry.media_kind, None);
+
+        let dir_entry = entries.iter().find(|e| e.name == "folder.ts").unwrap();
+        assert_eq!(dir_entry.media_kind, None);
     }
 }

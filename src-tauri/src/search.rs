@@ -112,12 +112,19 @@ pub fn search(dir: &str, query: &str, opts: &SearchOptions) -> Vec<FileEntry> {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
+        let media_kind = if is_dir {
+            None
+        } else {
+            crate::fs_ops::sniff_ts_media_kind(full_path)
+        };
+
         results.push(FileEntry {
             name: file_name.into_owned(),
             path: full_path.to_string_lossy().into_owned(),
             is_directory: is_dir,
             size,
             mtime_ms,
+            media_kind,
         });
 
         if results.len() >= 100 {
@@ -263,5 +270,27 @@ mod tests {
         let opts = SearchOptions::default();
         assert!(search("", "query", &opts).is_empty());
         assert!(search("/path/that/does/not/exist/hopefully/12345", "query", &opts).is_empty());
+    }
+
+    #[test]
+    fn search_populates_media_kind_for_ts_video() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut ts_bytes = vec![0u8; 564];
+        ts_bytes[0] = 0x47;
+        ts_bytes[188] = 0x47;
+        ts_bytes[376] = 0x47;
+        let video_path = temp.path().join("clip.ts");
+        std::fs::write(&video_path, &ts_bytes).unwrap();
+
+        let ts_code_path = temp.path().join("clip.code.ts");
+        std::fs::write(&ts_code_path, "console.log('hi');").unwrap();
+
+        let results = search(temp.path().to_str().unwrap(), "clip", &SearchOptions::default());
+        let video_res = results.iter().find(|e| e.name == "clip.ts").unwrap();
+        assert_eq!(video_res.media_kind, Some("video".to_string()));
+
+        let code_res = results.iter().find(|e| e.name == "clip.code.ts").unwrap();
+        assert_eq!(code_res.media_kind, None);
     }
 }
