@@ -165,6 +165,12 @@ fn run_command_with_timeout(
             Err(e) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                if let Some(h) = stdout_handle {
+                    let _ = h.join();
+                }
+                if let Some(h) = stderr_handle {
+                    let _ = h.join();
+                }
                 return Err(ThumbnailError::Process(e.to_string()));
             }
         }
@@ -179,7 +185,8 @@ pub fn parse_ffprobe_json(raw: &str) -> Option<VideoMetadata> {
         .and_then(|s| s.as_array())
         .and_then(|arr| {
             arr.iter()
-                .find(|item| item.get("width").is_some() || item.get("codec_name").is_some())
+                .find(|item| item.get("width").is_some())
+                .or_else(|| arr.iter().find(|item| item.get("codec_name").is_some()))
                 .or_else(|| arr.first())
         });
 
@@ -237,6 +244,7 @@ pub fn probe_video_metadata(path: &Path) -> Option<VideoMetadata> {
         "format=duration",
         "-of",
         "json",
+        "-i",
     ]);
     cmd.arg(path);
     cmd.stdout(std::process::Stdio::piped());
@@ -419,14 +427,12 @@ fn get_or_generate_media_in(
     let final_path = cache_dir.join(format!("{}.jpg", key));
 
     // Cache hit
-    if final_path.is_file() {
-        if let Ok(bytes) = std::fs::read(&final_path) {
-            if !bytes.is_empty() {
-                return Ok(GeneratedMedia {
-                    bytes,
-                    content_type: "image/jpeg",
-                });
-            }
+    if let Ok(bytes) = std::fs::read(&final_path) {
+        if !bytes.is_empty() {
+            return Ok(GeneratedMedia {
+                bytes,
+                content_type: "image/jpeg",
+            });
         }
     }
 
@@ -440,31 +446,7 @@ fn get_or_generate_media_in(
             let _ = std::fs::remove_file(&tmp_path);
             return Err(e);
         }
-        let bytes = match std::fs::read(&tmp_path) {
-            Ok(b) => b,
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp_path);
-                return Err(ThumbnailError::Io(e));
-            }
-        };
-        if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
-            let _ = std::fs::remove_file(&tmp_path);
-            if final_path.is_file() {
-                if let Ok(existing) = std::fs::read(&final_path) {
-                    if !existing.is_empty() {
-                        return Ok(GeneratedMedia {
-                            bytes: existing,
-                            content_type: "image/jpeg",
-                        });
-                    }
-                }
-            }
-            return Err(ThumbnailError::Io(e));
-        }
-        return Ok(GeneratedMedia {
-            bytes,
-            content_type: "image/jpeg",
-        });
+        return read_and_commit_tmp_cache_file(&tmp_path, &final_path);
     }
 
     // Raster image: try pure Rust decode first
@@ -487,25 +469,7 @@ fn get_or_generate_media_in(
                 return Err(ThumbnailError::Io(e));
             }
 
-            if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
-                let _ = std::fs::remove_file(&tmp_path);
-                if final_path.is_file() {
-                    if let Ok(existing) = std::fs::read(&final_path) {
-                        if !existing.is_empty() {
-                            return Ok(GeneratedMedia {
-                                bytes: existing,
-                                content_type: "image/jpeg",
-                            });
-                        }
-                    }
-                }
-                return Err(ThumbnailError::Io(e));
-            }
-
-            Ok(GeneratedMedia {
-                bytes: buf,
-                content_type: "image/jpeg",
-            })
+            commit_tmp_cache_file(&tmp_path, &final_path, buf)
         }
         Err(_) => {
             // Pure decode failed: fall back to ffmpeg
@@ -513,33 +477,95 @@ fn get_or_generate_media_in(
                 let _ = std::fs::remove_file(&tmp_path);
                 return Err(e);
             }
-            let bytes = match std::fs::read(&tmp_path) {
-                Ok(b) => b,
-                Err(e) => {
-                    let _ = std::fs::remove_file(&tmp_path);
-                    return Err(ThumbnailError::Io(e));
-                }
-            };
-            if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
-                let _ = std::fs::remove_file(&tmp_path);
-                if final_path.is_file() {
-                    if let Ok(existing) = std::fs::read(&final_path) {
-                        if !existing.is_empty() {
-                            return Ok(GeneratedMedia {
-                                bytes: existing,
-                                content_type: "image/jpeg",
-                            });
-                        }
-                    }
-                }
-                return Err(ThumbnailError::Io(e));
-            }
-            Ok(GeneratedMedia {
-                bytes,
-                content_type: "image/jpeg",
-            })
+            read_and_commit_tmp_cache_file(&tmp_path, &final_path)
         }
     }
+}
+
+fn commit_tmp_cache_file(
+    tmp_path: &Path,
+    final_path: &Path,
+    bytes: Vec<u8>,
+) -> Result<GeneratedMedia, ThumbnailError> {
+    if let Err(e) = std::fs::rename(tmp_path, final_path) {
+        let _ = std::fs::remove_file(tmp_path);
+        if let Ok(existing) = std::fs::read(final_path) {
+            if !existing.is_empty() {
+                return Ok(GeneratedMedia {
+                    bytes: existing,
+                    content_type: "image/jpeg",
+                });
+            }
+        }
+        return Err(ThumbnailError::Io(e));
+    }
+    Ok(GeneratedMedia {
+        bytes,
+        content_type: "image/jpeg",
+    })
+}
+
+fn read_and_commit_tmp_cache_file(
+    tmp_path: &Path,
+    final_path: &Path,
+) -> Result<GeneratedMedia, ThumbnailError> {
+    let bytes = match std::fs::read(tmp_path) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = std::fs::remove_file(tmp_path);
+            return Err(ThumbnailError::Io(e));
+        }
+    };
+    commit_tmp_cache_file(tmp_path, final_path, bytes)
+}
+
+fn try_get_cached_or_svg_in(path: &Path, tag: &str, cache_dir: &Path) -> Option<GeneratedMedia> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if metadata.is_dir() || metadata.len() == 0 {
+        return None;
+    }
+
+    let is_svg = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("svg"))
+        .unwrap_or(false);
+
+    if is_svg {
+        if metadata.len() > crate::media::MAX_FULL_RESPONSE_BYTES {
+            return None;
+        }
+        let bytes = std::fs::read(path).ok()?;
+        return Some(GeneratedMedia {
+            bytes,
+            content_type: "image/svg+xml",
+        });
+    }
+
+    let mtime_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let key = cache_key(path, metadata.len(), mtime_nanos, tag);
+    let final_path = cache_dir.join(format!("{}.jpg", key));
+    let bytes = std::fs::read(&final_path).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some(GeneratedMedia {
+        bytes,
+        content_type: "image/jpeg",
+    })
+}
+
+pub fn try_get_cached_or_svg_thumbnail(path: &Path, size: ThumbnailSize) -> Option<GeneratedMedia> {
+    try_get_cached_or_svg_in(path, size.tag(), &default_cache_dir())
+}
+
+pub fn try_get_cached_or_svg_preview(path: &Path) -> Option<GeneratedMedia> {
+    try_get_cached_or_svg_in(path, "preview", &default_cache_dir())
 }
 
 pub fn get_or_generate_thumbnail_in(

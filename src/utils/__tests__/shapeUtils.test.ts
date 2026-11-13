@@ -32,6 +32,12 @@ describe('shapeUtils', () => {
     expect(getFileGroupShapePair('Executables', false).rest).toBe('softBurst');
   });
 
+  test('getFileGroupShapePair routes MPEG-TS .ts files with mediaKind="video" to the video shape pair', () => {
+    const videoPair = getFileGroupShapePair('Media', false, 'clip.mp4');
+    expect(getFileGroupShapePair('Code', false, 'clip.ts', 'video')).toEqual(videoPair);
+    expect(getFileGroupShapePair('Code', false, 'index.ts').rest).toBe('slanted');
+  });
+
   test('getPinnedIndexShapePair cycles through valid MD3Shapes keys', () => {
     const validKeys = new Set(Object.keys(MD3Shapes));
     for (let i = 0; i < 10; i++) {

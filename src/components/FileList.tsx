@@ -100,13 +100,17 @@ export const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
                 <img
                     src={toThumbnailUrl(file.path, 'grid')}
                     alt={file.name}
+                    draggable={false}
                     loading="lazy"
                     decoding="async"
                     className="w-full h-full object-cover"
                     onError={() => setFailedPath(file.path)}
                 />
                 {isVideo && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div
+                        aria-hidden="true"
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    >
                         <span className="flex items-center justify-center rounded-full bg-black/50 text-white p-1 shadow-sm">
                             <Icon name="play_arrow" size={playIconSize} filled />
                         </span>

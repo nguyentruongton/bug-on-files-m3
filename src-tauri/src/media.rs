@@ -264,45 +264,50 @@ pub fn decode_media_path(uri: &str) -> Option<PathBuf> {
     extract_media_path(uri)
 }
 
+pub fn parse_request_route(req: &Request<Vec<u8>>) -> Option<(MediaRoute, PathBuf)> {
+    let uri_str = req.uri().to_string();
+    parse_media_route(&uri_str).or_else(|| parse_media_route(req.uri().path()))
+}
+
+pub fn media_bytes_response(media: crate::thumbnails::GeneratedMedia) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, media.content_type)
+        .header(header::CONTENT_LENGTH, media.bytes.len().to_string())
+        .header(header::CACHE_CONTROL, "max-age=3600")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(media.bytes)
+        .unwrap_or_else(|_| internal_error_response())
+}
+
+pub fn handle_routed_media_request(
+    req: &Request<Vec<u8>>,
+    route: MediaRoute,
+    path: &Path,
+) -> Response<Vec<u8>> {
+    match route {
+        MediaRoute::Thumbnail(size) => match crate::thumbnails::get_or_generate_thumbnail(path, size) {
+            Ok(media) => media_bytes_response(media),
+            Err(_) => not_found_response(),
+        },
+        MediaRoute::Preview => match crate::thumbnails::get_or_generate_preview(path) {
+            Ok(media) => media_bytes_response(media),
+            Err(_) => not_found_response(),
+        },
+        MediaRoute::Raw => handle_raw_media_request(req, path),
+    }
+}
+
 /// Handles incoming `media://` protocol requests, returning:
 /// - `200 OK` for full file reads, thumbnails, or previews
 /// - `206 Partial Content` when a valid `Range` header is present (capped at `MAX_RANGE_CHUNK` per RFC 7233 §4.1)
 /// - `416 Range Not Satisfiable` for out-of-range requests
 /// - `404 Not Found` for nonexistent files, unreadable files, or directories
 pub fn handle_media_request(req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
-    let uri_str = req.uri().to_string();
-    let maybe_route = parse_media_route(&uri_str)
-        .or_else(|| parse_media_route(req.uri().path()));
-
-    let Some((route, path)) = maybe_route else {
+    let Some((route, path)) = parse_request_route(req) else {
         return not_found_response();
     };
-
-    match route {
-        MediaRoute::Thumbnail(size) => match crate::thumbnails::get_or_generate_thumbnail(&path, size) {
-            Ok(media) => Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, media.content_type)
-                .header(header::CONTENT_LENGTH, media.bytes.len().to_string())
-                .header(header::CACHE_CONTROL, "max-age=3600")
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .body(media.bytes)
-                .unwrap_or_else(|_| internal_error_response()),
-            Err(_) => not_found_response(),
-        },
-        MediaRoute::Preview => match crate::thumbnails::get_or_generate_preview(&path) {
-            Ok(media) => Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, media.content_type)
-                .header(header::CONTENT_LENGTH, media.bytes.len().to_string())
-                .header(header::CACHE_CONTROL, "max-age=3600")
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .body(media.bytes)
-                .unwrap_or_else(|_| internal_error_response()),
-            Err(_) => not_found_response(),
-        },
-        MediaRoute::Raw => handle_raw_media_request(req, &path),
-    }
+    handle_routed_media_request(req, route, &path)
 }
 
 fn handle_raw_media_request(req: &Request<Vec<u8>>, path: &Path) -> Response<Vec<u8>> {

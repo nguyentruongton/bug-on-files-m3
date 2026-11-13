@@ -42,18 +42,42 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("media", move |_ctx, req, responder| {
-            let uri_str = req.uri().to_string();
-            let route_opt = media::parse_media_route(&uri_str)
-                .or_else(|| media::parse_media_route(req.uri().path()))
-                .map(|(route, _)| route);
+            let parsed = media::parse_request_route(&req);
 
-            match route_opt {
-                Some(media::MediaRoute::Thumbnail(_)) | Some(media::MediaRoute::Preview) => {
+            match parsed {
+                Some((route @ (media::MediaRoute::Thumbnail(_) | media::MediaRoute::Preview), path)) => {
                     let sem = Arc::clone(&media_semaphore);
                     tauri::async_runtime::spawn(async move {
-                        let _permit = sem.acquire_owned().await;
+                        let fast_path = path.clone();
+                        let fast_hit = tauri::async_runtime::spawn_blocking(move || match route {
+                            media::MediaRoute::Thumbnail(size) => {
+                                thumbnails::try_get_cached_or_svg_thumbnail(&fast_path, size)
+                            }
+                            media::MediaRoute::Preview => {
+                                thumbnails::try_get_cached_or_svg_preview(&fast_path)
+                            }
+                            media::MediaRoute::Raw => None,
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+
+                        if let Some(cached) = fast_hit {
+                            responder.respond(media::media_bytes_response(cached));
+                            return;
+                        }
+
+                        let Ok(_permit) = sem.acquire_owned().await else {
+                            responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Vec::new())
+                                    .unwrap(),
+                            );
+                            return;
+                        };
                         let resp = tauri::async_runtime::spawn_blocking(move || {
-                            media::handle_media_request(&req)
+                            media::handle_routed_media_request(&req, route, &path)
                         })
                         .await
                         .unwrap_or_else(|_| {
@@ -65,7 +89,13 @@ pub fn run() {
                         responder.respond(resp);
                     });
                 }
-                _ => {
+                Some((route, path)) => {
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let resp = media::handle_routed_media_request(&req, route, &path);
+                        responder.respond(resp);
+                    });
+                }
+                None => {
                     tauri::async_runtime::spawn_blocking(move || {
                         let resp = media::handle_media_request(&req);
                         responder.respond(resp);

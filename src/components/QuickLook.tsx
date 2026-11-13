@@ -406,9 +406,9 @@ export const QuickLook: React.FC<QuickLookProps> = ({
 
                             {metaSummary.pills.length > 0 && (
                                 <div className="flex flex-wrap items-center justify-center gap-2">
-                                    {metaSummary.pills.map((pill, idx) => (
+                                    {metaSummary.pills.map((pill) => (
                                         <span
-                                            key={idx}
+                                            key={`${file.path}-${pill}`}
                                             className="px-2.5 py-1 text-xs font-medium rounded-m3-full bg-m3-surface-container-highest text-m3-on-surface-variant"
                                         >
                                             {pill}
