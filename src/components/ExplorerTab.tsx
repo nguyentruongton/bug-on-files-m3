@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+    Button,
+    ButtonGroup,
+    Divider,
     FAST_SPATIAL_SPRING,
     HorizontalFloatingToolbar,
     ToolbarDivider,
@@ -29,10 +32,11 @@ import {
     shouldApplyReload,
     resolveDragCompletion,
 } from '../utils/explorerTabUtils';
-import { getSemanticGroup, GROUP_ORDER, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
+import { isArchiveFile, isHiddenFile } from '../utils/fileUtils';
+import { compareFiles, normalizeSortField, type SortField } from '../utils/fileListUtils';
 import {
-    resolveQuickLookTarget,
     resolveQuickLookFallback,
+    resolveSpaceQuickLookTarget,
 } from '../utils/quickLook';
 import {
     createHistory,
@@ -83,6 +87,7 @@ export function ExplorerTab({
 }: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
     const currentPathRef = useRef(initialPath);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const hasMountedRef = useRef(false);
     const reloadSeqRef = useRef(0);
     const isDraggingRef = useRef(false);
@@ -391,17 +396,21 @@ export function ExplorerTab({
     }, [currentPath, loadPath]);
 
     // Sort State
-    const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('name');
+    const [sortBy, setSortBy] = useState<SortField>('name');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-    const handleSortChange = useCallback((field: 'name' | 'size' | 'date') => {
-        if (sortBy === field) {
-            setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-        } else {
-            setSortBy(field);
-            setSortOrder(field === 'name' ? 'asc' : 'desc');
-        }
-    }, [sortBy]);
+    const handleSortChange = useCallback(
+        (field: SortField | string) => {
+            const nextField = normalizeSortField(field);
+            if (sortBy === nextField) {
+                setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+            } else {
+                setSortBy(nextField);
+                setSortOrder(nextField === 'name' || nextField === 'type' ? 'asc' : 'desc');
+            }
+        },
+        [sortBy]
+    );
 
     // Grouping State
     const [groupingEnabled, setGroupingEnabled] = useState(true);
@@ -414,36 +423,9 @@ export function ExplorerTab({
     // Filter AND Sort files
     const sortedFiles = useMemo(() => {
         const filtered = files.filter((f) => showHiddenFiles || !isHiddenFile(f.name));
-        return [...filtered].sort((a: IFile, b: IFile) => {
-            if (groupingEnabled) {
-                const groupA = getSemanticGroup(a);
-                const groupB = getSemanticGroup(b);
-                if (groupA !== groupB) {
-                    return GROUP_ORDER.indexOf(groupA) - GROUP_ORDER.indexOf(groupB);
-                }
-            } else {
-                if (a.isDirectory !== b.isDirectory) {
-                    return a.isDirectory ? -1 : 1;
-                }
-            }
-
-            let result = 0;
-            switch (sortBy) {
-                case 'name':
-                    result = a.name.localeCompare(b.name);
-                    break;
-                case 'size':
-                    result = a.size - b.size;
-                    break;
-                case 'date': {
-                    const timeA = a.mtime instanceof Date ? a.mtime.getTime() : new Date(a.mtime).getTime();
-                    const timeB = b.mtime instanceof Date ? b.mtime.getTime() : new Date(b.mtime).getTime();
-                    result = timeA - timeB;
-                    break;
-                }
-            }
-            return sortOrder === 'asc' ? result : -result;
-        });
+        return [...filtered].sort((a: IFile, b: IFile) =>
+            compareFiles(a, b, sortBy, sortOrder, groupingEnabled)
+        );
     }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
 
     // Quick Look fallback resolution on live reload or active tab change
@@ -636,9 +618,18 @@ export function ExplorerTab({
 
             // Quick Look (Space)
             if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-                if (currentPath !== 'app://dashboard' && selectedFiles.size > 0) {
-                    e.preventDefault();
-                    const targetFile = resolveQuickLookTarget(selectedFiles, lastSelectedPath, sortedFiles);
+                if (currentPath !== 'app://dashboard') {
+                    const activeEl =
+                        typeof document !== 'undefined' ? document.activeElement : null;
+                    const targetFile = resolveSpaceQuickLookTarget(
+                        selectedFiles,
+                        lastSelectedPath,
+                        sortedFiles,
+                        activeEl
+                    );
+                    if (selectedFiles.size > 0 || targetFile) {
+                        e.preventDefault();
+                    }
                     if (targetFile) {
                         setQuickLookPath(targetFile.path);
                         setPrevSortedForQuickLook(sortedFiles);
@@ -671,40 +662,49 @@ export function ExplorerTab({
 
     return (
         <div
-            className={`flex-col flex-1 h-full overflow-hidden ${isActive ? 'flex' : 'hidden'}`}
+            className={`flex-col flex-1 h-full overflow-hidden bg-m3-surface-container ${isActive ? 'flex' : 'hidden'}`}
         >
             {/* Top Bar (Breadcrumb/Path + Quick Actions) */}
             {currentPath !== 'app://dashboard' && (
-                <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-m3-surface-container-low border-b border-m3-outline-variant/30">
-                    <div className="flex items-center gap-0.5 shrink-0">
-                        <IconButton
+                <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-m3-surface-container">
+                    <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
+                        <Button
                             onClick={handleBack}
                             disabled={historyState.index <= 0}
-                            variant="standard"
+                            variant="default"
+                            colorStyle="tonal"
+                            size="sm"
                             aria-label="Back"
                             title="Back (Alt+Left)"
+                            className="!px-2.5 !min-w-0 !h-9"
                         >
-                            <Icon name="arrow_back" />
-                        </IconButton>
-                        <IconButton
+                            <Icon name="arrow_back" size={18} />
+                        </Button>
+                        <Button
                             onClick={handleForward}
                             disabled={historyState.index >= historyState.entries.length - 1}
-                            variant="standard"
+                            variant="default"
+                            colorStyle="tonal"
+                            size="sm"
                             aria-label="Forward"
                             title="Forward (Alt+Right)"
+                            className="!px-2.5 !min-w-0 !h-9"
                         >
-                            <Icon name="arrow_forward" />
-                        </IconButton>
-                        <IconButton
+                            <Icon name="arrow_forward" size={18} />
+                        </Button>
+                        <Button
                             onClick={handleUp}
                             disabled={!currentPath || currentPath === '/'}
-                            variant="standard"
+                            variant="default"
+                            colorStyle="tonal"
+                            size="sm"
                             aria-label="Up"
                             title="Up (Alt+Up)"
+                            className="!px-2.5 !min-w-0 !h-9"
                         >
-                            <Icon name="arrow_upward" />
-                        </IconButton>
-                    </div>
+                            <Icon name="arrow_upward" size={18} />
+                        </Button>
+                    </ButtonGroup>
 
                     <div className="flex-1 min-w-0">
                         <Omnibar
@@ -715,74 +715,116 @@ export function ExplorerTab({
                     </div>
 
                     {/* Quick Action & Sort Controls */}
-                    <div className="flex items-center gap-1 shrink-0">
-                        {onCreateFolderRequest && (
-                            <IconButton
-                                variant="standard"
-                                onClick={onCreateFolderRequest}
-                                aria-label="New Folder"
-                                title="New Folder (Ctrl+Shift+N)"
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
+                            {onCreateFolderRequest && (
+                                <Button
+                                    variant="default"
+                                    colorStyle="tonal"
+                                    size="sm"
+                                    onClick={onCreateFolderRequest}
+                                    aria-label="New Folder"
+                                    title="New Folder (Ctrl+Shift+N)"
+                                    className="!px-2.5 !min-w-0 !h-9"
+                                >
+                                    <Icon name="create_new_folder" size={18} />
+                                </Button>
+                            )}
+                            {onToggleHiddenFiles && (
+                                <Button
+                                    variant="toggle"
+                                    selected={showHiddenFiles}
+                                    colorStyle="tonal"
+                                    size="sm"
+                                    onClick={onToggleHiddenFiles}
+                                    aria-label={showHiddenFiles ? 'Hide Hidden Files' : 'Show Hidden Files'}
+                                    title={showHiddenFiles ? 'Hide Hidden Files (Ctrl+H)' : 'Show Hidden Files (Ctrl+H)'}
+                                    className="!px-2.5 !min-w-0 !h-9"
+                                >
+                                    <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} size={18} />
+                                </Button>
+                            )}
+                            <Button
+                                variant="toggle"
+                                selected={groupingEnabled}
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => setGroupingEnabled(!groupingEnabled)}
+                                aria-label={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
+                                title={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
+                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="create_new_folder" />
-                            </IconButton>
-                        )}
-                        {onToggleHiddenFiles && (
-                            <IconButton
-                                variant={showHiddenFiles ? 'tonal' : 'standard'}
-                                onClick={onToggleHiddenFiles}
-                                aria-label={showHiddenFiles ? 'Hide Hidden Files' : 'Show Hidden Files'}
-                                title={showHiddenFiles ? 'Hide Hidden Files (Ctrl+H)' : 'Show Hidden Files (Ctrl+H)'}
+                                <Icon name="view_agenda" size={18} />
+                            </Button>
+                        </ButtonGroup>
+
+                        <Divider orientation="vertical" className="h-6 mx-0.5" />
+
+                        <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
+                            <Button
+                                variant="toggle"
+                                selected={sortBy === 'name'}
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => handleSortChange('name')}
+                                aria-label="Sort by Name"
+                                title={`Sort by Name (${sortBy === 'name' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
+                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} />
-                            </IconButton>
-                        )}
-                        <IconButton
-                            variant={groupingEnabled ? 'tonal' : 'standard'}
-                            onClick={() => setGroupingEnabled(!groupingEnabled)}
-                            aria-label={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
-                            title={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
-                        >
-                            <Icon name="view_agenda" />
-                        </IconButton>
-
-                        <div className="w-px h-6 bg-m3-outline-variant/50 mx-1" />
-
-                        <IconButton
-                            variant={sortBy === 'name' ? 'tonal' : 'standard'}
-                            onClick={() => handleSortChange('name')}
-                            aria-label="Sort by Name"
-                            title={`Sort by Name (${sortBy === 'name' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
-                        >
-                            <Icon name="sort_by_alpha" />
-                        </IconButton>
-                        <IconButton
-                            variant={sortBy === 'date' ? 'tonal' : 'standard'}
-                            onClick={() => handleSortChange('date')}
-                            aria-label="Sort by Date"
-                            title={`Sort by Date (${sortBy === 'date' ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'click to sort'})`}
-                        >
-                            <Icon name="calendar_today" />
-                        </IconButton>
-                        <IconButton
-                            variant={sortBy === 'size' ? 'tonal' : 'standard'}
-                            onClick={() => handleSortChange('size')}
-                            aria-label="Sort by Size"
-                            title={`Sort by Size (${sortBy === 'size' ? (sortOrder === 'asc' ? 'Smallest' : 'Largest') : 'click to sort'})`}
-                        >
-                            <Icon name="straighten" />
-                        </IconButton>
-                        <IconButton
-                            variant="standard"
-                            onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                            aria-label="Toggle Sort Order"
-                            title={sortOrder === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
-                        >
-                            <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} />
-                        </IconButton>
+                                <Icon name="sort_by_alpha" size={18} />
+                            </Button>
+                            <Button
+                                variant="toggle"
+                                selected={sortBy === 'date'}
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => handleSortChange('date')}
+                                aria-label="Sort by Date"
+                                title={`Sort by Date (${sortBy === 'date' ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'click to sort'})`}
+                                className="!px-2.5 !min-w-0 !h-9"
+                            >
+                                <Icon name="calendar_today" size={18} />
+                            </Button>
+                            <Button
+                                variant="toggle"
+                                selected={sortBy === 'type'}
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => handleSortChange('type')}
+                                aria-label="Sort by Type"
+                                title={`Sort by Type (${sortBy === 'type' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
+                                className="!px-2.5 !min-w-0 !h-9"
+                            >
+                                <Icon name="category" size={18} />
+                            </Button>
+                            <Button
+                                variant="toggle"
+                                selected={sortBy === 'size'}
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => handleSortChange('size')}
+                                aria-label="Sort by Size"
+                                title={`Sort by Size (${sortBy === 'size' ? (sortOrder === 'asc' ? 'Smallest' : 'Largest') : 'click to sort'})`}
+                                className="!px-2.5 !min-w-0 !h-9"
+                            >
+                                <Icon name="straighten" size={18} />
+                            </Button>
+                            <Button
+                                variant="default"
+                                colorStyle="tonal"
+                                size="sm"
+                                onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                                aria-label="Toggle Sort Order"
+                                title={sortOrder === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
+                                className="!px-2.5 !min-w-0 !h-9"
+                            >
+                                <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={18} />
+                            </Button>
+                        </ButtonGroup>
 
                         {onViewModeChange && (
                             <>
-                                <div className="w-px h-6 bg-m3-outline-variant/50 mx-1" />
+                                <Divider orientation="vertical" className="h-6 mx-0.5" />
                                 <IconButton
                                     variant="tonal"
                                     onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
@@ -798,15 +840,17 @@ export function ExplorerTab({
             )}
 
             {currentPath === 'app://dashboard' ? (
-                <div className="flex flex-col flex-1 h-full overflow-hidden">
+                <div className="flex flex-col flex-1 h-full overflow-hidden mx-2 mb-2 rounded-[24px] bg-m3-surface-container-low">
                     <Dashboard onNavigate={loadPath} />
                 </div>
             ) : loading ? (
-                <FileListSkeleton viewMode={viewMode} iconSize={iconSize} />
+                <div className="flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low">
+                    <FileListSkeleton viewMode={viewMode} iconSize={iconSize} />
+                </div>
             ) : (
                 <div className="relative flex flex-col flex-1 overflow-hidden">
                     {searchActive && (
-                        <div className="px-5 py-2 bg-m3-surface-container text-m3-on-surface-variant text-sm flex items-center gap-2 shrink-0 border-b border-m3-outline-variant/30">
+                        <div className="px-5 py-2 bg-m3-surface-container text-m3-on-surface-variant text-sm flex items-center gap-2 shrink-0">
                             <Icon name="search" size={18} />
                             <span className="flex-1 truncate">
                                 Found {sortedFiles.length} results for &ldquo;{searchQuery}&rdquo;
@@ -822,17 +866,22 @@ export function ExplorerTab({
                         </div>
                     )}
                     <div
-                        className="flex-1 overflow-auto"
+                        className="flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low flex flex-col isolate"
                         onDragStartCapture={markDragStarted}
                         onDragStart={markDragStarted}
                         onDragEnd={() => clearDrag(true)}
                         onClick={(e) => {
-                            if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('.file-list-item')) {
+                            if (
+                                e.target === e.currentTarget ||
+                                !(e.target as HTMLElement).closest('.file-list-item, .file-list-header')
+                            ) {
                                 setSelectedFiles(new Set());
                             }
                         }}
                         onContextMenu={(e) => {
-                            if (!(e.target as HTMLElement).closest('.file-list-item')) {
+                            if (
+                                !(e.target as HTMLElement).closest('.file-list-item, .file-list-header')
+                            ) {
                                 onContextMenu(e, null, []);
                             }
                         }}
@@ -886,6 +935,7 @@ export function ExplorerTab({
                             sortBy={sortBy}
                             sortOrder={sortOrder}
                             onSortChange={handleSortChange}
+                            scrollContainerRef={scrollContainerRef}
                             isSearch={searchActive}
                         />
                     </div>

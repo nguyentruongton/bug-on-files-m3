@@ -236,10 +236,14 @@ describe('ExplorerTab standardization', () => {
             )
         );
 
+        expect(html).toContain('aria-label="Back"');
+        expect(html).toContain('aria-label="Forward"');
+        expect(html).toContain('aria-label="Up"');
         expect(html).toContain('aria-label="Sort by Type"');
         expect(html).toContain('>category<');
         expect(html).toContain('aria-orientation="vertical"');
-        expect(html).toContain('rounded-m3-xl overflow-hidden bg-m3-surface-container-low');
+        expect(html.match(/<fieldset\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+        expect(html).toContain('rounded-[24px] overflow-hidden bg-m3-surface-container-low');
         expect(html).not.toContain('[scrollbar-gutter:stable]');
         expect(html).not.toContain('border-b border-m3-outline-variant/30');
     });
