@@ -82,7 +82,8 @@ describe('TabBar standardization', () => {
         );
 
         expect(html).toContain('role="tablist"');
-        expect(html).toContain('!rounded-m3-full');
+        expect(html).toMatch(/role="tablist"[^>]*rounded-m3-full/);
+        expect(html).not.toContain('!rounded-m3-full');
         expect(html).toContain('!bg-m3-secondary-container');
         expect(html).toContain('!bg-m3-surface-container-high');
         expect(html).toContain('aria-label="Home"');

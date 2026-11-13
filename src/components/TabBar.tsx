@@ -1,5 +1,5 @@
-import React from 'react';
-import { Tabs, TabsList, Tab as M3Tab } from '@bug-on/m3-expressive';
+import React, { useEffect, useRef } from 'react';
+import { Button, ButtonGroup } from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
@@ -17,6 +17,18 @@ interface TabBarProps {
     onNewTab: () => void;
 }
 
+interface TabSegmentProps {
+    selected?: boolean;
+    children: React.ReactElement;
+}
+
+/**
+ * Direct child wrapper for ButtonGroup so ButtonGroup reads `selected`
+ * without forwarding its internal `tabIndex`, `colorStyle`, or motion props
+ * onto the inner `<Button>` / `<div role="tab">`.
+ */
+const TabSegment: React.FC<TabSegmentProps> = ({ children }) => <>{children}</>;
+
 const getTabIconName = (path: string): string => {
     if (path.startsWith('app://dashboard') || path === 'dashboard://') return 'dashboard';
     if (path.startsWith('search://')) return 'search';
@@ -32,83 +44,158 @@ export const TabBar: React.FC<TabBarProps> = ({
     onTabClose,
     onNewTab,
 }) => {
+    const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+    useEffect(() => {
+        const activeEl = tabRefs.current.get(activeTabId);
+        if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+            activeEl.scrollIntoView({
+                behavior: 'smooth',
+                inline: 'nearest',
+                block: 'nearest',
+            });
+        }
+    }, [activeTabId]);
+
+    const handleTabListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (tabs.length === 0) return;
+
+        const target = e.target as HTMLElement | null;
+        const isCloseButton = Boolean(target?.closest('button'));
+        if ((e.key === 'Enter' || e.key === ' ') && isCloseButton) {
+            return;
+        }
+
+        const tabEl = target?.closest('[role="tab"]') as HTMLElement | null;
+        const currentIdx = tabEl?.dataset.tabId
+            ? tabs.findIndex((t) => t.id === tabEl.dataset.tabId)
+            : tabs.findIndex((t) => t.id === activeTabId);
+        const safeIdx = currentIdx >= 0 ? currentIdx : 0;
+
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const nextTab = tabs[(safeIdx + 1) % tabs.length];
+            tabRefs.current.get(nextTab.id)?.focus();
+            onTabClick(nextTab.id);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const prevTab = tabs[(safeIdx - 1 + tabs.length) % tabs.length];
+            tabRefs.current.get(prevTab.id)?.focus();
+            onTabClick(prevTab.id);
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            const firstTab = tabs[0];
+            tabRefs.current.get(firstTab.id)?.focus();
+            onTabClick(firstTab.id);
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            const lastTab = tabs[tabs.length - 1];
+            tabRefs.current.get(lastTab.id)?.focus();
+            onTabClick(lastTab.id);
+        } else if ((e.key === 'Enter' || e.key === ' ') && tabEl?.dataset.tabId && !e.defaultPrevented) {
+            e.preventDefault();
+            onTabClick(tabEl.dataset.tabId);
+        }
+    };
+
+    const canClose = tabs.length > 1;
+
     return (
-        <div className="flex items-center gap-1 px-3 pt-1.5 border-b border-m3-outline-variant/40 bg-m3-surface-container-low select-none">
-            <Tabs
-                value={activeTabId}
-                onValueChange={onTabClick}
-                className="flex-1 min-w-0"
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-m3-surface-container select-none">
+            <div
+                role="tablist"
+                aria-label="Open tabs"
+                onKeyDown={handleTabListKeyDown}
+                className="flex-1 min-w-0 overflow-x-auto rounded-m3-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
-                <TabsList
-                    variant="secondary"
-                    scrollable
-                    backgroundColor="transparent"
-                    aria-label="Open tabs"
-                    className="!px-0 !gap-1"
-                >
+                <ButtonGroup variant="connected" size="sm" className="w-max overflow-visible">
                     {tabs.map((tab) => {
                         const isActive = tab.id === activeTabId;
-                        const canClose = tabs.length > 1;
                         return (
-                            <div
-                                key={tab.id}
-                                className="relative flex items-center shrink-0 group max-w-[220px]"
-                                onMouseDown={(e) => {
-                                    if (e.button === 1 && canClose) {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        onTabClose(tab.id);
-                                    }
-                                }}
-                            >
-                                <M3Tab
-                                    value={tab.id}
-                                    inlineIcon
-                                    icon={
-                                        <Icon
-                                            name={getTabIconName(tab.path)}
-                                            size={16}
-                                            filled={isActive}
-                                        />
-                                    }
-                                    className={`!h-10 !min-w-[112px] !max-w-[220px] !px-3 rounded-t-m3-md transition-colors ${
-                                        canClose ? '!pr-8' : ''
-                                    } ${
+                            <TabSegment key={tab.id} selected={isActive}>
+                                <Button
+                                    asChild
+                                    variant="toggle"
+                                    size="sm"
+                                    selected={isActive}
+                                    shape={isActive ? 'square' : 'round'}
+                                    colorStyle="tonal"
+                                    onClick={() => onTabClick(tab.id)}
+                                    className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 !px-3 transition-colors ${
                                         isActive
-                                            ? 'text-m3-primary font-medium'
-                                            : 'text-m3-on-surface-variant'
+                                            ? '!bg-m3-secondary-container !text-m3-on-secondary-container font-medium'
+                                            : '!bg-m3-surface-container-high !text-m3-on-surface-variant hover:!bg-m3-surface-container-highest'
                                     }`}
                                 >
-                                    <span className="truncate max-w-[136px] block text-left">
-                                        {tab.title}
-                                    </span>
-                                </M3Tab>
-                                {canClose && (
-                                    <IconButton
-                                        size="xs"
-                                        aria-label={`Close ${tab.title}`}
-                                        title="Close tab"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onTabClose(tab.id);
+                                    <div
+                                        ref={(el) => {
+                                            if (el) {
+                                                tabRefs.current.set(tab.id, el);
+                                            } else {
+                                                tabRefs.current.delete(tab.id);
+                                            }
                                         }}
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 z-10 !w-6 !h-6 !min-w-0 !min-h-0 opacity-60 group-hover:opacity-100 hover:bg-m3-surface-container-highest"
+                                        role="tab"
+                                        data-tab-id={tab.id}
+                                        aria-selected={isActive}
+                                        aria-label={tab.title}
+                                        tabIndex={isActive ? 0 : -1}
+                                        className="min-w-0 cursor-pointer"
+                                        onMouseDown={(e) => {
+                                            if (e.button === 1 && canClose) {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                onTabClose(tab.id);
+                                            }
+                                        }}
                                     >
-                                        <Icon name="close" size={14} />
-                                    </IconButton>
-                                )}
-                            </div>
+                                        <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">
+                                            <span className="flex items-center gap-1.5 min-w-0 flex-1 truncate text-left">
+                                                <Icon
+                                                    name={getTabIconName(tab.path)}
+                                                    size={16}
+                                                    filled={isActive}
+                                                    className="shrink-0"
+                                                />
+                                                <span className="truncate">{tab.title}</span>
+                                            </span>
+                                            {canClose && (
+                                                <IconButton
+                                                    size="xs"
+                                                    aria-label={`Close ${tab.title}`}
+                                                    title="Close tab"
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.stopPropagation();
+                                                        }
+                                                    }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onTabClose(tab.id);
+                                                    }}
+                                                    className="shrink-0 !w-6 !h-6 !min-w-0 !min-h-0 opacity-70 hover:opacity-100 hover:bg-m3-surface-container-highest"
+                                                >
+                                                    <Icon name="close" size={14} />
+                                                </IconButton>
+                                            )}
+                                        </span>
+                                    </div>
+                                </Button>
+                            </TabSegment>
                         );
                     })}
-                </TabsList>
-            </Tabs>
+                </ButtonGroup>
+            </div>
 
             <IconButton
                 size="xs"
                 onClick={onNewTab}
                 aria-label="New tab"
                 title="New tab (Ctrl+T)"
-                className="shrink-0 mb-1"
+                className="shrink-0"
             >
                 <Icon name="add" size={18} />
             </IconButton>
