@@ -112,11 +112,28 @@ pub fn get_startup_path() -> Option<String> {
     resolve_startup_path(&args, exe.as_deref())
 }
 
+pub fn resolve_theme_css_from_home(home: &Path) -> Option<String> {
+    const CANDIDATES: [&str; 4] = [
+        ".config/matugen/theme.css",
+        ".local/state/caelestia/scheme.json",
+        ".config/gtk-4.0/gtk.css",
+        ".config/gtk-3.0/gtk.css",
+    ];
+    for rel in CANDIDATES {
+        let path = home.join(rel);
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if !content.trim().is_empty() {
+                return Some(content);
+            }
+        }
+    }
+    None
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn get_theme_css() -> Option<String> {
     let home = dirs::home_dir()?;
-    let theme_path = home.join(".config/matugen/theme.css");
-    std::fs::read_to_string(theme_path).ok()
+    resolve_theme_css_from_home(&home)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -275,5 +292,53 @@ mod tests {
     fn test_get_theme_css_smoke() {
         // Just verify calling get_theme_css() returns Option<String> without panic
         let _ = get_theme_css();
+    }
+
+    #[test]
+    fn test_resolve_theme_css_from_home_priority_and_empty_skip() {
+        let dir = tempdir().expect("create tempdir");
+        let home = dir.path();
+
+        assert_eq!(resolve_theme_css_from_home(home), None);
+
+        let gtk3_dir = home.join(".config/gtk-3.0");
+        std::fs::create_dir_all(&gtk3_dir).unwrap();
+        std::fs::write(gtk3_dir.join("gtk.css"), "@define-color accent_color #333333;").unwrap();
+        assert_eq!(
+            resolve_theme_css_from_home(home).as_deref(),
+            Some("@define-color accent_color #333333;")
+        );
+
+        let gtk4_dir = home.join(".config/gtk-4.0");
+        std::fs::create_dir_all(&gtk4_dir).unwrap();
+        std::fs::write(gtk4_dir.join("gtk.css"), "@define-color accent_color #444444;").unwrap();
+        assert_eq!(
+            resolve_theme_css_from_home(home).as_deref(),
+            Some("@define-color accent_color #444444;")
+        );
+
+        let caelestia_dir = home.join(".local/state/caelestia");
+        std::fs::create_dir_all(&caelestia_dir).unwrap();
+        std::fs::write(caelestia_dir.join("scheme.json"), "{\"primary\":\"f9b6ae\"}").unwrap();
+        assert_eq!(
+            resolve_theme_css_from_home(home).as_deref(),
+            Some("{\"primary\":\"f9b6ae\"}")
+        );
+
+        // Empty matugen file should be skipped in favor of Caelestia scheme.json
+        let matugen_dir = home.join(".config/matugen");
+        std::fs::create_dir_all(&matugen_dir).unwrap();
+        std::fs::write(matugen_dir.join("theme.css"), "   \n  ").unwrap();
+        assert_eq!(
+            resolve_theme_css_from_home(home).as_deref(),
+            Some("{\"primary\":\"f9b6ae\"}")
+        );
+
+        // Non-empty matugen theme.css takes highest priority
+        std::fs::write(matugen_dir.join("theme.css"), ":root { --md-sys-color-primary: #111111; }").unwrap();
+        assert_eq!(
+            resolve_theme_css_from_home(home).as_deref(),
+            Some(":root { --md-sys-color-primary: #111111; }")
+        );
     }
 }

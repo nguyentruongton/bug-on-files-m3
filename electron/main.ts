@@ -62,13 +62,23 @@ function createWindow() {
 
 ipcMain.handle('theme:get-css', async () => {
     const homeDir = os.homedir();
-    const themePath = path.join(homeDir, '.config/matugen/theme.css');
-    try {
-        const css = await fs.readFile(themePath, 'utf-8');
-        return css;
-    } catch {
-        return null;
+    const candidates = [
+        '.config/matugen/theme.css',
+        '.local/state/caelestia/scheme.json',
+        '.config/gtk-4.0/gtk.css',
+        '.config/gtk-3.0/gtk.css',
+    ];
+    for (const rel of candidates) {
+        try {
+            const content = await fs.readFile(path.join(homeDir, rel), 'utf-8');
+            if (content.trim().length > 0) {
+                return content;
+            }
+        } catch {
+            // Try next candidate
+        }
     }
+    return null;
 });
 
 ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
