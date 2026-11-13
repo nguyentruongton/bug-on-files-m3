@@ -99,6 +99,11 @@ describe('TabBar standardization', () => {
         const newTabIdx = html.indexOf('aria-label="New tab"');
         expect(tablistEnd).toBeGreaterThan(-1);
         expect(newTabIdx).toBeGreaterThan(tablistEnd);
+
+        // Connected ButtonGroup forwards per-corner radii to unselected middle/trailing tabs
+        const secondTabMatch = html.match(/<div[^>]*data-tab-id="t2"[^>]*>/);
+        expect(secondTabMatch?.[0]).toContain('border-top-left-radius:8px');
+        expect(secondTabMatch?.[0]).toContain('border-top-right-radius:20px');
     });
 
     test('hides close buttons when only one tab is open', () => {
@@ -246,6 +251,13 @@ describe('ExplorerTab standardization', () => {
         expect(html).toContain('rounded-[24px] overflow-hidden bg-m3-surface-container-low');
         expect(html).not.toContain('[scrollbar-gutter:stable]');
         expect(html).not.toContain('border-b border-m3-outline-variant/30');
+
+        // Enabled toolbar buttons inside ButtonGroups remain keyboard-reachable (never forced to tabindex="-1")
+        for (const label of ['Up', 'Sort by Name', 'Sort by Date', 'Sort by Type', 'Sort by Size', 'Toggle Sort Order']) {
+            const btnMatch = html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`));
+            expect(btnMatch?.[0]).toBeDefined();
+            expect(btnMatch?.[0]).not.toContain('tabindex="-1"');
+        }
     });
 
     test('resolves Space Quick Look target from selection first and falls back to focused .file-list-item', () => {

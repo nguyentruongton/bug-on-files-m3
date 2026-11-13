@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
     Button,
     ButtonGroup,
+    type ButtonProps,
     Divider,
     FAST_SPATIAL_SPRING,
     HorizontalFloatingToolbar,
@@ -45,6 +46,14 @@ import {
     stepForward,
     type HistoryState,
 } from '../utils/navigationHistory';
+
+/**
+ * Preserves keyboard `Tab` reachability for every enabled button inside a
+ * `ButtonGroup` (which otherwise forces `tabIndex={-1}` on non-first items).
+ */
+const ToolbarGroupButton: React.FC<ButtonProps> = (props) => (
+    <Button {...props} tabIndex={props.disabled ? undefined : 0} />
+);
 
 interface ExplorerTabProps {
     tabId: string;
@@ -668,7 +677,7 @@ export function ExplorerTab({
             {currentPath !== 'app://dashboard' && (
                 <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-m3-surface-container">
                     <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
-                        <Button
+                        <ToolbarGroupButton
                             onClick={handleBack}
                             disabled={historyState.index <= 0}
                             variant="default"
@@ -679,8 +688,8 @@ export function ExplorerTab({
                             className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_back" size={18} />
-                        </Button>
-                        <Button
+                        </ToolbarGroupButton>
+                        <ToolbarGroupButton
                             onClick={handleForward}
                             disabled={historyState.index >= historyState.entries.length - 1}
                             variant="default"
@@ -691,8 +700,8 @@ export function ExplorerTab({
                             className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_forward" size={18} />
-                        </Button>
-                        <Button
+                        </ToolbarGroupButton>
+                        <ToolbarGroupButton
                             onClick={handleUp}
                             disabled={!currentPath || currentPath === '/'}
                             variant="default"
@@ -703,7 +712,7 @@ export function ExplorerTab({
                             className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_upward" size={18} />
-                        </Button>
+                        </ToolbarGroupButton>
                     </ButtonGroup>
 
                     <div className="flex-1 min-w-0">
@@ -718,7 +727,7 @@ export function ExplorerTab({
                     <div className="flex items-center gap-1.5 shrink-0">
                         <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
                             {onCreateFolderRequest && (
-                                <Button
+                                <ToolbarGroupButton
                                     variant="default"
                                     colorStyle="tonal"
                                     size="sm"
@@ -728,10 +737,10 @@ export function ExplorerTab({
                                     className="!px-2.5 !min-w-0 !h-9"
                                 >
                                     <Icon name="create_new_folder" size={18} />
-                                </Button>
+                                </ToolbarGroupButton>
                             )}
                             {onToggleHiddenFiles && (
-                                <Button
+                                <ToolbarGroupButton
                                     variant="toggle"
                                     selected={showHiddenFiles}
                                     colorStyle="tonal"
@@ -742,9 +751,9 @@ export function ExplorerTab({
                                     className="!px-2.5 !min-w-0 !h-9"
                                 >
                                     <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} size={18} />
-                                </Button>
+                                </ToolbarGroupButton>
                             )}
-                            <Button
+                            <ToolbarGroupButton
                                 variant="toggle"
                                 selected={groupingEnabled}
                                 colorStyle="tonal"
@@ -755,13 +764,13 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name="view_agenda" size={18} />
-                            </Button>
+                            </ToolbarGroupButton>
                         </ButtonGroup>
 
                         <Divider orientation="vertical" className="h-6 mx-0.5" />
 
                         <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
-                            <Button
+                            <ToolbarGroupButton
                                 variant="toggle"
                                 selected={sortBy === 'name'}
                                 colorStyle="tonal"
@@ -772,8 +781,8 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name="sort_by_alpha" size={18} />
-                            </Button>
-                            <Button
+                            </ToolbarGroupButton>
+                            <ToolbarGroupButton
                                 variant="toggle"
                                 selected={sortBy === 'date'}
                                 colorStyle="tonal"
@@ -784,8 +793,8 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name="calendar_today" size={18} />
-                            </Button>
-                            <Button
+                            </ToolbarGroupButton>
+                            <ToolbarGroupButton
                                 variant="toggle"
                                 selected={sortBy === 'type'}
                                 colorStyle="tonal"
@@ -796,8 +805,8 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name="category" size={18} />
-                            </Button>
-                            <Button
+                            </ToolbarGroupButton>
+                            <ToolbarGroupButton
                                 variant="toggle"
                                 selected={sortBy === 'size'}
                                 colorStyle="tonal"
@@ -808,8 +817,8 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name="straighten" size={18} />
-                            </Button>
-                            <Button
+                            </ToolbarGroupButton>
+                            <ToolbarGroupButton
                                 variant="default"
                                 colorStyle="tonal"
                                 size="sm"
@@ -819,7 +828,7 @@ export function ExplorerTab({
                                 className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={18} />
-                            </Button>
+                            </ToolbarGroupButton>
                         </ButtonGroup>
 
                         {onViewModeChange && (

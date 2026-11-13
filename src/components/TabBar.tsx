@@ -19,15 +19,57 @@ interface TabBarProps {
 
 interface TabSegmentProps {
     selected?: boolean;
-    children: React.ReactElement;
+    children: React.ReactElement<Record<string, unknown>>;
+    animate?: unknown;
+    whileTap?: unknown;
+    transition?: unknown;
+    layout?: unknown;
+    style?: React.CSSProperties;
+    className?: string;
 }
 
 /**
  * Direct child wrapper for ButtonGroup so ButtonGroup reads `selected`
- * without forwarding its internal `tabIndex`, `colorStyle`, or motion props
- * onto the inner `<Button>` / `<div role="tab">`.
+ * and forwards connected corner-radius motion/style props onto the inner `<Button>`
+ * without overriding TabBar's own `tabIndex` or tonal `colorStyle`.
  */
-const TabSegment: React.FC<TabSegmentProps> = ({ children }) => <>{children}</>;
+const TabSegment: React.FC<TabSegmentProps> = ({
+    children,
+    animate,
+    whileTap,
+    transition,
+    layout,
+    style,
+    className,
+}) => {
+    const cornerAnimate =
+        animate && typeof animate === 'object' ? (animate as Record<string, unknown>) : undefined;
+    const cornerStyle: React.CSSProperties | undefined =
+        cornerAnimate && 'borderTopLeftRadius' in cornerAnimate
+            ? {
+                  borderRadius: undefined,
+                  borderTopLeftRadius: cornerAnimate.borderTopLeftRadius as number,
+                  borderTopRightRadius: cornerAnimate.borderTopRightRadius as number,
+                  borderBottomRightRadius: cornerAnimate.borderBottomRightRadius as number,
+                  borderBottomLeftRadius: cornerAnimate.borderBottomLeftRadius as number,
+              }
+            : undefined;
+
+    return React.cloneElement(children, {
+        ...(animate !== undefined ? { animate } : {}),
+        ...(whileTap !== undefined ? { whileTap } : {}),
+        ...(transition !== undefined ? { transition } : {}),
+        ...(layout !== undefined ? { layout } : {}),
+        style: {
+            ...(children.props.style as React.CSSProperties | undefined),
+            ...style,
+            ...cornerStyle,
+        },
+        className: [children.props.className as string | undefined, className]
+            .filter(Boolean)
+            .join(' '),
+    });
+};
 
 const getTabIconName = (path: string): string => {
     if (path.startsWith('app://dashboard') || path === 'dashboard://') return 'dashboard';
