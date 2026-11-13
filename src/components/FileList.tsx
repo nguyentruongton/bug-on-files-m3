@@ -7,8 +7,8 @@ import {
     MD3TableHeaderCell,
     MD3TableRow,
     MD3TableSortIndicator,
-    ShapeMedia,
 } from '@bug-on/m3-expressive';
+import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
 import { api } from '../api';
@@ -57,16 +57,16 @@ export const FileList: React.FC<FileListProps> = ({
     if (files.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center h-full min-h-[300px] px-6 py-12 text-center select-none">
-                <ShapeMedia
+                <ExpressiveShape
                     shape="clover4Leaf"
                     morphTo="flower"
                     morphOn="hover"
                     width={88}
                     height={88}
-                    className="bg-m3-secondary-container text-m3-on-secondary-container flex items-center justify-center mb-4"
+                    className="bg-m3-secondary-container text-m3-on-secondary-container mb-4"
                 >
                     <Icon name={isSearch ? 'search_off' : 'folder_open'} size={42} />
-                </ShapeMedia>
+                </ExpressiveShape>
                 <div className="text-lg font-medium text-m3-on-surface mb-1">
                     {isSearch ? 'No matching files found' : 'This folder is empty'}
                 </div>
@@ -192,7 +192,7 @@ export const FileList: React.FC<FileListProps> = ({
                                         onDragStart={(e) => handleItemDragStart(e, file)}
                                     >
                                         <MD3TableCell className="w-12">
-                                            <ShapeMedia
+                                            <ExpressiveShape
                                                 shape={isSelected ? shapePair.morph : shapePair.rest}
                                                 morphTo={
                                                     enableMorph
@@ -204,7 +204,7 @@ export const FileList: React.FC<FileListProps> = ({
                                                 morphOn="hover"
                                                 width={32}
                                                 height={32}
-                                                className={`${shapePair.containerClass} flex items-center justify-center overflow-hidden`}
+                                                className={shapePair.containerClass}
                                             >
                                                 {!file.isDirectory && isImageFile(file.name) ? (
                                                     <img
@@ -224,7 +224,7 @@ export const FileList: React.FC<FileListProps> = ({
                                                         filled={filledIcons || file.isDirectory}
                                                     />
                                                 )}
-                                            </ShapeMedia>
+                                            </ExpressiveShape>
                                         </MD3TableCell>
                                         <MD3TableCell className="font-medium text-m3-on-surface max-w-[360px] truncate">
                                             {file.name}
@@ -297,7 +297,7 @@ export const FileList: React.FC<FileListProps> = ({
                             tabIndex={0}
                             role="button"
                         >
-                            <ShapeMedia
+                            <ExpressiveShape
                                 shape={isSelected ? shapePair.morph : shapePair.rest}
                                 morphTo={
                                     enableMorph
@@ -309,7 +309,7 @@ export const FileList: React.FC<FileListProps> = ({
                                 morphOn="hover"
                                 width={containerSize}
                                 height={containerSize}
-                                className={`${shapePair.containerClass} flex items-center justify-center overflow-hidden mb-2 shadow-xs`}
+                                className={`${shapePair.containerClass} mb-2 shadow-xs`}
                             >
                                 {!file.isDirectory && isImageFile(file.name) ? (
                                     <img
@@ -329,7 +329,7 @@ export const FileList: React.FC<FileListProps> = ({
                                         filled={filledIcons || file.isDirectory}
                                     />
                                 )}
-                            </ShapeMedia>
+                            </ExpressiveShape>
 
                             <span className="text-xs font-medium text-center leading-tight line-clamp-2 break-all w-full px-1">
                                 {file.name}

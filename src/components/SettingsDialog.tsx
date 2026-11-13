@@ -1,5 +1,6 @@
 import React from 'react';
-import { ScrollArea, ShapeMedia, Slider, Switch } from '@bug-on/m3-expressive';
+import { ScrollArea, Slider, Switch } from '@bug-on/m3-expressive';
+import { ExpressiveShape } from './ExpressiveShape';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -160,17 +161,17 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                                 isActive ? 'scale-110 ring-2 ring-m3-on-surface' : 'hover:scale-105'
                                             }`}
                                         >
-                                            <ShapeMedia
+                                            <ExpressiveShape
                                                 shape={isActive ? 'flower' : 'circle'}
                                                 morphTo="flower"
                                                 morphOn="hover"
                                                 width={32}
                                                 height={32}
                                                 style={{ backgroundColor: preset.hex }}
-                                                className="flex items-center justify-center text-white shadow-xs"
+                                                className="text-white shadow-xs"
                                             >
                                                 {isActive && <Icon name="check" size={16} />}
-                                            </ShapeMedia>
+                                            </ExpressiveShape>
                                         </button>
                                     );
                                 })}
