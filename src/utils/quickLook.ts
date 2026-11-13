@@ -1,5 +1,6 @@
 import type { IFile } from '../types/files';
 import {
+    getFileExtension,
     isImageFile,
     isVideoFile,
     isAudioFile,
@@ -9,9 +10,14 @@ import {
 
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'folder' | 'other';
 
+const PREVIEW_PREFERRED_EXTENSIONS = new Set(['heic', 'heif', 'tif', 'tiff']);
+
 export function getPreviewKind(file: IFile): PreviewKind {
     if (file.isDirectory) {
         return 'folder';
+    }
+    if (file.mediaKind === 'video') {
+        return 'video';
     }
     const name = file.name;
     if (isImageFile(name)) return 'image';
@@ -22,9 +28,40 @@ export function getPreviewKind(file: IFile): PreviewKind {
     return 'other';
 }
 
-export function toMediaUrl(path: string): string {
+function encodePath(path: string): string {
     const encodedSegments = path.split('/').map(encodeURIComponent).join('/');
-    return `media://${encodedSegments}`;
+    return encodedSegments.startsWith('/') ? encodedSegments : `/${encodedSegments}`;
+}
+
+export function toMediaUrl(path: string): string {
+    return `media://localhost${encodePath(path)}`;
+}
+
+export function toThumbnailUrl(path: string, size: 'grid' | 'poster' = 'grid'): string {
+    return `media://thumb${encodePath(path)}?size=${size}`;
+}
+
+export function toPreviewUrl(path: string): string {
+    return `media://preview${encodePath(path)}`;
+}
+
+export function shouldPreferPreviewUrl(filename: string): boolean {
+    return PREVIEW_PREFERRED_EXTENSIONS.has(getFileExtension(filename));
+}
+
+export function formatVideoDuration(seconds: number | null | undefined): string | null {
+    if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+        return null;
+    }
+    const totalSeconds = Math.floor(seconds);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    if (h > 0) {
+        return `${h}:${pad(m)}:${pad(s)}`;
+    }
+    return `${pad(m)}:${pad(s)}`;
 }
 
 export function stepIndex(index: number, length: number, delta: number): number {

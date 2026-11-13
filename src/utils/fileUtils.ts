@@ -12,9 +12,15 @@ export const GROUP_ORDER: FileGroup[] = [
     'Others'
 ];
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+const IMAGE_EXTENSIONS = new Set([
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico',
+    'avif', 'tif', 'tiff', 'heic', 'heif'
+]);
 const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a']);
-const VIDEO_EXTENSIONS = new Set(['mp4', 'mkv', 'webm', 'avi', 'mov']);
+const VIDEO_EXTENSIONS = new Set([
+    'mp4', 'mkv', 'webm', 'avi', 'mov',
+    'm4v', 'flv', 'mts', 'm2ts', 'ogv', 'wmv', '3gp', 'mpg', 'mpeg'
+]);
 const DOC_EXTENSIONS = new Set([
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
     'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'csv'
@@ -76,8 +82,19 @@ export function isArchiveFile(filename: string): boolean {
     return EXTRACTABLE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
+export function isVideoEntry(file: IFile): boolean {
+    if (file.isDirectory) return false;
+    return file.mediaKind === 'video' || isVideoFile(file.name);
+}
+
+export function isMediaThumbnailCandidate(file: IFile): boolean {
+    if (file.isDirectory) return false;
+    return isImageFile(file.name) || isVideoEntry(file);
+}
+
 export function getSemanticGroup(file: IFile): FileGroup {
     if (file.isDirectory) return 'Folders';
+    if (file.mediaKind === 'video') return 'Media';
 
     const ext = getFileExtension(file.name);
     if (!ext) return 'Others';
@@ -108,6 +125,9 @@ export interface FileIconInfo {
 export function getFileIconInfo(file: IFile): FileIconInfo {
     if (file.isDirectory) {
         return { icon: 'folder', colorClass: 'folder-icon' };
+    }
+    if (file.mediaKind === 'video') {
+        return { icon: 'movie', colorClass: 'media-icon' };
     }
 
     const ext = getFileExtension(file.name);

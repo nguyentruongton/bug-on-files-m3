@@ -8,6 +8,8 @@ import {
   isAudioFile,
   isPdfFile,
   isTextFile,
+  isVideoEntry,
+  isMediaThumbnailCandidate,
   getFileIconInfo,
   formatFileSize,
   formatFileDate,
@@ -45,10 +47,25 @@ describe('fileUtils', () => {
   test('file type predicates identify media, pdf, and text files', () => {
     expect(isImageFile('pic.PNG')).toBe(true);
     expect(isImageFile('pic.webp')).toBe(true);
+    expect(isImageFile('photo.avif')).toBe(true);
+    expect(isImageFile('scan.tif')).toBe(true);
+    expect(isImageFile('scan.tiff')).toBe(true);
+    expect(isImageFile('camera.heic')).toBe(true);
+    expect(isImageFile('camera.heif')).toBe(true);
     expect(isImageFile('doc.pdf')).toBe(false);
 
     expect(isVideoFile('movie.mp4')).toBe(true);
     expect(isVideoFile('movie.MKV')).toBe(true);
+    expect(isVideoFile('video.m4v')).toBe(true);
+    expect(isVideoFile('video.flv')).toBe(true);
+    expect(isVideoFile('stream.mts')).toBe(true);
+    expect(isVideoFile('stream.m2ts')).toBe(true);
+    expect(isVideoFile('clip.ogv')).toBe(true);
+    expect(isVideoFile('clip.wmv')).toBe(true);
+    expect(isVideoFile('mobile.3gp')).toBe(true);
+    expect(isVideoFile('movie.mpg')).toBe(true);
+    expect(isVideoFile('movie.mpeg')).toBe(true);
+    expect(isVideoFile('index.ts')).toBe(false);
     expect(isVideoFile('song.mp3')).toBe(false);
 
     expect(isAudioFile('song.flac')).toBe(true);
@@ -82,6 +99,10 @@ describe('fileUtils', () => {
       colorClass: 'media-icon',
     });
     expect(getFileIconInfo(makeFile('clip.mp4'))).toEqual({
+      icon: 'movie',
+      colorClass: 'media-icon',
+    });
+    expect(getFileIconInfo({ ...makeFile('clip.ts'), mediaKind: 'video' })).toEqual({
       icon: 'movie',
       colorClass: 'media-icon',
     });
@@ -145,5 +166,28 @@ describe('fileUtils', () => {
   test('getSemanticGroup categorizes directories and files', () => {
     expect(getSemanticGroup(makeFile('Projects', true))).toBe('Folders');
     expect(getSemanticGroup(makeFile('index.ts'))).toBe('Code');
+    expect(getSemanticGroup({ ...makeFile('clip.ts'), mediaKind: 'video' })).toBe('Media');
+    expect(getSemanticGroup(makeFile('movie.m4v'))).toBe('Media');
+    expect(getSemanticGroup(makeFile('photo.avif'))).toBe('Media');
+  });
+
+  test('isVideoEntry identifies video files and MPEG-TS mediaKind entries', () => {
+    expect(isVideoEntry(makeFile('movie.mp4'))).toBe(true);
+    expect(isVideoEntry(makeFile('movie.m4v'))).toBe(true);
+    expect(isVideoEntry({ ...makeFile('clip.ts'), mediaKind: 'video' })).toBe(true);
+    expect(isVideoEntry(makeFile('index.ts'))).toBe(false);
+    expect(isVideoEntry(makeFile('photo.jpg'))).toBe(false);
+    expect(isVideoEntry(makeFile('folder', true))).toBe(false);
+  });
+
+  test('isMediaThumbnailCandidate identifies images, videos, and MPEG-TS video entries', () => {
+    expect(isMediaThumbnailCandidate(makeFile('photo.png'))).toBe(true);
+    expect(isMediaThumbnailCandidate(makeFile('camera.heic'))).toBe(true);
+    expect(isMediaThumbnailCandidate(makeFile('movie.mp4'))).toBe(true);
+    expect(isMediaThumbnailCandidate({ ...makeFile('clip.ts'), mediaKind: 'video' })).toBe(true);
+    expect(isMediaThumbnailCandidate(makeFile('index.ts'))).toBe(false);
+    expect(isMediaThumbnailCandidate(makeFile('song.mp3'))).toBe(false);
+    expect(isMediaThumbnailCandidate(makeFile('document.pdf'))).toBe(false);
+    expect(isMediaThumbnailCandidate(makeFile('folder', true))).toBe(false);
   });
 });

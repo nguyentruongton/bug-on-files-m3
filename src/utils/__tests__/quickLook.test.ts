@@ -3,6 +3,10 @@ import type { IFile } from '../../types/files';
 import {
   getPreviewKind,
   toMediaUrl,
+  toThumbnailUrl,
+  toPreviewUrl,
+  shouldPreferPreviewUrl,
+  formatVideoDuration,
   stepIndex,
   resolveQuickLookTarget,
   resolveQuickLookFallback,
@@ -31,6 +35,18 @@ describe('quickLook', () => {
       expect(getPreviewKind(makeFile('x.png', true))).toBe('folder');
     });
 
+    test('treats MPEG-TS files with mediaKind: video as video while normal .ts is text', () => {
+      expect(getPreviewKind({ ...makeFile('stream.ts'), mediaKind: 'video' })).toBe('video');
+      expect(getPreviewKind(makeFile('app.ts'))).toBe('text');
+    });
+
+    test('recognizes extended image and video extensions', () => {
+      expect(getPreviewKind(makeFile('photo.avif'))).toBe('image');
+      expect(getPreviewKind(makeFile('photo.heic'))).toBe('image');
+      expect(getPreviewKind(makeFile('movie.m4v'))).toBe('video');
+      expect(getPreviewKind(makeFile('stream.mts'))).toBe('video');
+    });
+
     test('categorizes various text and code extensions', () => {
       expect(getPreviewKind(makeFile('notes.txt'))).toBe('text');
       expect(getPreviewKind(makeFile('README.md'))).toBe('text');
@@ -48,23 +64,60 @@ describe('quickLook', () => {
 
   describe('toMediaUrl', () => {
     test('encodes special characters including spaces, #, ?, and %', () => {
-      expect(toMediaUrl('/home/u/a b#1?.png')).toBe('media:///home/u/a%20b%231%3F.png');
-      expect(toMediaUrl('/home/u/100% test.png')).toBe('media:///home/u/100%25%20test.png');
+      expect(toMediaUrl('/home/u/a b#1?.png')).toBe('media://localhost/home/u/a%20b%231%3F.png');
+      expect(toMediaUrl('/home/u/100% test.png')).toBe('media://localhost/home/u/100%25%20test.png');
     });
 
     test('supports unicode filenames and round-trips via decodeURIComponent', () => {
       const originalPath = '/home/u/ünï.png';
       const mediaUrl = toMediaUrl(originalPath);
-      expect(mediaUrl.startsWith('media://')).toBe(true);
-      const afterScheme = mediaUrl.slice('media://'.length);
-      expect(decodeURIComponent(afterScheme)).toBe(originalPath);
+      expect(mediaUrl.startsWith('media://localhost/')).toBe(true);
+      const afterPrefix = mediaUrl.slice('media://localhost'.length);
+      expect(decodeURIComponent(afterPrefix)).toBe(originalPath);
     });
 
     test('encodes segments cleanly without mangling directory separators', () => {
       const originalPath = '/home/user/My Photos/summer#2026/beach 1?.jpg';
       const mediaUrl = toMediaUrl(originalPath);
-      expect(mediaUrl.startsWith('media:///')).toBe(true);
-      expect(decodeURIComponent(mediaUrl.slice('media://'.length))).toBe(originalPath);
+      expect(mediaUrl.startsWith('media://localhost/')).toBe(true);
+      expect(decodeURIComponent(mediaUrl.slice('media://localhost'.length))).toBe(originalPath);
+    });
+  });
+
+  describe('toThumbnailUrl and toPreviewUrl', () => {
+    test('toThumbnailUrl constructs thumbnail URL with size query parameter', () => {
+      expect(toThumbnailUrl('/home/u/a b#1?.mp4', 'grid')).toBe(
+        'media://thumb/home/u/a%20b%231%3F.mp4?size=grid'
+      );
+      expect(toThumbnailUrl('/home/u/a.mkv', 'poster')).toBe(
+        'media://thumb/home/u/a.mkv?size=poster'
+      );
+      expect(toThumbnailUrl('/home/u/clip.mp4')).toBe(
+        'media://thumb/home/u/clip.mp4?size=grid'
+      );
+    });
+
+    test('toPreviewUrl constructs preview URL for high-res images', () => {
+      expect(toPreviewUrl('/home/u/a.heic')).toBe('media://preview/home/u/a.heic');
+      expect(toPreviewUrl('/home/u/photo with space#1.tif')).toBe(
+        'media://preview/home/u/photo%20with%20space%231.tif'
+      );
+    });
+  });
+
+  describe('shouldPreferPreviewUrl', () => {
+    test('returns true for formats that need high-res converted preview (heic, heif, tif, tiff)', () => {
+      expect(shouldPreferPreviewUrl('photo.HEIC')).toBe(true);
+      expect(shouldPreferPreviewUrl('photo.heif')).toBe(true);
+      expect(shouldPreferPreviewUrl('scan.tif')).toBe(true);
+      expect(shouldPreferPreviewUrl('scan.tiff')).toBe(true);
+    });
+
+    test('returns false for web-native and non-image formats', () => {
+      expect(shouldPreferPreviewUrl('pic.png')).toBe(false);
+      expect(shouldPreferPreviewUrl('photo.jpg')).toBe(false);
+      expect(shouldPreferPreviewUrl('vector.svg')).toBe(false);
+      expect(shouldPreferPreviewUrl('video.mp4')).toBe(false);
     });
   });
 
@@ -174,6 +227,27 @@ describe('quickLook', () => {
       expect(getArrowStepDelta('Enter', 'list')).toBeNull();
       expect(getArrowStepDelta('Space', 'grid')).toBeNull();
       expect(getArrowStepDelta('Tab', 'list')).toBeNull();
+    });
+  });
+
+  describe('formatVideoDuration', () => {
+    test('formats MM:SS when under 1 hour', () => {
+      expect(formatVideoDuration(125)).toBe('02:05');
+      expect(formatVideoDuration(0)).toBe('00:00');
+      expect(formatVideoDuration(59)).toBe('00:59');
+    });
+
+    test('formats H:MM:SS when 1 hour or more', () => {
+      expect(formatVideoDuration(3661)).toBe('1:01:01');
+      expect(formatVideoDuration(7200)).toBe('2:00:00');
+      expect(formatVideoDuration(36000)).toBe('10:00:00');
+    });
+
+    test('returns null for null, undefined, negative, or invalid values', () => {
+      expect(formatVideoDuration(null)).toBeNull();
+      expect(formatVideoDuration(undefined)).toBeNull();
+      expect(formatVideoDuration(-10)).toBeNull();
+      expect(formatVideoDuration(NaN)).toBeNull();
     });
   });
 });

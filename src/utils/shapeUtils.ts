@@ -81,9 +81,13 @@ export function getFileGroupShapePair(
   group: string,
   isDirectory: boolean,
   fileName?: string,
+  mediaKind?: 'video',
 ): ShapePair {
   if (isDirectory) {
     return SHAPE_PAIR_MAP.Folders;
+  }
+  if (mediaKind === 'video') {
+    return VIDEO_SHAPE_PAIR;
   }
   if (group === 'Media' && fileName) {
     if (isVideoFile(fileName)) return VIDEO_SHAPE_PAIR;
