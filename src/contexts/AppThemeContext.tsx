@@ -106,7 +106,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const refreshMatugen = useCallback(async () => {
     const css = await ThemeService.getMatugenCss();
     const extracted = extractMatugenSeedColor(css);
-    setMatugenSeedColor(extracted);
+    setMatugenSeedColor((prev) => (prev === extracted ? prev : extracted));
   }, []);
 
   const loadCustomCssFromPath = useCallback(async (path: string) => {
@@ -138,16 +138,39 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [setCustomCssPath]);
 
   useEffect(() => {
+    if (!useMatugen) return;
     let cancelled = false;
-    ThemeService.getMatugenCss().then((css) => {
-      if (!cancelled) {
-        setMatugenSeedColor(extractMatugenSeedColor(css));
+
+    const syncNow = () => {
+      ThemeService.getMatugenCss().then((css) => {
+        if (cancelled) return;
+        const extracted = extractMatugenSeedColor(css);
+        setMatugenSeedColor((prev) => (prev === extracted ? prev : extracted));
+      });
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        syncNow();
       }
-    });
+    };
+
+    syncNow();
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncNow();
+      }
+    }, 3000);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.clearInterval(timer);
     };
-  }, []);
+  }, [useMatugen]);
 
   useEffect(() => {
     if (customCssPath) {

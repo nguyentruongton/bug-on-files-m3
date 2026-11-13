@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShapeMedia } from '@bug-on/m3-expressive';
+import { ExpressiveShape } from './ExpressiveShape';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -54,20 +54,20 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
         >
             <div className="flex flex-col gap-5 min-w-[320px]">
                 <div className="flex items-center gap-4">
-                    <ShapeMedia
+                    <ExpressiveShape
                         shape="cookie4Sided"
                         morphTo="flower"
                         morphOn="hover"
                         width={64}
                         height={64}
-                        className="bg-m3-primary-container text-m3-on-primary-container flex items-center justify-center shrink-0"
+                        className="bg-m3-primary-container text-m3-on-primary-container"
                     >
                         <Icon
                             name={file.isDirectory ? 'folder' : 'insert_drive_file'}
                             filled={file.isDirectory}
                             size={32}
                         />
-                    </ShapeMedia>
+                    </ExpressiveShape>
                     <div className="min-w-0 flex-1">
                         <div className="text-lg font-medium text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.name}</div>
                         <div className="text-xs font-medium text-m3-on-surface-variant">

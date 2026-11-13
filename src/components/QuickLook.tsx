@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { FAST_SPATIAL_SPRING, LoadingIndicator, ShapeMedia } from '@bug-on/m3-expressive';
+import { FAST_SPATIAL_SPRING, LoadingIndicator } from '@bug-on/m3-expressive';
+import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
 import type { TextPreview } from '../api/types';
 import { api } from '../api';
@@ -225,16 +226,16 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 return (
                     <div className="flex-1 min-h-[280px] flex items-center justify-center p-8 bg-m3-surface-container-low">
                         <div className="flex flex-col items-center gap-4 w-full max-w-md p-6 rounded-m3-xl bg-m3-surface-container">
-                            <ShapeMedia
+                            <ExpressiveShape
                                 shape="cookie6Sided"
                                 morphTo="verySunny"
                                 morphOn="hover"
                                 width={88}
                                 height={88}
-                                className="bg-m3-tertiary-container text-m3-on-tertiary-container flex items-center justify-center"
+                                className="bg-m3-tertiary-container text-m3-on-tertiary-container"
                             >
                                 <Icon name="audio_file" size={44} />
-                            </ShapeMedia>
+                            </ExpressiveShape>
                             <div className="text-base font-medium text-m3-on-surface text-center truncate w-full">
                                 {file.name}
                             </div>
@@ -327,16 +328,16 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 return (
                     <div className="flex-1 min-h-[300px] flex items-center justify-center p-8">
                         <div className="flex flex-col items-center gap-3 text-center max-w-md">
-                            <ShapeMedia
+                            <ExpressiveShape
                                 shape="clover4Leaf"
                                 morphTo="flower"
                                 morphOn="hover"
                                 width={96}
                                 height={96}
-                                className="bg-m3-primary-container text-m3-on-primary-container flex items-center justify-center"
+                                className="bg-m3-primary-container text-m3-on-primary-container"
                             >
                                 <Icon name="folder" size={48} filled />
-                            </ShapeMedia>
+                            </ExpressiveShape>
                             <div className="text-xl font-semibold text-m3-on-surface break-all">
                                 {file.name}
                             </div>
@@ -356,16 +357,16 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 return (
                     <div className="flex-1 min-h-[300px] flex items-center justify-center p-8">
                         <div className="flex flex-col items-center gap-3 text-center max-w-md">
-                            <ShapeMedia
+                            <ExpressiveShape
                                 shape="clover4Leaf"
                                 morphTo="flower"
                                 morphOn="hover"
                                 width={96}
                                 height={96}
-                                className="bg-m3-secondary-container text-m3-on-secondary-container flex items-center justify-center"
+                                className="bg-m3-secondary-container text-m3-on-secondary-container"
                             >
                                 <Icon name={iconInfo.icon} size={48} />
-                            </ShapeMedia>
+                            </ExpressiveShape>
                             <div className="text-xl font-semibold text-m3-on-surface break-all">
                                 {file.name}
                             </div>

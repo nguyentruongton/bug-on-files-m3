@@ -6,8 +6,8 @@ import {
     ListItem,
     ProgressIndicator,
     ScrollArea,
-    ShapeMedia,
 } from '@bug-on/m3-expressive';
+import { ExpressiveShape } from './ExpressiveShape';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -125,18 +125,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                     </p>
                                 </div>
 
-                                <ShapeMedia
+                                <ExpressiveShape
                                     shape="flower"
                                     morphTo="verySunny"
                                     morphOn="hover"
                                     width={68}
                                     height={68}
-                                    className="bg-m3-primary-container text-m3-on-primary-container flex items-center justify-center shrink-0 shadow-xs"
+                                    className="bg-m3-primary-container text-m3-on-primary-container shadow-xs"
                                 >
                                     <span className="text-sm font-bold tracking-tight">
                                         {storage ? `${Math.round(usagePercent)}%` : '—'}
                                     </span>
-                                </ShapeMedia>
+                                </ExpressiveShape>
                             </div>
 
                             {storage ? (
@@ -196,20 +196,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                             }}
                                             className="group relative flex flex-col items-center gap-2 p-3 rounded-m3-lg bg-m3-surface-container-low hover:bg-m3-surface-container-high transition-colors cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-m3-primary"
                                         >
-                                            <ShapeMedia
+                                            <ExpressiveShape
                                                 shape={shapePair.rest}
                                                 morphTo={shapePair.morph}
                                                 morphOn="hover"
                                                 width={52}
                                                 height={52}
-                                                className="bg-m3-primary-container text-m3-on-primary-container flex items-center justify-center"
+                                                className="bg-m3-primary-container text-m3-on-primary-container"
                                             >
                                                 <Icon
                                                     name={item.name === 'Home' ? 'home' : 'folder'}
                                                     size={26}
                                                     filled
                                                 />
-                                            </ShapeMedia>
+                                            </ExpressiveShape>
                                             <span className="text-xs font-medium text-m3-on-surface truncate w-full text-center">
                                                 {item.name}
                                             </span>
@@ -231,16 +231,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                     onClick={handleAddPin}
                                     className="flex flex-col items-center justify-center gap-2 p-3 rounded-m3-lg border border-dashed border-m3-outline-variant hover:border-m3-primary hover:bg-m3-surface-container-high transition-colors cursor-pointer select-none"
                                 >
-                                    <ShapeMedia
+                                    <ExpressiveShape
                                         shape="circle"
                                         morphTo="cookie4Sided"
                                         morphOn="hover"
                                         width={52}
                                         height={52}
-                                        className="bg-m3-secondary-container text-m3-on-secondary-container flex items-center justify-center"
+                                        className="bg-m3-secondary-container text-m3-on-secondary-container"
                                     >
                                         <Icon name="add" size={24} />
-                                    </ShapeMedia>
+                                    </ExpressiveShape>
                                     <span className="text-xs font-medium text-m3-on-surface-variant">
                                         Add Pin
                                     </span>
@@ -282,19 +282,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                                 supportingText={file.path}
                                                 leadingType="custom"
                                                 leadingContent={
-                                                    <ShapeMedia
+                                                    <ExpressiveShape
                                                         shape={shapePair.rest}
                                                         morphTo={shapePair.morph}
                                                         morphOn="hover"
                                                         width={40}
                                                         height={40}
-                                                        className={`${shapePair.containerClass} flex items-center justify-center`}
+                                                        className={shapePair.containerClass}
                                                     >
                                                         <Icon
                                                             name={file.isDirectory ? 'folder' : 'article'}
                                                             size={20}
                                                         />
-                                                    </ShapeMedia>
+                                                    </ExpressiveShape>
                                                 }
                                                 onClick={() => onNavigate(file.path)}
                                             />
