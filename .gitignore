@@ -32,5 +32,6 @@ pkg/
 src-pkg/
 src-tauri/target
 .superpowers/
+.worktrees/
 
 
