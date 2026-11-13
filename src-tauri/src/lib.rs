@@ -37,11 +37,41 @@ pub fn resolve_target_url(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let media_semaphore = Arc::new(tokio::sync::Semaphore::new(4));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .register_uri_scheme_protocol("media", |_ctx, req| {
-            media::handle_media_request(&req)
+        .register_asynchronous_uri_scheme_protocol("media", move |_ctx, req, responder| {
+            let uri_str = req.uri().to_string();
+            let route_opt = media::parse_media_route(&uri_str)
+                .or_else(|| media::parse_media_route(req.uri().path()))
+                .map(|(route, _)| route);
+
+            match route_opt {
+                Some(media::MediaRoute::Thumbnail(_)) | Some(media::MediaRoute::Preview) => {
+                    let sem = Arc::clone(&media_semaphore);
+                    tauri::async_runtime::spawn(async move {
+                        let _permit = sem.acquire_owned().await;
+                        let resp = tauri::async_runtime::spawn_blocking(move || {
+                            media::handle_media_request(&req)
+                        })
+                        .await
+                        .unwrap_or_else(|_| {
+                            tauri::http::Response::builder()
+                                .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Vec::new())
+                                .unwrap()
+                        });
+                        responder.respond(resp);
+                    });
+                }
+                _ => {
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let resp = media::handle_media_request(&req);
+                        responder.respond(resp);
+                    });
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::fs::list_dir,
