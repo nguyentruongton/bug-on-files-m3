@@ -1,5 +1,5 @@
 import type { IFile } from '../types/files';
-import type { IApi, IDrive, TextPreview, WatchEvent } from './types';
+import type { IApi, IDrive, TextPreview, VideoMetadata, WatchEvent } from './types';
 import { COMMAND_MAP } from './commandMap';
 
 export type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -13,17 +13,24 @@ interface RawFileEntry {
     size: number;
     mtimeMs?: number;
     mtime_ms?: number;
+    mediaKind?: 'video';
+    media_kind?: 'video';
 }
 
 function toIFile(entry: RawFileEntry): IFile {
     const mtimeMs = entry.mtimeMs ?? entry.mtime_ms ?? 0;
-    return {
+    const rawMediaKind = entry.mediaKind ?? entry.media_kind;
+    const file: IFile = {
         name: entry.name,
         path: entry.path,
         isDirectory: Boolean(entry.isDirectory ?? entry.is_directory),
         size: entry.size,
         mtime: new Date(mtimeMs),
     };
+    if (rawMediaKind === 'video') {
+        file.mediaKind = 'video';
+    }
+    return file;
 }
 
 function wrapListener(listenPromise: Promise<() => void>): () => void {
@@ -136,6 +143,8 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
                 listen('fs:watch-event', (payload) => cb(payload as WatchEvent))
             );
         },
+        getVideoMetadata: (path: string) =>
+            invoke(COMMAND_MAP.getVideoMetadata, { path }) as Promise<VideoMetadata | null>,
         ptySpawn: (cwd: string) =>
             invoke(COMMAND_MAP.ptySpawn, { cwd }) as Promise<number>,
         ptyWrite: (pid: number, data: string) => {

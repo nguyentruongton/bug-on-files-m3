@@ -26,6 +26,11 @@ pub fn search(
     search::search(&directory, &query, &options.unwrap_or_default())
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_video_metadata(path: String) -> Option<crate::thumbnails::VideoMetadata> {
+    crate::thumbnails::probe_video_metadata(std::path::Path::new(&path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39,10 +44,11 @@ mod tests {
         let size = get_directory_size(path.clone());
         assert_eq!(size, 0);
 
-        let results = search(path, "".to_string(), None);
+        let results = search(path.clone(), "".to_string(), None);
         assert!(results.is_empty());
 
         let _ = get_drives();
         let _ = get_storage_usage();
+        assert!(get_video_metadata(path).is_none());
     }
 }

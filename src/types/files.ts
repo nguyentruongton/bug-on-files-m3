@@ -4,6 +4,7 @@ export interface IFile {
     isDirectory: boolean;
     size: number;
     mtime: Date;
+    mediaKind?: 'video';
 }
 
 export interface IFileSystemAPI {

@@ -34,6 +34,7 @@ export const COMMAND_MAP: Record<CommandKey, string> = {
     getRecommendedApps: 'get_recommended_apps',
     watchStart: 'watch_start',
     watchStop: 'watch_stop',
+    getVideoMetadata: 'get_video_metadata',
     ptySpawn: 'pty_spawn',
     ptyWrite: 'pty_write',
     ptyResize: 'pty_resize',

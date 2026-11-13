@@ -20,6 +20,13 @@ export interface IDrive {
     usb: boolean;
 }
 
+export interface VideoMetadata {
+    width?: number | null;
+    height?: number | null;
+    durationSeconds?: number | null;
+    codec?: string | null;
+}
+
 export interface IApi {
     getThemeCss: () => Promise<string | null>;
     listDir: (path: string) => Promise<IFile[]>;
@@ -51,6 +58,7 @@ export interface IApi {
     watchStart: (dir: string) => Promise<number>;
     watchStop: (id: number) => Promise<void>;
     onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
+    getVideoMetadata: (path: string) => Promise<VideoMetadata | null>;
 
     // PTY
     ptySpawn: (cwd: string) => Promise<number>;

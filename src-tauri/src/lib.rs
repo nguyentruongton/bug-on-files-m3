@@ -102,6 +102,7 @@ pub fn run() {
             commands::system::get_storage_usage,
             commands::system::get_directory_size,
             commands::system::search,
+            commands::system::get_video_metadata,
             commands::pty::pty_spawn,
             commands::pty::pty_write,
             commands::pty::pty_resize,

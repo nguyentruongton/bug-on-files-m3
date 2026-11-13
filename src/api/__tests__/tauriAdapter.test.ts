@@ -168,4 +168,60 @@ describe('tauriAdapter', () => {
 
         expect(() => adapter.startDrag('/some/path')).not.toThrow();
     });
+
+    test('listDir preserves mediaKind: "video" when present and leaves undefined otherwise', async () => {
+        const invoke = async () => [
+            {
+                name: 'clip.mp4',
+                path: '/tmp/clip.mp4',
+                isDirectory: false,
+                size: 1000,
+                mtimeMs: 1700000000000,
+                mediaKind: 'video',
+            },
+            {
+                name: 'stream.ts',
+                path: '/tmp/stream.ts',
+                isDirectory: false,
+                size: 2000,
+                mtimeMs: 1700000000000,
+                media_kind: 'video',
+            },
+            {
+                name: 'notes.txt',
+                path: '/tmp/notes.txt',
+                isDirectory: false,
+                size: 500,
+                mtimeMs: 1700000000000,
+            },
+        ];
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        const files = await adapter.listDir('/tmp');
+        expect(files.length).toBe(3);
+        expect(files[0].mediaKind).toBe('video');
+        expect(files[1].mediaKind).toBe('video');
+        expect(files[2].mediaKind).toBeUndefined();
+    });
+
+    test('getVideoMetadata calls get_video_metadata with { path } and returns payload', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const mockPayload = {
+            width: 1920,
+            height: 1080,
+            durationSeconds: 12.5,
+            codec: 'h264',
+        };
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+            return mockPayload;
+        };
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        const result = await adapter.getVideoMetadata('/tmp/clip.mkv');
+        expect(calls).toEqual([{ cmd: 'get_video_metadata', args: { path: '/tmp/clip.mkv' } }]);
+        expect(result).toEqual(mockPayload);
+    });
 });
