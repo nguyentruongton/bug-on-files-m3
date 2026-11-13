@@ -33,7 +33,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
             narrow
             header={headerAction}
             fab={fab}
-            className="h-full shrink-0 bg-m3-surface border-0 select-none"
+            className="shell-panel h-full shrink-0 bg-m3-surface-container border-0 select-none"
         >
             {items.map((item) => (
                 <NavigationRailItem

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollArea, Slider, Switch } from '@bug-on/m3-expressive';
+import { Slider, Switch } from '@bug-on/m3-expressive';
 import { ExpressiveShape } from './ExpressiveShape';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
@@ -73,10 +73,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </Button>
             }
         >
-            <ScrollArea className="max-h-[68vh] pr-2" type="hover">
-                <div className="flex flex-col gap-6 py-1">
+            <div className="flex flex-col gap-6 py-1">
                     {/* Section 1: Theme & Dynamic Color */}
-                    <section className="flex flex-col gap-4 rounded-m3-lg bg-m3-surface-container-high/60 p-4">
+                    <section className="flex flex-col gap-4 rounded-m3-lg bg-m3-surface-container p-4">
                         <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 text-m3-primary text-xs font-semibold uppercase tracking-wider">
                                 <Icon name="palette" size={16} filled />
@@ -88,7 +87,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         </div>
 
                         {/* Appearance Mode */}
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 rounded-m3-md bg-m3-surface-container-low p-3">
                             <span className="text-sm font-medium text-m3-on-surface">
                                 Appearance Mode
                             </span>
@@ -109,7 +108,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         </div>
 
                         {/* Matugen Sync */}
-                        <div className="flex items-center justify-between gap-4 pt-1 border-t border-m3-outline-variant/40">
+                        <div className="flex items-center justify-between gap-4 rounded-m3-md bg-m3-surface-container-low p-3">
                             <div className="flex flex-col gap-0.5 min-w-0">
                                 <span className="text-sm font-medium text-m3-on-surface">
                                     Sync with Matugen
@@ -128,7 +127,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         </div>
 
                         {/* Seed Color Palette */}
-                        <div className="flex flex-col gap-2.5 pt-1 border-t border-m3-outline-variant/40">
+                        <div className="flex flex-col gap-2.5 rounded-m3-md bg-m3-surface-container-low p-3">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-medium text-m3-on-surface">
                                     Accent Seed Color
@@ -158,7 +157,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                             aria-label={`Select ${preset.name}`}
                                             onClick={() => handlePickColor(preset.hex)}
                                             className={`relative rounded-full p-0.5 transition-transform cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-m3-primary ${
-                                                isActive ? 'scale-110 ring-2 ring-m3-on-surface' : 'hover:scale-105'
+                                                isActive ? 'scale-110' : 'hover:scale-105'
                                             }`}
                                         >
                                             <ExpressiveShape
@@ -168,7 +167,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                                 width={32}
                                                 height={32}
                                                 style={{ backgroundColor: preset.hex }}
-                                                className="text-white shadow-xs"
+                                                className="text-white"
                                             >
                                                 {isActive && <Icon name="check" size={16} />}
                                             </ExpressiveShape>
@@ -180,13 +179,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     </section>
 
                     {/* Section 2: Explorer & Layout */}
-                    <section className="flex flex-col gap-4 rounded-m3-lg bg-m3-surface-container-high/60 p-4">
+                    <section className="flex flex-col gap-4 rounded-m3-lg bg-m3-surface-container p-4">
                         <div className="flex items-center gap-2 text-m3-primary text-xs font-semibold uppercase tracking-wider">
                             <Icon name="grid_view" size={16} filled />
                             <span>Explorer &amp; Layout</span>
                         </div>
 
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 rounded-m3-md bg-m3-surface-container-low p-3">
                             <span className="text-sm font-medium text-m3-on-surface">
                                 Default View Mode
                             </span>
@@ -212,7 +211,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                             </div>
                         </div>
 
-                        <div className="flex flex-col gap-2 pt-1 border-t border-m3-outline-variant/40">
+                        <div className="flex flex-col gap-2 rounded-m3-md bg-m3-surface-container-low p-3">
                             <div className="flex items-center justify-between">
                                 <span className="text-sm font-medium text-m3-on-surface">
                                     Grid Icon Size
@@ -231,7 +230,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                             />
                         </div>
 
-                        <div className="flex items-center justify-between gap-4 pt-1 border-t border-m3-outline-variant/40">
+                        <div className="flex items-center justify-between gap-4 rounded-m3-md bg-m3-surface-container-low p-3">
                             <div className="flex flex-col">
                                 <span className="text-sm font-medium text-m3-on-surface">
                                     Show Hidden Files
@@ -247,7 +246,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                             />
                         </div>
 
-                        <div className="flex items-center justify-between gap-4 pt-1 border-t border-m3-outline-variant/40">
+                        <div className="flex items-center justify-between gap-4 rounded-m3-md bg-m3-surface-container-low p-3">
                             <div className="flex flex-col">
                                 <span className="text-sm font-medium text-m3-on-surface">
                                     Filled File Icons
@@ -265,7 +264,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     </section>
 
                     {/* Section 3: Custom Stylesheet */}
-                    <section className="flex flex-col gap-3 rounded-m3-lg bg-m3-surface-container-high/60 p-4">
+                    <section className="flex flex-col gap-3 rounded-m3-lg bg-m3-surface-container p-4">
                         <div className="flex items-center gap-2 text-m3-primary text-xs font-semibold uppercase tracking-wider">
                             <Icon name="css" size={16} filled />
                             <span>Custom Stylesheet</span>
@@ -295,7 +294,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         </div>
                         {customCssPath && (
                             <div
-                                className="text-xs text-m3-primary truncate px-2.5 py-1.5 rounded-m3-sm bg-m3-primary-container/30"
+                                className="text-xs text-m3-on-secondary-container truncate px-2.5 py-1.5 rounded-m3-sm bg-m3-secondary-container"
                                 title={customCssPath}
                             >
                                 Loaded: {customCssPath}
@@ -303,7 +302,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         )}
                     </section>
                 </div>
-            </ScrollArea>
         </Dialog>
     );
 };

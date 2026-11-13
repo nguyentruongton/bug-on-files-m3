@@ -41,18 +41,34 @@ export const FileListSkeleton: React.FC<FileListSkeletonProps> = ({
                     ))}
                 </div>
             ) : (
-                <div className="flex flex-col gap-2">
-                    {Array.from({ length: count }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="flex items-center gap-4 h-11 px-4 rounded-m3-md bg-m3-surface-container animate-pulse"
-                        >
-                            <div className="w-7 h-7 rounded-m3-sm bg-m3-surface-container-highest shrink-0" />
-                            <div className="h-3.5 w-2/5 rounded-full bg-m3-surface-container-highest" />
-                            <div className="h-3 w-24 rounded-full bg-m3-surface-container-high ml-auto" />
-                            <div className="h-3 w-14 rounded-full bg-m3-surface-container-high" />
-                        </div>
-                    ))}
+                <div className="flex flex-col gap-[2px]">
+                    {Array.from({ length: count }).map((_, i) => {
+                        const segmentRadius =
+                            count === 1
+                                ? 'rounded-m3-lg'
+                                : i === 0
+                                  ? 'rounded-t-m3-lg rounded-b-m3-xs'
+                                  : i === count - 1
+                                    ? 'rounded-t-m3-xs rounded-b-m3-lg'
+                                    : 'rounded-m3-xs';
+
+                        return (
+                            <div
+                                key={i}
+                                className={`flex items-center gap-3 h-14 px-4 ${segmentRadius} bg-m3-surface-container animate-pulse`}
+                            >
+                                <div className="w-8 h-8 rounded-full bg-m3-surface-container-highest shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="h-3.5 w-2/5 rounded-full bg-m3-surface-container-highest" />
+                                </div>
+                                <div className="file-meta-grid items-center shrink-0">
+                                    <div className="hidden md:block h-3 w-28 rounded-full bg-m3-surface-container-high" />
+                                    <div className="hidden sm:block h-3 w-16 rounded-full bg-m3-surface-container-high" />
+                                    <div className="h-3 w-14 rounded-full bg-m3-surface-container-high ml-auto" />
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>

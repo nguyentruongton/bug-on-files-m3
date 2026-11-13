@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import {
   DEFAULT_SEED_COLOR,
   PRESET_SEED_COLORS,
   extractMatugenSeedColor,
+  resetMatugenWarningState,
   resolveEffectiveSeedColor,
   isModalDialogOpen,
 } from '../themeUtils';
@@ -47,6 +48,40 @@ describe('themeUtils', () => {
 
     test('ignores GTK @define-color alias without hex', () => {
       expect(extractMatugenSeedColor('@define-color accent_color @primary;')).toBeNull();
+    });
+
+    test('emits deduplicated console.warn in DEV only on non-empty failure and resets on valid recovery', () => {
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+      const prevDev = process.env.DEV;
+      process.env.DEV = 'true';
+      resetMatugenWarningState();
+
+      try {
+        // Suppresses empty and null inputs
+        expect(extractMatugenSeedColor(null)).toBeNull();
+        expect(extractMatugenSeedColor('')).toBeNull();
+        expect(extractMatugenSeedColor('   \n  ')).toBeNull();
+        expect(warnSpy).toHaveBeenCalledTimes(0);
+
+        // Warns once per non-empty failed payload across repeated polling
+        const badPayload = ':root { --md-sys-color-primary: rgb(1, 2, 3); }';
+        expect(extractMatugenSeedColor(badPayload)).toBeNull();
+        expect(extractMatugenSeedColor(badPayload)).toBeNull();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+
+        // Valid extraction resets deduplication cache so subsequent failure warns again
+        expect(extractMatugenSeedColor(':root { --md-sys-color-primary: #6750a4; }')).toBe('#6750A4');
+        expect(extractMatugenSeedColor(badPayload)).toBeNull();
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        if (prevDev === undefined) {
+          delete process.env.DEV;
+        } else {
+          process.env.DEV = prevDev;
+        }
+        resetMatugenWarningState();
+        warnSpy.mockRestore();
+      }
     });
   });
 

@@ -202,7 +202,7 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                             key={file.path}
                             src={toMediaUrl(file.path)}
                             alt={file.name}
-                            className="max-w-full max-h-[68vh] object-contain rounded-m3-md shadow-md"
+                            className="max-w-full max-h-[68vh] object-contain rounded-m3-md"
                             onError={() => setMediaErrorPath(file.path)}
                         />
                     </div>
@@ -391,13 +391,13 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={FAST_SPATIAL_SPRING}
-                className="w-full max-w-4xl max-h-[85vh] bg-m3-surface-container-high text-m3-on-surface rounded-m3-xl shadow-2xl border border-m3-outline-variant/40 flex flex-col overflow-hidden"
+                className="w-full max-w-4xl max-h-[85vh] bg-m3-surface-container-high text-m3-on-surface rounded-m3-xl flex flex-col overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Preview of ${file.name}`}
             >
-                <header className="flex items-center justify-between gap-4 px-5 py-3.5 border-b border-m3-outline-variant/40 bg-m3-surface-container shrink-0">
+                <header className="flex items-center justify-between gap-4 px-5 py-3.5 bg-m3-surface-container shrink-0">
                     <div className="flex items-center gap-3 min-w-0">
                         <Icon
                             name={iconInfo.icon}

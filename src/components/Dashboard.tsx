@@ -131,7 +131,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                     morphOn="hover"
                                     width={68}
                                     height={68}
-                                    className="bg-m3-primary-container text-m3-on-primary-container shadow-xs"
+                                    className="bg-m3-primary-container text-m3-on-primary-container"
                                 >
                                     <span className="text-sm font-bold tracking-tight">
                                         {storage ? `${Math.round(usagePercent)}%` : '—'}
@@ -164,7 +164,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
                     {/* Bento Card 2: Pinned Folders */}
                     <Card
-                        variant="elevated"
+                        variant="filled"
                         disableHoverEffect
                         className="col-span-12 lg:col-span-7 rounded-m3-xl bg-m3-surface-container"
                     >
@@ -218,7 +218,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                                 aria-label={`Unpin ${item.name}`}
                                                 title="Unpin"
                                                 onClick={(e) => handleRemovePin(e, idx)}
-                                                className="absolute top-1 right-1 !w-6 !h-6 !min-w-0 !min-h-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-m3-surface-container-highest/90"
+                                                className="absolute top-1 right-1 !w-6 !h-6 !min-w-0 !min-h-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-m3-surface-container-highest"
                                             >
                                                 <Icon name="close" size={14} />
                                             </IconButton>
@@ -229,7 +229,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 <button
                                     type="button"
                                     onClick={handleAddPin}
-                                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-m3-lg border border-dashed border-m3-outline-variant hover:border-m3-primary hover:bg-m3-surface-container-high transition-colors cursor-pointer select-none"
+                                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-m3-lg bg-m3-surface-container-high hover:bg-m3-surface-container-highest transition-colors cursor-pointer select-none"
                                 >
                                     <ExpressiveShape
                                         shape="circle"
@@ -251,9 +251,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
                     {/* Bento Card 3: Recent Files */}
                     <Card
-                        variant="outlined"
+                        variant="filled"
                         disableHoverEffect
-                        className="col-span-12 rounded-m3-xl bg-m3-surface-container-low border-m3-outline-variant/50"
+                        className="col-span-12 rounded-m3-xl bg-m3-surface-container"
                     >
                         <CardContent className="p-6 flex flex-col gap-3">
                             <div className="flex items-center gap-2 text-m3-primary font-medium text-sm">

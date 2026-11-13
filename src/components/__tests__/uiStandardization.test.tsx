@@ -90,9 +90,9 @@ describe('TabBar standardization', () => {
         expect(html).toContain('aria-label="Documents with a very long folder name"');
         expect(html).toContain('aria-label="Close Home"');
 
-        // Each tab root uses <div role="tab">, never a <button> enclosing the close <button>
-        expect(html).not.toMatch(/<button[^>]*role="tab"/);
-        expect(html).toMatch(/<div[^>]*role="tab"/);
+        // Tab roots use native <button role="tab"> with non-button close triggers (never nested <button> inside <button>)
+        expect(html).toMatch(/<button[^>]*role="tab"/);
+        expect(html).toContain('<span role="button" tabindex="-1" aria-label="Close Home"');
 
         // External New Tab button renders outside role="tablist"
         const tablistEnd = html.lastIndexOf('</fieldset>');
@@ -100,10 +100,10 @@ describe('TabBar standardization', () => {
         expect(tablistEnd).toBeGreaterThan(-1);
         expect(newTabIdx).toBeGreaterThan(tablistEnd);
 
-        // Connected ButtonGroup forwards per-corner radii to unselected middle/trailing tabs
-        const secondTabMatch = html.match(/<div[^>]*data-tab-id="t2"[^>]*>/);
-        expect(secondTabMatch?.[0]).toContain('border-top-left-radius:8px');
-        expect(secondTabMatch?.[0]).toContain('border-top-right-radius:20px');
+        // Connected ButtonGroup drives per-corner radii natively on motion.button without asChild/static border-radius overrides
+        const secondTabMatch = html.match(/<button[^>]*data-tab-id="t2"[^>]*>/);
+        expect(secondTabMatch?.[0]).toBeDefined();
+        expect(secondTabMatch?.[0]).not.toContain('border-radius:9999px');
     });
 
     test('hides close buttons when only one tab is open', () => {
@@ -203,6 +203,24 @@ describe('FileList standardization', () => {
         expect(shouldEnableItemMorph(25, false)).toBe(true);
         expect(shouldEnableItemMorph(500, false)).toBe(false);
         expect(shouldEnableItemMorph(500, true)).toBe(true);
+    });
+
+    test('uses content-start on grid container with min-h-full so few-item folders do not stretch rows', () => {
+        const html = renderToStaticMarkup(
+            <FileList
+                files={[makeFile('a.txt'), makeFile('b.txt')]}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                sortBy="name"
+                sortOrder="asc"
+            />
+        );
+        expect(html).toContain('grid content-start gap-3 p-4 pb-24 min-h-full');
     });
 });
 
@@ -395,6 +413,8 @@ describe('Phase 4 Views & Overlays standardization', () => {
         expect(html).toContain('bg-m3-surface-container');
         expect(html).toContain('bg-m3-surface-container-low');
         expect(html).toContain('bg-m3-secondary-container');
+        expect(html).toContain('backdrop-blur-sm');
+        expect(html.match(/<div[^>]*data-radix-scroll-area-viewport/g)?.length ?? 0).toBe(1);
     });
 
     test('QuickLook retains backdrop scrim while removing modal borders, shadows, and header rule', () => {

@@ -6,6 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogIcon,
+  DialogOverlay,
   DialogTitle,
 } from '@bug-on/m3-expressive';
 
@@ -37,12 +38,17 @@ export const Dialog: React.FC<DialogProps> = ({
         }
       }}
     >
+      <DialogOverlay className="bg-black/40 backdrop-blur-sm" />
       <DialogContent
         className={maxWidth ? `w-full ${maxWidth}` : undefined}
         aria-describedby={undefined}
       >
-        <DialogHeader>
-          {icon && <DialogIcon>{icon}</DialogIcon>}
+        <DialogHeader className="flex flex-row items-center gap-3 pr-10">
+          {icon && (
+            <DialogIcon className="!mb-0 shrink-0 justify-start text-m3-primary">
+              {icon}
+            </DialogIcon>
+          )}
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <DialogBody>{children}</DialogBody>

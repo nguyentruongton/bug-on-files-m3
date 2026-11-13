@@ -51,6 +51,24 @@ export function resolveQuickLookTarget(
     return firstSelected ?? null;
 }
 
+export function resolveSpaceQuickLookTarget(
+    selectedFiles: Set<string>,
+    lastSelectedPath: string | null,
+    sortedFiles: IFile[],
+    activeElement?: Element | null
+): IFile | null {
+    if (selectedFiles.size > 0) {
+        return resolveQuickLookTarget(selectedFiles, lastSelectedPath, sortedFiles);
+    }
+    const focusedPath = (activeElement as HTMLElement | null)
+        ?.closest?.('.file-list-item')
+        ?.getAttribute('data-file-path');
+    if (!focusedPath) {
+        return null;
+    }
+    return sortedFiles.find((f) => f.path === focusedPath) ?? null;
+}
+
 export function resolveQuickLookFallback(
     prevPath: string,
     prevFiles: IFile[],

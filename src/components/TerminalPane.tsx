@@ -50,6 +50,17 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
         terminalRef.current = term;
         fitAddonRef.current = fitAddon;
 
+        const themeObserver =
+            typeof MutationObserver !== 'undefined'
+                ? new MutationObserver(() => {
+                      term.options.theme = readTerminalTheme();
+                  })
+                : null;
+        themeObserver?.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['style', 'class'],
+        });
+
         const handleResize = () => {
             fitAddon.fit();
             if (pidRef.current) {
@@ -111,6 +122,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
             disposed = true;
             window.removeEventListener('resize', handleResize);
             resizeObserver?.disconnect();
+            themeObserver?.disconnect();
             dataDisposable.dispose();
             resizeDisposable.dispose();
             cleanupData?.();

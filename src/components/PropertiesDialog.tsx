@@ -76,7 +76,7 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
                     </div>
                 </div>
 
-                <div className="grid grid-cols-[96px_1fr] gap-y-3 gap-x-3 text-sm rounded-m3-lg bg-m3-surface-container-high/50 p-4">
+                <div className="grid grid-cols-[96px_1fr] gap-y-3 gap-x-3 text-sm rounded-m3-lg bg-m3-surface-container p-4">
                     <div className="text-m3-on-surface-variant font-medium">Location</div>
                     <div className="text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.path}</div>
 

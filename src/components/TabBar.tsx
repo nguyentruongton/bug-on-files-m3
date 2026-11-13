@@ -17,60 +17,6 @@ interface TabBarProps {
     onNewTab: () => void;
 }
 
-interface TabSegmentProps {
-    selected?: boolean;
-    children: React.ReactElement<Record<string, unknown>>;
-    animate?: unknown;
-    whileTap?: unknown;
-    transition?: unknown;
-    layout?: unknown;
-    style?: React.CSSProperties;
-    className?: string;
-}
-
-/**
- * Direct child wrapper for ButtonGroup so ButtonGroup reads `selected`
- * and forwards connected corner-radius motion/style props onto the inner `<Button>`
- * without overriding TabBar's own `tabIndex` or tonal `colorStyle`.
- */
-const TabSegment: React.FC<TabSegmentProps> = ({
-    children,
-    animate,
-    whileTap,
-    transition,
-    layout,
-    style,
-    className,
-}) => {
-    const cornerAnimate =
-        animate && typeof animate === 'object' ? (animate as Record<string, unknown>) : undefined;
-    const cornerStyle: React.CSSProperties | undefined =
-        cornerAnimate && 'borderTopLeftRadius' in cornerAnimate
-            ? {
-                  borderRadius: undefined,
-                  borderTopLeftRadius: cornerAnimate.borderTopLeftRadius as number,
-                  borderTopRightRadius: cornerAnimate.borderTopRightRadius as number,
-                  borderBottomRightRadius: cornerAnimate.borderBottomRightRadius as number,
-                  borderBottomLeftRadius: cornerAnimate.borderBottomLeftRadius as number,
-              }
-            : undefined;
-
-    return React.cloneElement(children, {
-        ...(animate !== undefined ? { animate } : {}),
-        ...(whileTap !== undefined ? { whileTap } : {}),
-        ...(transition !== undefined ? { transition } : {}),
-        ...(layout !== undefined ? { layout } : {}),
-        style: {
-            ...(children.props.style as React.CSSProperties | undefined),
-            ...style,
-            ...cornerStyle,
-        },
-        className: [children.props.className as string | undefined, className]
-            .filter(Boolean)
-            .join(' '),
-    });
-};
-
 const getTabIconName = (path: string): string => {
     if (path.startsWith('app://dashboard') || path === 'dashboard://') return 'dashboard';
     if (path.startsWith('search://')) return 'search';
@@ -86,7 +32,7 @@ export const TabBar: React.FC<TabBarProps> = ({
     onTabClose,
     onNewTab,
 }) => {
-    const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
     useEffect(() => {
         const activeEl = tabRefs.current.get(activeTabId);
@@ -154,79 +100,68 @@ export const TabBar: React.FC<TabBarProps> = ({
                     {tabs.map((tab) => {
                         const isActive = tab.id === activeTabId;
                         return (
-                            <TabSegment key={tab.id} selected={isActive}>
-                                <Button
-                                    asChild
-                                    variant="toggle"
-                                    size="sm"
-                                    selected={isActive}
-                                    shape={isActive ? 'square' : 'round'}
-                                    colorStyle="tonal"
-                                    onClick={() => onTabClick(tab.id)}
-                                    className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 !px-3 transition-colors ${
-                                        isActive
-                                            ? '!bg-m3-secondary-container !text-m3-on-secondary-container font-medium'
-                                            : '!bg-m3-surface-container-high !text-m3-on-surface-variant hover:!bg-m3-surface-container-highest'
-                                    }`}
-                                >
-                                    <div
-                                        ref={(el) => {
-                                            if (el) {
-                                                tabRefs.current.set(tab.id, el);
-                                            } else {
-                                                tabRefs.current.delete(tab.id);
-                                            }
-                                        }}
-                                        role="tab"
-                                        data-tab-id={tab.id}
-                                        aria-selected={isActive}
-                                        aria-label={tab.title}
-                                        tabIndex={isActive ? 0 : -1}
-                                        className="min-w-0 cursor-pointer"
-                                        onMouseDown={(e) => {
-                                            if (e.button === 1 && canClose) {
-                                                e.preventDefault();
+                            <Button
+                                key={tab.id}
+                                ref={(el) => {
+                                    if (el) {
+                                        tabRefs.current.set(tab.id, el);
+                                    } else {
+                                        tabRefs.current.delete(tab.id);
+                                    }
+                                }}
+                                variant="toggle"
+                                size="sm"
+                                selected={isActive}
+                                colorStyle="tonal"
+                                role="tab"
+                                data-tab-id={tab.id}
+                                aria-selected={isActive}
+                                aria-label={tab.title}
+                                tabIndex={isActive ? 0 : -1}
+                                onClick={() => onTabClick(tab.id)}
+                                onMouseDown={(e) => {
+                                    if (e.button === 1 && canClose) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onTabClose(tab.id);
+                                    }
+                                }}
+                                className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 !px-3 ${
+                                    isActive
+                                        ? '!bg-m3-secondary-container !text-m3-on-secondary-container font-medium'
+                                        : '!bg-m3-surface-container-high !text-m3-on-surface-variant hover:!bg-m3-surface-container-highest'
+                                }`}
+                            >
+                                <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">
+                                    <span className="flex items-center gap-1.5 min-w-0 flex-1 truncate text-left">
+                                        <Icon
+                                            name={getTabIconName(tab.path)}
+                                            size={16}
+                                            filled={isActive}
+                                            className="shrink-0"
+                                        />
+                                        <span className="truncate">{tab.title}</span>
+                                    </span>
+                                    {canClose && (
+                                        <span
+                                            role="button"
+                                            tabIndex={-1}
+                                            aria-label={`Close ${tab.title}`}
+                                            title="Close tab"
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onClick={(e) => {
                                                 e.stopPropagation();
                                                 onTabClose(tab.id);
-                                            }
-                                        }}
-                                    >
-                                        <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">
-                                            <span className="flex items-center gap-1.5 min-w-0 flex-1 truncate text-left">
-                                                <Icon
-                                                    name={getTabIconName(tab.path)}
-                                                    size={16}
-                                                    filled={isActive}
-                                                    className="shrink-0"
-                                                />
-                                                <span className="truncate">{tab.title}</span>
-                                            </span>
-                                            {canClose && (
-                                                <IconButton
-                                                    size="xs"
-                                                    aria-label={`Close ${tab.title}`}
-                                                    title="Close tab"
-                                                    onPointerDown={(e) => {
-                                                        e.stopPropagation();
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' || e.key === ' ') {
-                                                            e.stopPropagation();
-                                                        }
-                                                    }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onTabClose(tab.id);
-                                                    }}
-                                                    className="shrink-0 !w-6 !h-6 !min-w-0 !min-h-0 opacity-70 hover:opacity-100 hover:bg-m3-surface-container-highest"
-                                                >
-                                                    <Icon name="close" size={14} />
-                                                </IconButton>
-                                            )}
+                                            }}
+                                            className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-m3-full opacity-70 hover:opacity-100 hover:bg-m3-surface-container-highest cursor-pointer"
+                                        >
+                                            <Icon name="close" size={14} />
                                         </span>
-                                    </div>
-                                </Button>
-                            </TabSegment>
+                                    )}
+                                </span>
+                            </Button>
                         );
                     })}
                 </ButtonGroup>

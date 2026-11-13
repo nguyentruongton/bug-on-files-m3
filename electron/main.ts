@@ -33,7 +33,10 @@ protocol.registerSchemesAsPrivileged([
 // Suppress "Incomplete image description" warning on Wayland
 app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
-// Optional: Disable GPU rasterization if glitches persist, but 'auto' ozone hint often fixes it.
+// Disable GPU rasterization on Linux/Wayland to avoid black 512px scroller tile corruption during drawer resize.
+if (process.platform === 'linux') {
+    app.commandLine.appendSwitch('disable-gpu-rasterization');
+}
 // app.commandLine.appendSwitch('disable-gpu-compositing');
 
 function createWindow() {

@@ -30,23 +30,52 @@ export function normalizeHexColor(hex: string | null | undefined): string | null
   return null;
 }
 
+let lastFailedMatugenPayload: string | null = null;
+
+function isDevMode(): boolean {
+  return Boolean((import.meta as { env?: { DEV?: boolean | string } }).env?.DEV);
+}
+
+export function resetMatugenWarningState(): void {
+  lastFailedMatugenPayload = null;
+}
+
 /** Extracts a normalized #RRGGBB seed color from Matugen CSS, Caelestia scheme.json, or GTK CSS. */
 export function extractMatugenSeedColor(cssText: string | null | undefined): string | null {
-  if (!cssText) return null;
+  if (!cssText || !cssText.trim()) return null;
 
   const matugenMatch = cssText.match(MATUGEN_PRIMARY_REGEX);
   if (matugenMatch?.[1]) {
-    return normalizeHexColor(matugenMatch[1]);
+    const normalized = normalizeHexColor(matugenMatch[1]);
+    if (normalized) {
+      lastFailedMatugenPayload = null;
+      return normalized;
+    }
   }
 
   const caelestiaMatch = cssText.match(CAELESTIA_PRIMARY_REGEX);
   if (caelestiaMatch?.[1]) {
-    return normalizeHexColor(`#${caelestiaMatch[1]}`);
+    const normalized = normalizeHexColor(`#${caelestiaMatch[1]}`);
+    if (normalized) {
+      lastFailedMatugenPayload = null;
+      return normalized;
+    }
   }
 
   const gtkMatch = cssText.match(GTK_ACCENT_REGEX);
   if (gtkMatch?.[1]) {
-    return normalizeHexColor(gtkMatch[1]);
+    const normalized = normalizeHexColor(gtkMatch[1]);
+    if (normalized) {
+      lastFailedMatugenPayload = null;
+      return normalized;
+    }
+  }
+
+  if (isDevMode() && lastFailedMatugenPayload !== cssText) {
+    lastFailedMatugenPayload = cssText;
+    console.warn(
+      '[themeUtils] Failed to extract primary hex seed color from Matugen/theme payload; falling back to default.'
+    );
   }
 
   return null;
