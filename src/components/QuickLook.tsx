@@ -3,13 +3,17 @@ import { motion } from 'motion/react';
 import { FAST_SPATIAL_SPRING, LoadingIndicator } from '@bug-on/m3-expressive';
 import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
-import type { TextPreview } from '../api/types';
+import type { TextPreview, VideoMetadata } from '../api/types';
 import { api } from '../api';
 import {
+    formatVideoDuration,
     getArrowStepDelta,
     getPreviewKind,
+    shouldPreferPreviewUrl,
     stepIndex,
     toMediaUrl,
+    toPreviewUrl,
+    toThumbnailUrl,
     type PreviewKind,
 } from '../utils/quickLook';
 import { formatFileDate, formatFileSize, getFileIconInfo } from '../utils/fileUtils';
@@ -19,30 +23,126 @@ import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { Button } from './Button';
 
+export type ImageStage = 'raw' | 'preview' | 'error';
+
+export function getInitialImageStage(filename: string): 'raw' | 'preview' {
+    return shouldPreferPreviewUrl(filename) ? 'preview' : 'raw';
+}
+
+export function getNextImageStage(stage: ImageStage): ImageStage {
+    if (stage === 'raw') return 'preview';
+    return 'error';
+}
+
+export function resolveEffectiveImageStage(
+    imageStageState: { path: string; stage: ImageStage } | null,
+    file: Pick<IFile, 'path' | 'name'>
+): ImageStage {
+    if (imageStageState?.path === file.path) {
+        return imageStageState.stage;
+    }
+    return getInitialImageStage(file.name);
+}
+
+export interface VideoMetadataSummary {
+    resolution: string | null;
+    duration: string | null;
+    codec: string | null;
+    size: string | null;
+    pills: string[];
+}
+
+export function formatVideoMetadataSummary(
+    meta: VideoMetadata | null | undefined,
+    fileSize?: number | null
+): VideoMetadataSummary {
+    const resolution =
+        meta?.width && meta?.height ? `${meta.width}×${meta.height}` : null;
+    const duration = formatVideoDuration(meta?.durationSeconds);
+    const codec = meta?.codec ? meta.codec.toUpperCase() : null;
+    const size = fileSize !== undefined && fileSize !== null ? formatFileSize(fileSize) : null;
+
+    const pills: string[] = [];
+    if (resolution) pills.push(resolution);
+    if (duration) pills.push(duration);
+    if (codec) pills.push(codec);
+    if (size) pills.push(size);
+
+    return { resolution, duration, codec, size, pills };
+}
+
+export function resolveEffectiveVideoMetadata(
+    videoMeta: { path: string; data: VideoMetadata | null } | null,
+    currentPath: string
+): VideoMetadata | null {
+    return videoMeta?.path === currentPath ? videoMeta.data : null;
+}
+
 export interface QuickLookProps {
     file: IFile;
     files: IFile[];
-    viewMode: 'grid' | 'list';
+    viewMode?: 'grid' | 'list';
     onClose: () => void;
-    onNavigate: (file: IFile) => void;
-    onOpen: (file: IFile) => void;
+    onNavigate?: (file: IFile) => void;
+    onOpen?: (file: IFile) => void;
+    onSelectFile?: (file: IFile) => void;
+    onOpenExternal?: (file: IFile) => void;
+
+    // Test overrides for deterministic renderToStaticMarkup testing
+    initialImageStageState?: { path: string; stage: ImageStage } | null;
+    initialVideoErrorPath?: string | null;
+    initialVideoMeta?: { path: string; data: VideoMetadata | null } | null;
+    initialPosterErrorPath?: string | null;
 }
 
 export const QuickLook: React.FC<QuickLookProps> = ({
     file,
     files,
-    viewMode,
+    viewMode = 'grid',
     onClose,
     onNavigate,
     onOpen,
+    onSelectFile: _onSelectFile,
+    onOpenExternal,
+    initialImageStageState = null,
+    initialVideoErrorPath = null,
+    initialVideoMeta = null,
+    initialPosterErrorPath = null,
 }) => {
+    const handleOpen = () => {
+        (onOpen ?? onOpenExternal)?.(file);
+    };
+
     const rawKind = useMemo(() => getPreviewKind(file), [file]);
     const iconInfo = useMemo(() => getFileIconInfo(file), [file]);
 
     const [mediaErrorPath, setMediaErrorPath] = useState<string | null>(null);
+
+    // Image fallback state keyed by path
+    const [imageStageState, setImageStageState] = useState<{
+        path: string;
+        stage: ImageStage;
+    } | null>(initialImageStageState);
+
+    const effectiveImageStage = useMemo(() => {
+        if (rawKind !== 'image') return null;
+        return resolveEffectiveImageStage(imageStageState, file);
+    }, [rawKind, imageStageState, file]);
+
+    // Video playback error & metadata state
+    const [videoErrorPath, setVideoErrorPath] = useState<string | null>(initialVideoErrorPath);
+    const [videoMeta, setVideoMeta] = useState<{
+        path: string;
+        data: VideoMetadata | null;
+    } | null>(initialVideoMeta);
+    const [posterErrorPath, setPosterErrorPath] = useState<string | null>(initialPosterErrorPath);
+
     const hasMediaError = mediaErrorPath === file.path;
 
-    const previewKind: PreviewKind = hasMediaError ? 'other' : rawKind;
+    let previewKind: PreviewKind = hasMediaError ? 'other' : rawKind;
+    if (rawKind === 'image' && effectiveImageStage === 'error') {
+        previewKind = 'other';
+    }
 
     const [textPreview, setTextPreview] = useState<{ path: string; data: TextPreview } | null>(null);
 
@@ -51,6 +151,38 @@ export const QuickLook: React.FC<QuickLookProps> = ({
         itemCount: number | null;
         size: number | null;
     }>({ path: '', itemCount: null, size: null });
+
+    useEffect(() => {
+        if (previewKind !== 'video' || videoErrorPath !== file.path) {
+            return;
+        }
+
+        let cancelled = false;
+
+        if (api && typeof api.getVideoMetadata === 'function') {
+            api.getVideoMetadata(file.path)
+                .then((data) => {
+                    if (!cancelled) {
+                        setVideoMeta({ path: file.path, data });
+                    }
+                })
+                .catch(() => {
+                    if (!cancelled) {
+                        setVideoMeta({ path: file.path, data: null });
+                    }
+                });
+        } else {
+            Promise.resolve().then(() => {
+                if (!cancelled) {
+                    setVideoMeta({ path: file.path, data: null });
+                }
+            });
+        }
+
+        return () => {
+            cancelled = true;
+        };
+    }, [file.path, previewKind, videoErrorPath]);
 
     useEffect(() => {
         if (previewKind !== 'text') return;
@@ -165,7 +297,7 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                 if (currentIndex !== -1 && files.length > 0) {
                     const nextIndex = stepIndex(currentIndex, files.length, delta);
                     if (nextIndex !== currentIndex && files[nextIndex]) {
-                        onNavigate(files[nextIndex]);
+                        onNavigate?.(files[nextIndex]);
                     }
                 }
             }
@@ -195,32 +327,108 @@ export const QuickLook: React.FC<QuickLookProps> = ({
 
     const renderBody = () => {
         switch (previewKind) {
-            case 'image':
+            case 'image': {
+                const stage = effectiveImageStage ?? getInitialImageStage(file.name);
+                const src = stage === 'preview' ? toPreviewUrl(file.path) : toMediaUrl(file.path);
+
                 return (
                     <div className="flex-1 min-h-[320px] flex items-center justify-center p-4 bg-m3-surface-container-lowest overflow-auto">
                         <img
-                            key={file.path}
-                            src={toMediaUrl(file.path)}
+                            key={`${file.path}-${stage}`}
+                            src={src}
                             alt={file.name}
                             className="max-w-full max-h-[68vh] object-contain rounded-m3-md"
-                            onError={() => setMediaErrorPath(file.path)}
+                            onError={() => {
+                                setImageStageState({
+                                    path: file.path,
+                                    stage: getNextImageStage(stage),
+                                });
+                            }}
                         />
                     </div>
                 );
+            }
 
-            case 'video':
+            case 'video': {
+                const hasVideoError = videoErrorPath === file.path;
+
+                if (!hasVideoError) {
+                    return (
+                        <div className="flex-1 min-h-[320px] flex items-center justify-center p-4 bg-m3-surface-container-lowest">
+                            <video
+                                key={file.path}
+                                src={toMediaUrl(file.path)}
+                                poster={toThumbnailUrl(file.path, 'poster')}
+                                controls
+                                autoPlay={false}
+                                className="max-w-full max-h-[68vh] rounded-m3-md outline-none"
+                                onError={() => setVideoErrorPath(file.path)}
+                            />
+                        </div>
+                    );
+                }
+
+                const currentVideoMeta = resolveEffectiveVideoMetadata(videoMeta, file.path);
+                const metaSummary = formatVideoMetadataSummary(currentVideoMeta, file.size);
+                const hasPosterError = posterErrorPath === file.path;
+
                 return (
-                    <div className="flex-1 min-h-[320px] flex items-center justify-center p-4 bg-m3-surface-container-lowest">
-                        <video
-                            key={file.path}
-                            src={toMediaUrl(file.path)}
-                            controls
-                            autoPlay={false}
-                            className="max-w-full max-h-[68vh] rounded-m3-md outline-none"
-                            onError={() => setMediaErrorPath(file.path)}
-                        />
+                    <div className="flex-1 min-h-[320px] flex items-center justify-center p-8 bg-m3-surface-container-low">
+                        <div className="flex flex-col items-center gap-4 w-full max-w-lg p-6 rounded-m3-xl bg-m3-surface-container text-center">
+                            {hasPosterError ? (
+                                <ExpressiveShape
+                                    shape="cookie6Sided"
+                                    morphTo="verySunny"
+                                    morphOn="hover"
+                                    width={96}
+                                    height={96}
+                                    className="bg-m3-secondary-container text-m3-on-secondary-container"
+                                >
+                                    <Icon name="movie" size={48} />
+                                </ExpressiveShape>
+                            ) : (
+                                <img
+                                    key={file.path}
+                                    src={toThumbnailUrl(file.path, 'poster')}
+                                    alt={file.name}
+                                    className="max-w-full max-h-[45vh] object-contain rounded-m3-lg shadow-sm"
+                                    onError={() => setPosterErrorPath(file.path)}
+                                />
+                            )}
+
+                            <div className="text-base font-medium text-m3-on-surface truncate w-full" title={file.name}>
+                                {file.name}
+                            </div>
+
+                            <div className="text-sm text-m3-on-surface-variant">
+                                Inline playback unavailable for this format
+                            </div>
+
+                            {metaSummary.pills.length > 0 && (
+                                <div className="flex flex-wrap items-center justify-center gap-2">
+                                    {metaSummary.pills.map((pill, idx) => (
+                                        <span
+                                            key={idx}
+                                            className="px-2.5 py-1 text-xs font-medium rounded-m3-full bg-m3-surface-container-highest text-m3-on-surface-variant"
+                                        >
+                                            {pill}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+
+                            <Button
+                                variant="tonal"
+                                size="md"
+                                icon={<Icon name="open_in_new" size={18} />}
+                                onClick={handleOpen}
+                            >
+                                Open
+                            </Button>
+                        </div>
                     </div>
                 );
+            }
 
             case 'audio':
                 return (
@@ -423,7 +631,7 @@ export const QuickLook: React.FC<QuickLookProps> = ({
                             variant="tonal"
                             size="sm"
                             icon={<Icon name="open_in_new" size={18} />}
-                            onClick={() => onOpen(file)}
+                            onClick={handleOpen}
                         >
                             Open
                         </Button>
