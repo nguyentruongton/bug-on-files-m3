@@ -28,6 +28,26 @@ describe('themeUtils', () => {
       expect(extractMatugenSeedColor('')).toBeNull();
       expect(extractMatugenSeedColor(':root { --md-sys-color-primary: rgb(10, 20, 30); }')).toBeNull();
     });
+
+    test('extracts primary hex without # from Caelestia scheme.json', () => {
+      const json = '{"name":"dynamic","colours":{"onPrimary":"61332e","primary":"f9b6ae"}}';
+      expect(extractMatugenSeedColor(json)).toBe('#F9B6AE');
+    });
+
+    test('extracts primary hex with # from JSON', () => {
+      const json = '{ "primary": "#a8c7fa" }';
+      expect(extractMatugenSeedColor(json)).toBe('#A8C7FA');
+    });
+
+    test('extracts @define-color accent_color or primary from GTK css', () => {
+      const gtkCss = '@define-color accent_color #f9b6ae;\n@define-color window_bg_color #130c0c;';
+      expect(extractMatugenSeedColor(gtkCss)).toBe('#F9B6AE');
+      expect(extractMatugenSeedColor('@define-color primary #85514b;')).toBe('#85514B');
+    });
+
+    test('ignores GTK @define-color alias without hex', () => {
+      expect(extractMatugenSeedColor('@define-color accent_color @primary;')).toBeNull();
+    });
   });
 
   describe('resolveEffectiveSeedColor', () => {

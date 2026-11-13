@@ -14,6 +14,8 @@ export const PRESET_SEED_COLORS: readonly { name: string; hex: string }[] = [
 const HEX_6_REGEX = /^#[0-9A-F]{6}$/i;
 const HEX_3_REGEX = /^#[0-9A-F]{3}$/i;
 const MATUGEN_PRIMARY_REGEX = /--md-sys-color-primary\s*:\s*(#[0-9a-fA-F]{3,6})\b/i;
+const CAELESTIA_PRIMARY_REGEX = /"primary"\s*:\s*"#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})"/i;
+const GTK_ACCENT_REGEX = /@define-color\s+(?:accent_color|primary)\s+(#[0-9a-fA-F]{3,6})\b/i;
 
 export function normalizeHexColor(hex: string | null | undefined): string | null {
   if (!hex) return null;
@@ -28,11 +30,26 @@ export function normalizeHexColor(hex: string | null | undefined): string | null
   return null;
 }
 
+/** Extracts a normalized #RRGGBB seed color from Matugen CSS, Caelestia scheme.json, or GTK CSS. */
 export function extractMatugenSeedColor(cssText: string | null | undefined): string | null {
   if (!cssText) return null;
-  const match = cssText.match(MATUGEN_PRIMARY_REGEX);
-  if (!match?.[1]) return null;
-  return normalizeHexColor(match[1]);
+
+  const matugenMatch = cssText.match(MATUGEN_PRIMARY_REGEX);
+  if (matugenMatch?.[1]) {
+    return normalizeHexColor(matugenMatch[1]);
+  }
+
+  const caelestiaMatch = cssText.match(CAELESTIA_PRIMARY_REGEX);
+  if (caelestiaMatch?.[1]) {
+    return normalizeHexColor(`#${caelestiaMatch[1]}`);
+  }
+
+  const gtkMatch = cssText.match(GTK_ACCENT_REGEX);
+  if (gtkMatch?.[1]) {
+    return normalizeHexColor(gtkMatch[1]);
+  }
+
+  return null;
 }
 
 export function resolveEffectiveSeedColor(options: {
