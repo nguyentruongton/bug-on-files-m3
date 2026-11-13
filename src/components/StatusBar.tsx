@@ -19,7 +19,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     const shownCount = visibleItems ?? totalItems;
 
     return (
-        <div className="h-8 px-5 bg-m3-surface-container border-t border-m3-outline-variant/40 text-xs text-m3-on-surface-variant flex items-center justify-between select-none shrink-0">
+        <div className="h-8 mx-2 my-2 px-4 rounded-m3-full bg-m3-surface-container-low text-xs text-m3-on-surface-variant flex items-center justify-between select-none shrink-0">
             <div className="flex items-center gap-2.5">
                 <span className="font-medium">
                     {shownCount} {shownCount === 1 ? 'item' : 'items'}

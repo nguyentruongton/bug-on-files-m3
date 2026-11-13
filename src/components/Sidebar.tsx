@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <NavigationDrawer
                 variant="standard"
                 width={244}
-                className="h-full bg-m3-surface-container-low/70 rounded-m3-xl border-0"
+                className="shell-panel h-full bg-m3-surface-container-low !rounded-[24px] border-0"
                 aria-label="Places and devices"
             >
                 <ScrollArea className="h-full" type="hover">

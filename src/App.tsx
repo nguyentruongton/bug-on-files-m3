@@ -16,6 +16,7 @@ import { TerminalPane } from './components/TerminalPane';
 import type { IFile } from './types/files';
 import { Dialog } from './components/Dialog';
 import { Button } from './components/Button';
+import { ExpressiveShape } from './components/ExpressiveShape';
 import { TabBar } from './components/TabBar';
 import { ExplorerTab } from './components/ExplorerTab';
 import { OpenWithDialog } from './components/OpenWithDialog';
@@ -376,7 +377,7 @@ function AppContent() {
 
   return (
     <div
-      className="flex h-screen w-screen bg-m3-surface text-m3-on-surface p-2 gap-2 overflow-hidden"
+      className="flex h-screen w-screen bg-m3-surface-container text-m3-on-surface p-2 gap-2 overflow-hidden"
       onClick={() => setContextMenu(null)}
     >
       <NavigationRail
@@ -492,9 +493,9 @@ function AppContent() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 h-full bg-m3-surface-container-low rounded-m3-xl overflow-hidden flex flex-col border border-m3-outline-variant/30 shadow-sm">
+      <main className="shell-panel flex-1 min-w-0 h-full bg-m3-surface-container rounded-[24px] overflow-hidden flex flex-col">
         {/* Top Bar */}
-        <header className="flex flex-col bg-m3-surface-container-low shrink-0">
+        <header className="flex flex-col bg-m3-surface-container shrink-0">
           <TabBar
             tabs={tabs}
             activeTabId={activeTabId}
@@ -537,10 +538,19 @@ function AppContent() {
             </div>
           ))}
           {tabs.length === 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--md-sys-color-on-surface-variant)' }}>
-              <div style={{ textAlign: 'center' }}>
-                <Icon name="tab" size={48} />
-                <p>No tabs open</p>
+            <div className="flex items-center justify-center h-full bg-m3-surface-container-low text-m3-on-surface-variant p-6">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <ExpressiveShape
+                  width={64}
+                  height={64}
+                  shape="clover4Leaf"
+                  morphTo="flower"
+                  morphOn="hover"
+                  className="bg-m3-surface-container-high text-m3-on-surface-variant"
+                >
+                  <Icon name="tab" size={28} />
+                </ExpressiveShape>
+                <p className="text-base font-medium text-m3-on-surface">No tabs open</p>
                 <Button onClick={() => handleAddTab()}>Open New Tab</Button>
               </div>
             </div>
@@ -549,8 +559,8 @@ function AppContent() {
 
         {/* Terminal Panel */}
         {terminalOpen && (
-          <div className="h-[300px] shrink-0 border-t border-m3-outline-variant/40 flex flex-col bg-m3-surface-container-lowest">
-            <div className="bg-m3-surface-container-high border-b border-m3-outline-variant/40 px-4 py-1.5 flex items-center justify-between text-m3-on-surface">
+          <div className="shell-panel h-[300px] shrink-0 flex flex-col bg-m3-surface-container-lowest mx-2 mb-2 rounded-[24px] overflow-hidden">
+            <div className="bg-m3-surface-container-high px-4 py-1.5 flex items-center justify-between text-m3-on-surface">
               <div className="flex items-center gap-2 min-w-0">
                 <Icon name="terminal" size={16} className="text-m3-primary shrink-0" />
                 <span className="text-xs font-semibold">Terminal</span>
