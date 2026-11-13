@@ -7,6 +7,7 @@ pub mod places;
 pub mod search;
 pub mod system_info;
 pub mod text_preview;
+pub mod thumbnails;
 pub mod pty;
 pub mod watcher;
 

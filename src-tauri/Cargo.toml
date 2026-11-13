@@ -26,6 +26,8 @@ walkdir = "2"
 notify = "8.2.2"
 portable-pty = "0.8"
 percent-encoding = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

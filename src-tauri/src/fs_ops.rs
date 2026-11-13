@@ -32,7 +32,7 @@ pub fn sniff_ts_media_kind(path: &std::path::Path) -> Option<String> {
     }
 
     let is_188 = (n >= 377 && buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47)
-        || (n >= 189 && n < 377 && buf[0] == 0x47 && buf[188] == 0x47 && buf[..n].contains(&0));
+        || ((189..377).contains(&n) && buf[0] == 0x47 && buf[188] == 0x47 && buf[..n].contains(&0));
 
     let is_192 = n >= 389 && buf[4] == 0x47 && buf[196] == 0x47 && buf[388] == 0x47;
 
