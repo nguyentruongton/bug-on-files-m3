@@ -115,8 +115,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                 </span>
                                 <span className="text-xs text-m3-on-surface-variant truncate">
                                     {matugenDetected && matugenSeedColor
-                                        ? `Matugen detected: ${matugenSeedColor}`
-                                        : 'No ~/.config/matugen/theme.css found'}
+                                        ? `Synced from system: ${matugenSeedColor}`
+                                        : 'No system Matugen/theme palette found'}
                                 </span>
                             </div>
                             <Switch
