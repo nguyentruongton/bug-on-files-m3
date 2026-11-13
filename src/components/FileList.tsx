@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { List, ListItem } from '@bug-on/m3-expressive';
 import type { ListItemPosition } from '@bug-on/m3-expressive/layout';
 import { ExpressiveShape } from './ExpressiveShape';
@@ -11,11 +11,12 @@ import {
     getFileIconInfo,
     getSemanticGroup,
     isHiddenFile,
-    isImageFile,
+    isMediaThumbnailCandidate,
+    isVideoEntry,
 } from '../utils/fileUtils';
 import { buildDisplayEntries, type SortField } from '../utils/fileListUtils';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../utils/shapeUtils';
-import { toMediaUrl } from '../utils/quickLook';
+import { toThumbnailUrl } from '../utils/quickLook';
 import { useVirtualWindow } from '../hooks/useVirtualWindow';
 
 const LIST_TOP_PADDING = 8;
@@ -68,6 +69,56 @@ function focusFileRowByPath(root: HTMLElement | null, targetPath: string): boole
     return false;
 }
 
+export interface MediaThumbnailProps {
+    file: IFile;
+    iconName: string;
+    iconSize: number;
+    filled?: boolean;
+    initialFailedPath?: string | null;
+}
+
+export const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
+    file,
+    iconName,
+    iconSize,
+    filled = false,
+    initialFailedPath = null,
+}) => {
+    const [failedPath, setFailedPath] = useState<string | null>(initialFailedPath);
+    const [prevPath, setPrevPath] = useState(file.path);
+
+    if (prevPath !== file.path) {
+        setPrevPath(file.path);
+        setFailedPath(null);
+    }
+
+    if (isMediaThumbnailCandidate(file) && failedPath !== file.path) {
+        const isVideo = isVideoEntry(file);
+        const playIconSize = Math.max(12, Math.round(iconSize * 0.45));
+        return (
+            <>
+                <img
+                    src={toThumbnailUrl(file.path, 'grid')}
+                    alt={file.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                    onError={() => setFailedPath(file.path)}
+                />
+                {isVideo && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="flex items-center justify-center rounded-full bg-black/50 text-white p-1 shadow-sm">
+                            <Icon name="play_arrow" size={playIconSize} filled />
+                        </span>
+                    </div>
+                )}
+            </>
+        );
+    }
+
+    return <Icon name={iconName} size={iconSize} filled={filled} />;
+};
+
 const FileListRow: React.FC<FileListRowProps> = React.memo(
     ({
         file,
@@ -85,7 +136,7 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
         const hidden = isHiddenFile(file.name);
         const iconInfo = getFileIconInfo(file);
         const groupName = getSemanticGroup(file);
-        const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name);
+        const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name, file.mediaKind);
         const fileGroupLabel = file.isDirectory ? 'Folder' : groupName.replace(/s$/, '');
 
         const leadingContent = (
@@ -103,24 +154,12 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
                 height={32}
                 className={shapePair.containerClass}
             >
-                {!file.isDirectory && isImageFile(file.name) ? (
-                    <img
-                        src={toMediaUrl(file.path)}
-                        alt={file.name}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                        }}
-                    />
-                ) : (
-                    <Icon
-                        name={iconInfo.icon}
-                        size={18}
-                        filled={filledIcons || file.isDirectory}
-                    />
-                )}
+                <MediaThumbnail
+                    file={file}
+                    iconName={iconInfo.icon}
+                    iconSize={18}
+                    filled={filledIcons || file.isDirectory}
+                />
             </ExpressiveShape>
         );
 
@@ -581,7 +620,7 @@ export const FileList: React.FC<FileListProps> = ({
                 const hidden = isHiddenFile(file.name);
                 const iconInfo = getFileIconInfo(file);
                 const groupName = getSemanticGroup(file);
-                const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name);
+                const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name, file.mediaKind);
                 const enableMorph = shouldEnableItemMorph(sortedFiles.length, isSelected);
                 const containerSize = iconSize + 16;
 
@@ -636,24 +675,12 @@ export const FileList: React.FC<FileListProps> = ({
                                 height={containerSize}
                                 className={`${shapePair.containerClass} mb-2`}
                             >
-                                {!file.isDirectory && isImageFile(file.name) ? (
-                                    <img
-                                        src={toMediaUrl(file.path)}
-                                        alt={file.name}
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                            e.currentTarget.style.display = 'none';
-                                        }}
-                                    />
-                                ) : (
-                                    <Icon
-                                        name={iconInfo.icon}
-                                        size={Math.max(24, Math.round(iconSize * 0.56))}
-                                        filled={filledIcons || file.isDirectory}
-                                    />
-                                )}
+                                <MediaThumbnail
+                                    file={file}
+                                    iconName={iconInfo.icon}
+                                    iconSize={Math.max(24, Math.round(iconSize * 0.56))}
+                                    filled={filledIcons || file.isDirectory}
+                                />
                             </ExpressiveShape>
 
                             <span className="text-xs font-medium text-center leading-tight line-clamp-2 break-all w-full px-1">
