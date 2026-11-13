@@ -295,15 +295,16 @@ fn extract_frame_ffmpeg(
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
 
-        let _ = run_command_with_timeout(cmd, FFMPEG_TIMEOUT);
+        let first_res = run_command_with_timeout(cmd, FFMPEG_TIMEOUT);
 
-        let created_and_non_empty = tmp_path
-            .metadata()
-            .map(|m| m.len() > 0)
-            .unwrap_or(false);
+        let first_succeeded = matches!(first_res, Ok(ref out) if out.status.success())
+            && tmp_path
+                .metadata()
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
 
-        if !created_and_non_empty {
-            // Retry with -ss 0 (e.g. video shorter than 1s)
+        if !first_succeeded {
+            // Clean up any partial or corrupt file before retrying with -ss 0 (e.g. video shorter than 1s or seek error)
             let _ = std::fs::remove_file(tmp_path);
             let mut retry_cmd = std::process::Command::new("ffmpeg");
             retry_cmd.args([
@@ -322,11 +323,12 @@ fn extract_frame_ffmpeg(
             retry_cmd.stderr(std::process::Stdio::piped());
 
             let output = run_command_with_timeout(retry_cmd, FFMPEG_TIMEOUT)?;
-            let ok = tmp_path
-                .metadata()
-                .map(|m| m.len() > 0)
-                .unwrap_or(false);
-            if !ok || !output.status.success() {
+            let ok = output.status.success()
+                && tmp_path
+                    .metadata()
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false);
+            if !ok {
                 let _ = std::fs::remove_file(tmp_path);
                 return Err(ThumbnailError::Process(
                     "ffmpeg failed to extract video frame".to_string(),
@@ -738,5 +740,73 @@ mod tests {
         // Verify cache hit
         let thumb2 = get_or_generate_thumbnail_in(&video_path, ThumbnailSize::Grid, cache.path()).unwrap();
         assert_eq!(thumb2.bytes, thumb.bytes);
+    }
+
+    #[test]
+    fn corrupt_video_fails_cleanly_without_leaving_tmp_files() {
+        let ffmpeg_exists = Path::new("/usr/bin/ffmpeg").exists();
+        if !ffmpeg_exists {
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let bad_video = dir.path().join("corrupted.mp4");
+        std::fs::write(&bad_video, b"not a real mp4 video content at all").unwrap();
+
+        let res = get_or_generate_thumbnail_in(&bad_video, ThumbnailSize::Grid, cache.path());
+        assert!(res.is_err());
+
+        // Cache dir should not contain any files (neither final nor leftover .tmp)
+        let entries: Vec<_> = std::fs::read_dir(cache.path()).unwrap().collect();
+        assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn subsecond_video_triggers_ss0_retry_and_cleans_partial_state() {
+        let ffmpeg_exists = Path::new("/usr/bin/ffmpeg").exists();
+        if !ffmpeg_exists {
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let video_path = dir.path().join("subsecond.mp4");
+
+        // 0.2s video guaranteed to fail seeking at -ss 1
+        let status = std::process::Command::new("/usr/bin/ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=160x120:d=0.2",
+                "-c:v",
+                "libx264",
+            ])
+            .arg(&video_path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let res = get_or_generate_thumbnail_in(&video_path, ThumbnailSize::Grid, cache.path());
+        assert!(res.is_ok());
+        let media = res.unwrap();
+        assert_eq!(media.content_type, "image/jpeg");
+        let decoded = image::load_from_memory(&media.bytes).unwrap();
+        assert_eq!(decoded.width(), 160);
+        assert_eq!(decoded.height(), 120);
+
+        // Verify only 1 cached file exists and no .tmp files linger
+        let entries: Vec<_> = std::fs::read_dir(cache.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].ends_with(".jpg"));
+        assert!(!entries[0].contains(".tmp."));
     }
 }
