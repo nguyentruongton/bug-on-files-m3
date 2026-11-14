@@ -530,3 +530,90 @@ describe('Trash UI support in Sidebar, Omnibar, SettingsDialog, and PropertiesDi
         expect(html).toContain('Deleted');
     });
 });
+
+describe('Trash view in FileList and ExplorerTab', () => {
+    test('FileList renders empty trash state when isTrash is true and files is empty', () => {
+        const html = renderToStaticMarkup(
+            <FileList
+                files={[]}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="list"
+                iconSize={64}
+                filledIcons={false}
+                isTrash={true}
+            />
+        );
+        expect(html).toContain('Trash is empty');
+        expect(html).toContain('Items moved to the trash will appear here.');
+        expect(html).toContain('>delete_outline<');
+    });
+
+    test('FileList in list and grid view renders Original Location and Date Deleted when isTrash is true', () => {
+        const trashed = [
+            makeFile('report.pdf', {
+                path: '/home/stark/.local/share/Trash/files/report.pdf',
+                originalParent: '/home/stark/Documents/work',
+                trashId: '/home/stark/.local/share/Trash/info/report.pdf.trashinfo',
+            }),
+        ];
+        const listHtml = renderToStaticMarkup(
+            <FileList
+                files={trashed}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="list"
+                iconSize={64}
+                filledIcons={false}
+                isTrash={true}
+                homePath="/home/stark"
+            />
+        );
+        expect(listHtml).toContain('Original Location');
+        expect(listHtml).toContain('Date Deleted');
+        expect(listHtml).toContain('~/Documents/work');
+
+        const gridHtml = renderToStaticMarkup(
+            <FileList
+                files={trashed}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons={false}
+                isTrash={true}
+                homePath="/home/stark"
+            />
+        );
+        expect(gridHtml).toContain('~/Documents/work');
+    });
+
+    test('ExplorerTab at app://trash shows Empty Trash button and hides New Folder button', () => {
+        const html = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <ToastProvider>
+                    <ClipboardProvider>
+                        <ExplorerTab
+                            tabId="trash-tab"
+                            isActive={true}
+                            initialPath="app://trash"
+                            onPathChange={() => {}}
+                            onContextMenu={() => {}}
+                            onCreateFolderRequest={() => {}}
+                            onEmptyTrashRequest={() => {}}
+                            showHiddenFiles={true}
+                            iconSize={64}
+                            viewMode="list"
+                            filledIcons={false}
+                        />
+                    </ClipboardProvider>
+                </ToastProvider>
+            )
+        );
+        expect(html).toContain('Empty Trash');
+        expect(html).not.toContain('aria-label="New Folder"');
+    });
+});

@@ -8,6 +8,7 @@ import { api } from '../api';
 import {
     formatFileDate,
     formatFileSize,
+    formatOriginalParent,
     getFileIconInfo,
     getSemanticGroup,
     isHiddenFile,
@@ -39,6 +40,8 @@ interface FileListProps {
     onSortChange?: (field: SortField) => void;
     scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
     isSearch?: boolean;
+    isTrash?: boolean;
+    homePath?: string;
 }
 
 interface FileListRowProps {
@@ -48,6 +51,8 @@ interface FileListRowProps {
     position: ListItemPosition;
     morphEnabled: boolean;
     filledIcons: boolean;
+    isTrash: boolean;
+    homePath?: string;
     onItemClick: (e: React.MouseEvent, file: IFile) => void;
     onNavigate: (file: IFile) => void;
     onContextMenu?: (e: React.MouseEvent, file: IFile) => void;
@@ -131,6 +136,8 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
         position,
         morphEnabled,
         filledIcons,
+        isTrash,
+        homePath,
         onItemClick,
         onNavigate,
         onContextMenu,
@@ -167,7 +174,20 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
             </ExpressiveShape>
         );
 
-        const trailingContent = (
+        const trailingContent = isTrash ? (
+            <div className="file-meta-grid-trash items-center text-xs text-m3-on-surface-variant">
+                <span className="hidden sm:block truncate" title={file.originalParent}>
+                    {formatOriginalParent(file.originalParent, homePath)}
+                </span>
+                <span className="hidden md:block truncate">
+                    {formatFileDate(file.mtime)}
+                </span>
+                <span className="hidden lg:block truncate">{fileGroupLabel}</span>
+                <span className="text-right tabular-nums">
+                    {file.isDirectory ? '—' : formatFileSize(file.size)}
+                </span>
+            </div>
+        ) : (
             <div className="file-meta-grid items-center text-xs text-m3-on-surface-variant">
                 <span className="hidden md:block truncate">
                     {formatFileDate(file.mtime)}
@@ -196,7 +216,7 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
                     role="option"
                     aria-selected={isSelected}
                     data-file-path={file.path}
-                    draggable
+                    draggable={!isTrash}
                     onDragStart={(e) => onItemDragStart(e, file)}
                     onClick={(e) => onItemClick(e, file)}
                     onDoubleClick={() => onNavigate(file)}
@@ -225,6 +245,8 @@ export const FileList: React.FC<FileListProps> = ({
     onSortChange,
     scrollContainerRef,
     isSearch = false,
+    isTrash = false,
+    homePath,
 }) => {
     const sortedFiles = files;
 
@@ -426,6 +448,22 @@ export const FileList: React.FC<FileListProps> = ({
     );
 
     if (files.length === 0) {
+        const emptyIcon = isSearch
+            ? 'search_off'
+            : isTrash
+                ? 'delete_outline'
+                : 'folder_open';
+        const emptyTitle = isSearch
+            ? 'No matching files found'
+            : isTrash
+                ? 'Trash is empty'
+                : 'This folder is empty';
+        const emptySubtitle = isSearch
+            ? 'Try a different keyword or clear the search filter.'
+            : isTrash
+                ? 'Items moved to the trash will appear here.'
+                : 'Drop files here or use the action menu to create a new folder.';
+
         return (
             <div className="flex flex-col items-center justify-center h-full min-h-[300px] px-6 py-12 text-center select-none bg-m3-surface-container-low">
                 <ExpressiveShape
@@ -436,15 +474,13 @@ export const FileList: React.FC<FileListProps> = ({
                     height={88}
                     className="bg-m3-secondary-container text-m3-on-secondary-container mb-4"
                 >
-                    <Icon name={isSearch ? 'search_off' : 'folder_open'} size={42} />
+                    <Icon name={emptyIcon} size={42} />
                 </ExpressiveShape>
                 <div className="text-lg font-medium text-m3-on-surface mb-1">
-                    {isSearch ? 'No matching files found' : 'This folder is empty'}
+                    {emptyTitle}
                 </div>
                 <div className="text-sm text-m3-on-surface-variant max-w-sm">
-                    {isSearch
-                        ? 'Try a different keyword or clear the search filter.'
-                        : 'Drop files here or use the action menu to create a new folder.'}
+                    {emptySubtitle}
                 </div>
             </div>
         );
@@ -488,7 +524,12 @@ export const FileList: React.FC<FileListProps> = ({
                         <span className="truncate">Name</span>
                         {renderSortIcon('name')}
                     </button>
-                    <div className="file-meta-grid items-center shrink-0 text-xs font-medium text-m3-on-surface-variant">
+                    <div className={`${isTrash ? 'file-meta-grid-trash' : 'file-meta-grid'} items-center shrink-0 text-xs font-medium text-m3-on-surface-variant`}>
+                        {isTrash && (
+                            <span className="hidden sm:flex items-center truncate">
+                                Original Location
+                            </span>
+                        )}
                         <button
                             type="button"
                             aria-sort={getAriaSort('date')}
@@ -498,7 +539,7 @@ export const FileList: React.FC<FileListProps> = ({
                             }}
                             className="hidden md:flex items-center gap-1 min-w-0 truncate text-left hover:text-m3-on-surface transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-m3-primary rounded-sm"
                         >
-                            <span className="truncate">Date Modified</span>
+                            <span className="truncate">{isTrash ? 'Date Deleted' : 'Date Modified'}</span>
                             {renderSortIcon('date')}
                         </button>
                         <button
@@ -508,7 +549,7 @@ export const FileList: React.FC<FileListProps> = ({
                                 e.stopPropagation();
                                 onSortChange?.('type');
                             }}
-                            className="hidden sm:flex items-center gap-1 min-w-0 truncate text-left hover:text-m3-on-surface transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-m3-primary rounded-sm"
+                            className={`${isTrash ? 'hidden lg:flex' : 'hidden sm:flex'} items-center gap-1 min-w-0 truncate text-left hover:text-m3-on-surface transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-m3-primary rounded-sm`}
                         >
                             <span className="truncate">Type</span>
                             {renderSortIcon('type')}
@@ -578,6 +619,8 @@ export const FileList: React.FC<FileListProps> = ({
                                     isSelected
                                 )}
                                 filledIcons={filledIcons}
+                                isTrash={isTrash}
+                                homePath={homePath}
                                 onItemClick={handleItemClick}
                                 onNavigate={handleStableNavigate}
                                 onContextMenu={
@@ -659,7 +702,7 @@ export const FileList: React.FC<FileListProps> = ({
                                     e.preventDefault();
                                 }
                             }}
-                            draggable
+                            draggable={!isTrash}
                             onDragStart={(e) => handleItemDragStart(e, file)}
                             tabIndex={0}
                             role="button"
@@ -691,10 +734,19 @@ export const FileList: React.FC<FileListProps> = ({
                                 {file.name}
                             </span>
 
-                            {!file.isDirectory && (
-                                <span className="text-[11px] text-m3-on-surface-variant mt-0.5">
-                                    {formatFileSize(file.size)}
+                            {isTrash ? (
+                                <span
+                                    className="text-[11px] text-m3-on-surface-variant mt-0.5 truncate max-w-full px-1"
+                                    title={file.originalParent}
+                                >
+                                    {formatOriginalParent(file.originalParent, homePath)}
                                 </span>
+                            ) : (
+                                !file.isDirectory && (
+                                    <span className="text-[11px] text-m3-on-surface-variant mt-0.5">
+                                        {formatFileSize(file.size)}
+                                    </span>
+                                )
                             )}
                         </div>
                     </React.Fragment>

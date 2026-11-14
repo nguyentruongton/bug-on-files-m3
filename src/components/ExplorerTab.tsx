@@ -33,7 +33,7 @@ import {
     shouldApplyReload,
     resolveDragCompletion,
 } from '../utils/explorerTabUtils';
-import { isArchiveFile, isHiddenFile } from '../utils/fileUtils';
+import { filterTrashFiles, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
 import { compareFiles, normalizeSortField, type SortField } from '../utils/fileListUtils';
 import {
     resolveQuickLookFallback,
@@ -73,6 +73,11 @@ interface ExplorerTabProps {
     viewMode: 'grid' | 'list';
     onViewModeChange?: (mode: 'grid' | 'list') => void;
     filledIcons: boolean;
+    homePath?: string;
+    onTrashRequest?: (items: IFile[]) => void;
+    onRestoreRequest?: (items: IFile[]) => void;
+    onPurgeRequest?: (items: IFile[]) => void;
+    onEmptyTrashRequest?: () => void;
 }
 
 export function ExplorerTab({
@@ -93,8 +98,14 @@ export function ExplorerTab({
     viewMode,
     onViewModeChange,
     filledIcons,
+    homePath,
+    onTrashRequest,
+    onRestoreRequest,
+    onPurgeRequest,
+    onEmptyTrashRequest,
 }: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
+    const isTrash = currentPath === 'app://trash';
     const currentPathRef = useRef(initialPath);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const hasMountedRef = useRef(false);
@@ -119,7 +130,7 @@ export function ExplorerTab({
     const [, setRecentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
     const addToRecents = useCallback((path: string) => {
-        if (path === 'app://dashboard') return;
+        if (path === 'app://dashboard' || path === 'app://trash') return;
 
         const name = path.split('/').pop() || path;
         const newItem: IFile = {
@@ -151,7 +162,10 @@ export function ExplorerTab({
         searchActiveRef.current = true;
         setSearchQuery(query);
         try {
-            if (api && api.search) {
+            if (currentPathRef.current === 'app://trash') {
+                const allTrash = await FileSystemService.listTrash();
+                setFiles(filterTrashFiles(allTrash, query));
+            } else if (api && api.search) {
                 const results = await api.search(currentPath, query);
                 setFiles(results);
             }
@@ -185,7 +199,10 @@ export function ExplorerTab({
 
         setLoading(true);
         try {
-            const items = await FileSystemService.listDir(path);
+            const items =
+                path === 'app://trash'
+                    ? await FileSystemService.listTrash()
+                    : await FileSystemService.listDir(path);
             setFiles(items);
             currentPathRef.current = path;
             setCurrentPath(path);
@@ -228,7 +245,10 @@ export function ExplorerTab({
         const seq = ++reloadSeqRef.current;
 
         try {
-            const items = await FileSystemService.listDir(targetPath);
+            const items =
+                targetPath === 'app://trash'
+                    ? await FileSystemService.listTrash()
+                    : await FileSystemService.listDir(targetPath);
             if (!shouldApplyReload({
                 seq,
                 expectedSeq: reloadSeqRef.current,
@@ -388,6 +408,10 @@ export function ExplorerTab({
     }, [historyState, loadPath]);
 
     const handleNavigate = (file: IFile) => {
+        if (isTrash) {
+            showToast('Restore item from Trash to open it', 'info');
+            return;
+        }
         if (file.isDirectory) {
             loadPath(file.path);
         } else {
@@ -396,7 +420,7 @@ export function ExplorerTab({
     };
 
     const handleUp = useCallback(async () => {
-        if (api && currentPath && currentPath !== 'app://dashboard') {
+        if (api && currentPath && currentPath !== 'app://dashboard' && currentPath !== 'app://trash') {
             const parent = await api.getParentPath(currentPath);
             if (parent !== currentPath) {
                 loadPath(parent);
@@ -553,7 +577,7 @@ export function ExplorerTab({
             }
 
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
-                if (currentPath && currentPath !== 'app://dashboard') {
+                if (currentPath && currentPath !== 'app://dashboard' && !isTrash) {
                     e.preventDefault();
                     onCreateFolderRequest?.();
                 }
@@ -585,12 +609,16 @@ export function ExplorerTab({
             // Delete (Del)
             if (e.key === 'Delete') {
                 e.preventDefault();
-                if (selectedFiles.size > 0) {
-                    if (window.confirm(`Delete ${selectedFiles.size} items?`)) {
-                        for (const path of selectedFiles) {
-                            await FileSystemService.trash(path);
+                if (selectedItems.length > 0) {
+                    if (isTrash) {
+                        onPurgeRequest?.(selectedItems);
+                    } else if (onTrashRequest) {
+                        onTrashRequest(selectedItems);
+                    } else {
+                        for (const item of selectedItems) {
+                            await FileSystemService.trash(item.path);
                         }
-                        showToast(`Deleted ${selectedFiles.size} items`, 'success');
+                        showToast(`Moved ${selectedItems.length} items to Trash`, 'success');
                         loadPath(currentPath, false);
                     }
                 }
@@ -599,7 +627,7 @@ export function ExplorerTab({
 
             // Copy (Ctrl+C)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-                if (selectedFiles.size > 0) {
+                if (!isTrash && selectedFiles.size > 0) {
                     const filesToCopy = sortedFiles.filter((f) => selectedFiles.has(f.path));
                     copy(filesToCopy);
                     showToast(`Copied ${selectedFiles.size} items`, 'info');
@@ -609,7 +637,7 @@ export function ExplorerTab({
 
             // Cut (Ctrl+X)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
-                if (selectedFiles.size > 0) {
+                if (!isTrash && selectedFiles.size > 0) {
                     const filesToCut = sortedFiles.filter((f) => selectedFiles.has(f.path));
                     cut(filesToCut);
                     showToast(`Cut ${selectedFiles.size} items`, 'info');
@@ -619,7 +647,7 @@ export function ExplorerTab({
 
             // Paste (Ctrl+V)
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-                if (currentPath !== 'app://dashboard') {
+                if (!isTrash && currentPath !== 'app://dashboard') {
                     onPasteRequest?.(currentPath);
                 }
                 return;
@@ -652,8 +680,10 @@ export function ExplorerTab({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [
         isActive,
+        isTrash,
         sortedFiles,
         selectedFiles,
+        selectedItems,
         lastSelectedPath,
         currentPath,
         loadPath,
@@ -665,6 +695,8 @@ export function ExplorerTab({
         handleUp,
         onCreateFolderRequest,
         onPasteRequest,
+        onPurgeRequest,
+        onTrashRequest,
         onToggleHiddenFiles,
         quickLookPath,
     ]);
@@ -703,7 +735,7 @@ export function ExplorerTab({
                         </ToolbarGroupButton>
                         <ToolbarGroupButton
                             onClick={handleUp}
-                            disabled={!currentPath || currentPath === '/'}
+                            disabled={!currentPath || currentPath === '/' || isTrash}
                             variant="default"
                             colorStyle="tonal"
                             size="sm"
@@ -725,8 +757,22 @@ export function ExplorerTab({
 
                     {/* Quick Action & Sort Controls */}
                     <div className="flex items-center gap-1.5 shrink-0">
+                        {isTrash && (
+                            <Button
+                                variant="default"
+                                colorStyle="tonal"
+                                size="sm"
+                                disabled={files.length === 0}
+                                onClick={() => onEmptyTrashRequest?.()}
+                                aria-label="Empty Trash"
+                                className="!h-9"
+                            >
+                                <Icon name="delete_forever" size={18} />
+                                <span>Empty Trash</span>
+                            </Button>
+                        )}
                         <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
-                            {onCreateFolderRequest && (
+                            {!isTrash && onCreateFolderRequest && (
                                 <ToolbarGroupButton
                                     variant="default"
                                     colorStyle="tonal"
@@ -895,12 +941,14 @@ export function ExplorerTab({
                             }
                         }}
                         onDragOver={(e) => {
+                            if (isTrash) return;
                             e.preventDefault();
                             e.dataTransfer.dropEffect = 'copy';
                         }}
                         onDrop={async (e) => {
                             clearDrag();
                             e.preventDefault();
+                            if (isTrash) return;
                             const droppedFiles = Array.from(e.dataTransfer.files);
                             if (droppedFiles.length > 0 && currentPath) {
                                 let count = 0;
@@ -946,6 +994,8 @@ export function ExplorerTab({
                             onSortChange={handleSortChange}
                             scrollContainerRef={scrollContainerRef}
                             isSearch={searchActive}
+                            isTrash={isTrash}
+                            homePath={homePath}
                         />
                     </div>
 
@@ -980,120 +1030,161 @@ export function ExplorerTab({
                                         </div>
                                     }
                                 >
-                                    {selectedItems.length === 1 && (
+                                    {isTrash ? (
                                         <>
+                                            {selectedItems.length === 1 && (
+                                                <>
+                                                    <ToolbarIconButton
+                                                        aria-label="Quick Look"
+                                                        title="Quick Look (Space)"
+                                                        onClick={() => {
+                                                            setQuickLookPath(selectedItems[0].path);
+                                                            setPrevSortedForQuickLook(sortedFiles);
+                                                        }}
+                                                    >
+                                                        <Icon name="visibility" size={20} />
+                                                    </ToolbarIconButton>
+                                                    <ToolbarDivider />
+                                                </>
+                                            )}
                                             <ToolbarIconButton
                                                 emphasis="tonal"
-                                                aria-label="Open"
-                                                title="Open"
-                                                onClick={() => handleNavigate(selectedItems[0])}
+                                                aria-label="Restore"
+                                                title="Restore"
+                                                onClick={() => onRestoreRequest?.(selectedItems)}
                                             >
-                                                <Icon name="open_in_new" size={20} />
+                                                <Icon name="restore_from_trash" size={20} />
                                             </ToolbarIconButton>
                                             <ToolbarIconButton
-                                                aria-label="Quick Look"
-                                                title="Quick Look (Space)"
+                                                aria-label="Delete Permanently"
+                                                title="Delete Permanently (Del)"
+                                                onClick={() => onPurgeRequest?.(selectedItems)}
+                                            >
+                                                <Icon name="delete_forever" size={20} />
+                                            </ToolbarIconButton>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {selectedItems.length === 1 && (
+                                                <>
+                                                    <ToolbarIconButton
+                                                        emphasis="tonal"
+                                                        aria-label="Open"
+                                                        title="Open"
+                                                        onClick={() => handleNavigate(selectedItems[0])}
+                                                    >
+                                                        <Icon name="open_in_new" size={20} />
+                                                    </ToolbarIconButton>
+                                                    <ToolbarIconButton
+                                                        aria-label="Quick Look"
+                                                        title="Quick Look (Space)"
+                                                        onClick={() => {
+                                                            setQuickLookPath(selectedItems[0].path);
+                                                            setPrevSortedForQuickLook(sortedFiles);
+                                                        }}
+                                                    >
+                                                        <Icon name="visibility" size={20} />
+                                                    </ToolbarIconButton>
+                                                    {!selectedItems[0].isDirectory && onOpenWithRequest && (
+                                                        <ToolbarIconButton
+                                                            aria-label="Open With"
+                                                            title="Open With..."
+                                                            onClick={() => onOpenWithRequest(selectedItems[0])}
+                                                        >
+                                                            <Icon name="apps" size={20} />
+                                                        </ToolbarIconButton>
+                                                    )}
+                                                    {!selectedItems[0].isDirectory && isArchiveFile(selectedItems[0].name) && (
+                                                        <ToolbarIconButton
+                                                            aria-label="Extract Here"
+                                                            title="Extract Here"
+                                                            onClick={async () => {
+                                                                const archiveFile = selectedItems[0];
+                                                                try {
+                                                                    const ok = await api.extractFile(archiveFile.path);
+                                                                    if (!ok) throw new Error('Extract returned false');
+                                                                    showToast(`Extracted "${archiveFile.name}"`, 'success');
+                                                                    loadPath(currentPath, false);
+                                                                } catch (err) {
+                                                                    console.error('Extract failed', err);
+                                                                    showToast(`Failed to extract "${archiveFile.name}"`, 'error');
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Icon name="unarchive" size={20} />
+                                                        </ToolbarIconButton>
+                                                    )}
+                                                    <ToolbarDivider />
+                                                </>
+                                            )}
+
+                                            <ToolbarIconButton
+                                                aria-label="Copy"
+                                                title="Copy (Ctrl+C)"
                                                 onClick={() => {
-                                                    setQuickLookPath(selectedItems[0].path);
-                                                    setPrevSortedForQuickLook(sortedFiles);
+                                                    copy(selectedItems);
+                                                    showToast(`Copied ${selectedItems.length} item(s)`, 'info');
                                                 }}
                                             >
-                                                <Icon name="visibility" size={20} />
+                                                <Icon name="content_copy" size={20} />
                                             </ToolbarIconButton>
-                                            {!selectedItems[0].isDirectory && onOpenWithRequest && (
+                                            <ToolbarIconButton
+                                                aria-label="Cut"
+                                                title="Cut (Ctrl+X)"
+                                                onClick={() => {
+                                                    cut(selectedItems);
+                                                    showToast(`Cut ${selectedItems.length} item(s)`, 'info');
+                                                }}
+                                            >
+                                                <Icon name="content_cut" size={20} />
+                                            </ToolbarIconButton>
+
+                                            {selectedItems.length === 1 && onRenameRequest && (
                                                 <ToolbarIconButton
-                                                    aria-label="Open With"
-                                                    title="Open With..."
-                                                    onClick={() => onOpenWithRequest(selectedItems[0])}
+                                                    aria-label="Rename"
+                                                    title="Rename"
+                                                    onClick={() => onRenameRequest(selectedItems[0])}
                                                 >
-                                                    <Icon name="apps" size={20} />
+                                                    <Icon name="edit" size={20} />
                                                 </ToolbarIconButton>
                                             )}
-                                            {!selectedItems[0].isDirectory && isArchiveFile(selectedItems[0].name) && (
+                                            {selectedItems.length === 1 && onPropertiesRequest && (
                                                 <ToolbarIconButton
-                                                    aria-label="Extract Here"
-                                                    title="Extract Here"
-                                                    onClick={async () => {
-                                                        const archiveFile = selectedItems[0];
-                                                        try {
-                                                            const ok = await api.extractFile(archiveFile.path);
-                                                            if (!ok) throw new Error('Extract returned false');
-                                                            showToast(`Extracted "${archiveFile.name}"`, 'success');
-                                                            loadPath(currentPath, false);
-                                                        } catch (err) {
-                                                            console.error('Extract failed', err);
-                                                            showToast(`Failed to extract "${archiveFile.name}"`, 'error');
-                                                        }
-                                                    }}
+                                                    aria-label="Properties"
+                                                    title="Properties"
+                                                    onClick={() => onPropertiesRequest(selectedItems[0])}
                                                 >
-                                                    <Icon name="unarchive" size={20} />
+                                                    <Icon name="info" size={20} />
                                                 </ToolbarIconButton>
                                             )}
+
                                             <ToolbarDivider />
+
+                                            <ToolbarIconButton
+                                                aria-label="Move to Trash"
+                                                title="Move to Trash (Del)"
+                                                onClick={async () => {
+                                                    if (onTrashRequest) {
+                                                        onTrashRequest(selectedItems);
+                                                        return;
+                                                    }
+                                                    try {
+                                                        for (const item of selectedItems) {
+                                                            await FileSystemService.trash(item.path);
+                                                        }
+                                                        showToast(`Moved ${selectedItems.length} item(s) to Trash`, 'success');
+                                                        setSelectedFiles(new Set());
+                                                        loadPath(currentPath, false);
+                                                    } catch (err) {
+                                                        console.error('Delete failed', err);
+                                                        showToast('Failed to delete selected item(s)', 'error');
+                                                    }
+                                                }}
+                                            >
+                                                <Icon name="delete" size={20} />
+                                            </ToolbarIconButton>
                                         </>
                                     )}
-
-                                    <ToolbarIconButton
-                                        aria-label="Copy"
-                                        title="Copy (Ctrl+C)"
-                                        onClick={() => {
-                                            copy(selectedItems);
-                                            showToast(`Copied ${selectedItems.length} item(s)`, 'info');
-                                        }}
-                                    >
-                                        <Icon name="content_copy" size={20} />
-                                    </ToolbarIconButton>
-                                    <ToolbarIconButton
-                                        aria-label="Cut"
-                                        title="Cut (Ctrl+X)"
-                                        onClick={() => {
-                                            cut(selectedItems);
-                                            showToast(`Cut ${selectedItems.length} item(s)`, 'info');
-                                        }}
-                                    >
-                                        <Icon name="content_cut" size={20} />
-                                    </ToolbarIconButton>
-
-                                    {selectedItems.length === 1 && onRenameRequest && (
-                                        <ToolbarIconButton
-                                            aria-label="Rename"
-                                            title="Rename"
-                                            onClick={() => onRenameRequest(selectedItems[0])}
-                                        >
-                                            <Icon name="edit" size={20} />
-                                        </ToolbarIconButton>
-                                    )}
-                                    {selectedItems.length === 1 && onPropertiesRequest && (
-                                        <ToolbarIconButton
-                                            aria-label="Properties"
-                                            title="Properties"
-                                            onClick={() => onPropertiesRequest(selectedItems[0])}
-                                        >
-                                            <Icon name="info" size={20} />
-                                        </ToolbarIconButton>
-                                    )}
-
-                                    <ToolbarDivider />
-
-                                    <ToolbarIconButton
-                                        aria-label="Move to Trash"
-                                        title="Move to Trash (Del)"
-                                        onClick={async () => {
-                                            try {
-                                                for (const item of selectedItems) {
-                                                    await FileSystemService.trash(item.path);
-                                                }
-                                                showToast(`Moved ${selectedItems.length} item(s) to Trash`, 'success');
-                                                setSelectedFiles(new Set());
-                                                loadPath(currentPath, false);
-                                            } catch (err) {
-                                                console.error('Delete failed', err);
-                                                showToast('Failed to delete selected item(s)', 'error');
-                                            }
-                                        }}
-                                    >
-                                        <Icon name="delete" size={20} />
-                                    </ToolbarIconButton>
                                 </HorizontalFloatingToolbar>
                             </motion.div>
                         )}

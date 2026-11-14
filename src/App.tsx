@@ -38,6 +38,12 @@ interface TabState {
   refreshTrigger?: number;
 }
 
+function resolveTabTitle(path: string): string {
+  if (path === 'app://dashboard') return 'Dashboard';
+  if (path === 'app://trash') return 'Trash';
+  return path.split('/').pop() || path;
+}
+
 function AppContent() {
   // Tabs State
   const [tabs, setTabs] = useState<TabState[]>([]);
@@ -71,6 +77,12 @@ function AppContent() {
   // Open With Dialog State
   const [openWithFile, setOpenWithFile] = useState<IFile | null>(null);
 
+  // Trash & Purge Confirmation Dialog State
+  const [trashConfirmItems, setTrashConfirmItems] = useState<IFile[] | null>(null);
+  const [purgeConfirmState, setPurgeConfirmState] = useState<
+    { mode: 'items'; items: IFile[] } | { mode: 'empty' } | null
+  >(null);
+
   // Clipboard & Toast State
   const { clipboard, copy, cut } = useClipboard();
   const { showToast } = useToast();
@@ -79,6 +91,7 @@ function AppContent() {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useLocalStorage<boolean>('settings.sidebarOpen', true);
   const [showHiddenFiles, setShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
+  const [confirmTrash, setConfirmTrash] = useLocalStorage<boolean>('settings.confirmTrash', true);
   const [iconSize, setIconSize] = useLocalStorage<number>('settings.iconSize', 64);
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
   const [filledIcons, setFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
@@ -92,10 +105,7 @@ function AppContent() {
   const handleAddTab = useCallback((path?: string) => {
     const newTabId = Date.now().toString();
     const newPath = path || currentPath || '/';
-    const folderName =
-      newPath === 'app://dashboard'
-        ? 'Dashboard'
-        : newPath.split('/').pop() || newPath;
+    const folderName = resolveTabTitle(newPath);
     const newTab: TabState = { id: newTabId, title: folderName, path: newPath };
 
     setTabs((prev) => [...prev, newTab]);
@@ -121,10 +131,7 @@ function AppContent() {
 
         const startupPath = await api.getStartupPath();
         const initialPath = startupPath || 'app://dashboard';
-        const initialTitle =
-          initialPath === 'app://dashboard'
-            ? 'Dashboard'
-            : initialPath.split('/').pop() || initialPath;
+        const initialTitle = resolveTabTitle(initialPath);
         const firstTabId = Date.now().toString();
         setTabs([{ id: firstTabId, title: initialTitle, path: initialPath }]);
         setActiveTabId(firstTabId);
@@ -141,7 +148,7 @@ function AppContent() {
   }, [tabs, activeTabId, terminalCwd]);
 
   const handleTabPathUpdate = useCallback((id: string, path: string) => {
-    const folderName = path === 'app://dashboard' ? 'Dashboard' : (path.split('/').pop() || path);
+    const folderName = resolveTabTitle(path);
     setTabs((prev) =>
       prev.map((t) => {
         if (t.id === id) return { ...t, path, title: folderName };
@@ -175,12 +182,12 @@ function AppContent() {
     setTabs((prev) => {
       if (prev.length === 0) {
         const newTabId = Date.now().toString();
-        const folderName = path === 'app://dashboard' ? 'Dashboard' : (path.split('/').pop() || path);
+        const folderName = resolveTabTitle(path);
         const newTab: TabState = { id: newTabId, title: folderName, path };
         setActiveTabId(newTabId);
         return [newTab];
       }
-      return prev.map((t) => (t.id === activeTabId ? { ...t, path } : t));
+      return prev.map((t) => (t.id === activeTabId ? { ...t, path, title: resolveTabTitle(path) } : t));
     });
     if (path && !path.startsWith('app://')) {
       setTerminalCwd(path);
@@ -240,6 +247,108 @@ function AppContent() {
     }
   };
 
+  const executeTrashItems = useCallback(async (items: IFile[]) => {
+    if (items.length === 0) return;
+    try {
+      for (const item of items) {
+        await FileSystemService.trash(item.path);
+      }
+      showToast(
+        items.length === 1
+          ? `Moved "${items[0].name}" to Trash`
+          : `Moved ${items.length} items to Trash`,
+        'success'
+      );
+      refreshActiveTab();
+    } catch (err) {
+      console.error('Move to trash failed', err);
+      showToast('Failed to move selected item(s) to Trash', 'error');
+    }
+  }, [showToast, refreshActiveTab]);
+
+  const handleTrashRequest = useCallback((items: IFile[]) => {
+    if (items.length === 0) return;
+    if (confirmTrash) {
+      setTrashConfirmItems(items);
+    } else {
+      void executeTrashItems(items);
+    }
+  }, [confirmTrash, executeTrashItems]);
+
+  const handleRestoreRequest = useCallback(async (items: IFile[]) => {
+    const ids = items.map((item) => item.trashId).filter((id): id is string => Boolean(id));
+    if (ids.length === 0) {
+      showToast('Cannot restore item(s): missing trash metadata', 'error');
+      return;
+    }
+    try {
+      const ok = await FileSystemService.restoreTrash(ids);
+      if (!ok) {
+        throw new Error('Restore command returned false');
+      }
+      showToast(
+        items.length === 1
+          ? `Restored "${items[0].name}"`
+          : `Restored ${items.length} items`,
+        'success'
+      );
+      refreshActiveTab();
+    } catch (err) {
+      console.error('Restore failed', err);
+      showToast('Failed to restore selected item(s)', 'error');
+    }
+  }, [showToast, refreshActiveTab]);
+
+  const handlePurgeRequest = useCallback((items: IFile[]) => {
+    if (items.length === 0) return;
+    setPurgeConfirmState({ mode: 'items', items });
+  }, []);
+
+  const handleEmptyTrashRequest = useCallback(() => {
+    setPurgeConfirmState({ mode: 'empty' });
+  }, []);
+
+  const executePurgeConfirm = useCallback(async () => {
+    if (!purgeConfirmState) return;
+    const targetState = purgeConfirmState;
+    setPurgeConfirmState(null);
+    try {
+      if (targetState.mode === 'empty') {
+        const ok = await FileSystemService.emptyTrash();
+        if (!ok) {
+          throw new Error('Empty trash command returned false');
+        }
+        showToast('Emptied Trash', 'success');
+      } else {
+        const ids = targetState.items
+          .map((item) => item.trashId)
+          .filter((id): id is string => Boolean(id));
+        if (ids.length === 0) {
+          throw new Error('Missing trash metadata');
+        }
+        const ok = await FileSystemService.purgeTrash(ids);
+        if (!ok) {
+          throw new Error('Purge command returned false');
+        }
+        showToast(
+          targetState.items.length === 1
+            ? `Permanently deleted "${targetState.items[0].name}"`
+            : `Permanently deleted ${targetState.items.length} items`,
+          'success'
+        );
+      }
+      refreshActiveTab();
+    } catch (err) {
+      console.error('Permanent delete failed', err);
+      showToast(
+        targetState.mode === 'empty'
+          ? 'Failed to empty Trash'
+          : 'Failed to permanently delete selected item(s)',
+        'error'
+      );
+    }
+  }, [purgeConfirmState, showToast, refreshActiveTab]);
+
   const targetItems = contextMenu?.item
     ? (contextMenu.selectedItems.length > 0 ? contextMenu.selectedItems : [contextMenu.item])
     : [];
@@ -247,94 +356,129 @@ function AppContent() {
   const canExtractContextItem = Boolean(
     contextMenu?.item && !contextMenu.item.isDirectory && isArchiveFile(contextMenu.item.name)
   );
+  const isTrashView = currentPath === 'app://trash';
 
-  const menuItems: ContextMenuItem[] = contextMenu?.item ? [
-    {
-      label: 'Open', icon: 'open_in_new', action: () => {
-        FileSystemService.open(contextMenu.item!.path);
-        setContextMenu(null);
-      }
-    },
-    {
-      label: 'Open in Terminal', icon: 'terminal', action: () => {
-        const targetDir = resolveTerminalTargetDir(contextMenu.item!.path, contextMenu.item!.isDirectory);
-        if (targetDir) {
-          setTerminalCwd(targetDir);
-          setTerminalOpen(true);
+  const menuItems: ContextMenuItem[] = contextMenu?.item ? (
+    isTrashView ? [
+      {
+        label: `Restore${selectionSuffix}`,
+        icon: 'restore_from_trash',
+        action: () => {
+          const itemsToRestore = targetItems;
+          setContextMenu(null);
+          void handleRestoreRequest(itemsToRestore);
         }
-        setContextMenu(null);
+      },
+      {
+        label: `Delete Permanently${selectionSuffix}`,
+        icon: 'delete_forever',
+        action: () => {
+          const itemsToPurge = targetItems;
+          setContextMenu(null);
+          handlePurgeRequest(itemsToPurge);
+        }
+      },
+      { divider: true, label: '', action: () => { } },
+      {
+        label: 'Properties',
+        icon: 'info',
+        action: () => {
+          setPropertiesFile(contextMenu.item);
+          setPropertiesDialogOpen(true);
+          setContextMenu(null);
+        }
       }
-    },
-    { divider: true, label: '', action: () => { } },
-    { label: `Copy${selectionSuffix}`, icon: 'content_copy', action: () => handleCopy(targetItems) },
-    { label: `Cut${selectionSuffix}`, icon: 'content_cut', action: () => handleCut(targetItems) },
-    {
-      label: `Delete${selectionSuffix}`, icon: 'delete', action: async () => {
-        try {
-          for (const item of targetItems) {
-            await FileSystemService.trash(item.path);
+    ] : [
+      {
+        label: 'Open', icon: 'open_in_new', action: () => {
+          FileSystemService.open(contextMenu.item!.path);
+          setContextMenu(null);
+        }
+      },
+      {
+        label: 'Open in Terminal', icon: 'terminal', action: () => {
+          const targetDir = resolveTerminalTargetDir(contextMenu.item!.path, contextMenu.item!.isDirectory);
+          if (targetDir) {
+            setTerminalCwd(targetDir);
+            setTerminalOpen(true);
           }
-          showToast(`Moved ${targetItems.length} item(s) to Trash`, 'success');
-          refreshActiveTab();
-        } catch (err) {
-          console.error('Delete failed', err);
-          showToast('Failed to delete selected item(s)', 'error');
+          setContextMenu(null);
         }
-        setContextMenu(null);
-      }
-    },
-    ...(canExtractContextItem
-      ? [{
-          label: 'Extract Here',
-          icon: 'unarchive',
-          action: async () => {
-            const file = contextMenu.item!;
-            setContextMenu(null);
-            try {
-              const ok = await api.extractFile(file.path);
-              if (!ok) {
-                throw new Error('Extract command returned false');
+      },
+      { divider: true, label: '', action: () => { } },
+      { label: `Copy${selectionSuffix}`, icon: 'content_copy', action: () => handleCopy(targetItems) },
+      { label: `Cut${selectionSuffix}`, icon: 'content_cut', action: () => handleCut(targetItems) },
+      {
+        label: `Delete${selectionSuffix}`, icon: 'delete', action: () => {
+          const itemsToTrash = targetItems;
+          setContextMenu(null);
+          handleTrashRequest(itemsToTrash);
+        }
+      },
+      ...(canExtractContextItem
+        ? [{
+            label: 'Extract Here',
+            icon: 'unarchive',
+            action: async () => {
+              const file = contextMenu.item!;
+              setContextMenu(null);
+              try {
+                const ok = await api.extractFile(file.path);
+                if (!ok) {
+                  throw new Error('Extract command returned false');
+                }
+                showToast(`Extracted "${file.name}"`, 'success');
+                refreshActiveTab();
+              } catch (err) {
+                console.error('Extract failed', err);
+                showToast(`Failed to extract "${file.name}"`, 'error');
               }
-              showToast(`Extracted "${file.name}"`, 'success');
-              refreshActiveTab();
-            } catch (err) {
-              console.error('Extract failed', err);
-              showToast(`Failed to extract "${file.name}"`, 'error');
             }
-          }
-        }]
-      : []),
-    {
-      label: 'Rename', icon: 'edit', action: () => {
-        setRenameFile(contextMenu.item);
-        setNewName(contextMenu.item!.name);
-        setRenameDialogOpen(true);
-        setContextMenu(null);
+          }]
+        : []),
+      {
+        label: 'Rename', icon: 'edit', action: () => {
+          setRenameFile(contextMenu.item);
+          setNewName(contextMenu.item!.name);
+          setRenameDialogOpen(true);
+          setContextMenu(null);
+        }
+      },
+      { divider: true, label: '', action: () => { } },
+      {
+        label: 'Open With...', icon: 'apps', action: () => {
+          setOpenWithFile(contextMenu.item);
+          setContextMenu(null);
+        }
+      },
+      {
+        label: 'Properties', icon: 'info', action: () => {
+          setPropertiesFile(contextMenu.item);
+          setPropertiesDialogOpen(true);
+          setContextMenu(null);
+        }
       }
-    },
-    { divider: true, label: '', action: () => { } },
-    {
-      label: 'Open With...', icon: 'apps', action: () => {
-        setOpenWithFile(contextMenu.item);
-        setContextMenu(null);
+    ]
+  ) : (
+    isTrashView ? [
+      {
+        label: 'Empty Trash',
+        icon: 'delete_forever',
+        action: () => {
+          setContextMenu(null);
+          handleEmptyTrashRequest();
+        }
       }
-    },
-    {
-      label: 'Properties', icon: 'info', action: () => {
-        setPropertiesFile(contextMenu.item);
-        setPropertiesDialogOpen(true);
-        setContextMenu(null);
-      }
-    }
-  ] : [
-    // Background Context Menu
-    ...(currentPath && !currentPath.startsWith('app://')
-      ? [{ label: 'New Folder', icon: 'create_new_folder', action: handleOpenNewFolder }]
-      : []),
-    ...(clipboard && clipboard.files.length > 0 && currentPath && !currentPath.startsWith('app://')
-      ? [{ label: 'Paste', icon: 'content_paste', action: handlePaste }]
-      : []),
-  ];
+    ] : [
+      // Background Context Menu
+      ...(currentPath && !currentPath.startsWith('app://')
+        ? [{ label: 'New Folder', icon: 'create_new_folder', action: handleOpenNewFolder }]
+        : []),
+      ...(clipboard && clipboard.files.length > 0 && currentPath && !currentPath.startsWith('app://')
+        ? [{ label: 'Paste', icon: 'content_paste', action: handlePaste }]
+        : []),
+    ]
+  );
 
   const handleRename = async () => {
     if (!renameFile || !renameValidation.valid) return;
@@ -534,6 +678,11 @@ function AppContent() {
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
                 filledIcons={filledIcons}
+                homePath={homePath}
+                onTrashRequest={handleTrashRequest}
+                onRestoreRequest={handleRestoreRequest}
+                onPurgeRequest={handlePurgeRequest}
+                onEmptyTrashRequest={handleEmptyTrashRequest}
               />
             </div>
           ))}
@@ -669,6 +818,8 @@ function AppContent() {
           onClose={() => setSettingsDialogOpen(false)}
           showHiddenFiles={showHiddenFiles}
           onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
+          confirmTrash={confirmTrash}
+          onToggleConfirmTrash={() => setConfirmTrash(!confirmTrash)}
           iconSize={iconSize}
           onIconSizeChange={setIconSize}
           viewMode={viewMode}
@@ -676,6 +827,61 @@ function AppContent() {
           filledIcons={filledIcons}
           onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
         />
+
+        <Dialog
+          title="Move to Trash?"
+          open={Boolean(trashConfirmItems && trashConfirmItems.length > 0)}
+          onClose={() => setTrashConfirmItems(null)}
+          actions={
+            <>
+              <Button variant="text" onClick={() => setTrashConfirmItems(null)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  const items = trashConfirmItems;
+                  setTrashConfirmItems(null);
+                  if (items) {
+                    void executeTrashItems(items);
+                  }
+                }}
+              >
+                Move to Trash
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-m3-on-surface-variant">
+            {trashConfirmItems?.length === 1
+              ? `Move "${trashConfirmItems[0].name}" to Trash? You can restore it later from Trash.`
+              : `Move ${trashConfirmItems?.length ?? 0} selected items to Trash? You can restore them later from Trash.`}
+          </p>
+        </Dialog>
+
+        <Dialog
+          title={purgeConfirmState?.mode === 'empty' ? 'Empty Trash?' : 'Delete Permanently?'}
+          open={Boolean(purgeConfirmState)}
+          onClose={() => setPurgeConfirmState(null)}
+          actions={
+            <>
+              <Button variant="text" onClick={() => setPurgeConfirmState(null)}>Cancel</Button>
+              <Button
+                className="!bg-m3-error !text-m3-on-error"
+                onClick={() => {
+                  void executePurgeConfirm();
+                }}
+              >
+                {purgeConfirmState?.mode === 'empty' ? 'Empty Trash' : 'Delete Permanently'}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-m3-on-surface-variant">
+            {purgeConfirmState?.mode === 'empty'
+              ? 'All items in Trash will be permanently deleted. This action cannot be undone.'
+              : purgeConfirmState?.items.length === 1
+                ? `Permanently delete "${purgeConfirmState.items[0].name}"? This action cannot be undone.`
+                : `Permanently delete ${purgeConfirmState?.items.length ?? 0} selected items? This action cannot be undone.`}
+          </p>
+        </Dialog>
 
         {conflictDialog}
       </main>
