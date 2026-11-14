@@ -30,3 +30,4 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose }) => {
     </Dialog>
   );
 };
+

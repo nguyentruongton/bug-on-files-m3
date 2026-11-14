@@ -61,3 +61,4 @@ describe('buildTabBarContextMenuItems', () => {
     expect(calls).toEqual(['about', 'quit']);
   });
 });
+

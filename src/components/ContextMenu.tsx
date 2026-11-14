@@ -110,7 +110,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
             style={{ left: x, top: y }}
             className="fixed z-50 min-w-[200px] max-w-[280px] select-none origin-top-left focus:outline-none"
         >
-            <VerticalMenu className="w-full min-w-[200px]">
+            <VerticalMenu colorVariant='vibrant' className="w-full min-w-[200px]">
                 <VerticalMenuContent separatorStyle="gap" aria-label="Context menu">
                     {groups.map((group, groupIdx) => (
                         <VerticalMenuGroup key={groupIdx}>
