@@ -24,6 +24,7 @@ interface ContextMenuProps {
     onClose: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function splitIntoMenuGroups(items: ContextMenuItem[]): ContextMenuItem[][] {
     const groups: ContextMenuItem[][] = [];
     let current: ContextMenuItem[] = [];

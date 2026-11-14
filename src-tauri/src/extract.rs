@@ -11,8 +11,10 @@ pub struct ExtractProgressPayload {
     pub current_file: String,
     pub extracted_count: usize,
     pub total_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub percent: Option<f64>,
     pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -124,7 +126,7 @@ fn count_archive_entries(file: &str) -> usize {
         .count()
 }
 
-pub fn extract_file_with_progress<F>(file: &str, mut on_progress: F) -> Result<bool, String>
+pub fn extract_file_with_progress<F>(file: &str, on_progress: F) -> Result<bool, String>
 where
     F: FnMut(ExtractProgressPayload),
 {
@@ -132,12 +134,25 @@ where
         return Ok(false);
     };
 
+    let total_count = count_archive_entries(file);
+    extract_with_command(file, &cmd, &args, total_count, on_progress)
+}
+
+pub fn extract_with_command<F>(
+    file: &str,
+    cmd: &str,
+    args: &[String],
+    total_count: usize,
+    mut on_progress: F,
+) -> Result<bool, String>
+where
+    F: FnMut(ExtractProgressPayload),
+{
     let archive_name = Path::new(file)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(file)
         .to_string();
-    let total_count = count_archive_entries(file);
 
     on_progress(ExtractProgressPayload {
         path: file.to_string(),
@@ -150,12 +165,28 @@ where
         error: None,
     });
 
-    let mut child = Command::new(&cmd)
-        .args(&args)
+    let mut child = match Command::new(cmd)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|err| err.to_string())?;
+    {
+        Ok(child) => child,
+        Err(err) => {
+            let err_msg = err.to_string();
+            on_progress(ExtractProgressPayload {
+                path: file.to_string(),
+                archive_name,
+                current_file: String::new(),
+                extracted_count: 0,
+                total_count,
+                percent: compute_percent(0, total_count),
+                done: true,
+                error: Some(err_msg.clone()),
+            });
+            return Err(err_msg);
+        }
+    };
 
     let stderr_handle = child.stderr.take().map(|mut stderr| {
         std::thread::spawn(move || {
@@ -175,7 +206,7 @@ where
             let Ok(line) = line_res else {
                 continue;
             };
-            if let Some(entry) = parse_extracted_entry_line(&cmd, &line) {
+            if let Some(entry) = parse_extracted_entry_line(cmd, &line) {
                 extracted_count += 1;
                 last_entry = entry.clone();
                 let is_boundary = extracted_count == 1
@@ -197,7 +228,23 @@ where
         }
     }
 
-    let status = child.wait().map_err(|err| err.to_string())?;
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(err) => {
+            let err_msg = err.to_string();
+            on_progress(ExtractProgressPayload {
+                path: file.to_string(),
+                archive_name,
+                current_file: last_entry,
+                extracted_count,
+                total_count,
+                percent: compute_percent(extracted_count, total_count),
+                done: true,
+                error: Some(err_msg.clone()),
+            });
+            return Err(err_msg);
+        }
+    };
     let stderr_text = stderr_handle
         .and_then(|h| h.join().ok())
         .unwrap_or_default();
@@ -329,5 +376,38 @@ mod tests {
         assert_eq!(events[0].total_count, 0);
         assert_eq!(events[0].percent, None);
         assert_eq!(events.last().unwrap().done, true);
+    }
+
+    #[test]
+    fn test_extract_progress_payload_skips_none_fields() {
+        let payload = ExtractProgressPayload {
+            path: "/tmp/empty.tar".to_string(),
+            archive_name: "empty.tar".to_string(),
+            current_file: String::new(),
+            extracted_count: 0,
+            total_count: 0,
+            percent: None,
+            done: false,
+            error: None,
+        };
+        let json = serde_json::to_value(&payload).expect("serialize ExtractProgressPayload");
+        assert!(json.get("percent").is_none());
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn test_extract_with_command_emits_done_error_on_spawn_failure() {
+        let mut events = Vec::new();
+        let res = extract_with_command(
+            "/tmp/archive.zip",
+            "__definitely_nonexistent_extract_binary_xyz__",
+            &[],
+            3,
+            |ev| events.push(ev),
+        );
+        assert!(res.is_err());
+        let last = events.last().expect("done event on spawn failure");
+        assert!(last.done);
+        assert!(last.error.is_some());
     }
 }

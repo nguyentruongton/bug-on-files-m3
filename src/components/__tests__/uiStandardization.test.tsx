@@ -5,6 +5,7 @@ import { AppThemeProvider } from '../../contexts/AppThemeContext';
 import { ClipboardProvider } from '../../contexts/ClipboardContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import type { SortField } from '../../utils/fileListUtils';
+import { resolveExtractProgressPercent } from '../../utils/explorerTabUtils';
 import { resolveSpaceQuickLookTarget } from '../../utils/quickLook';
 import { shouldEnableItemMorph } from '../../utils/shapeUtils';
 import { ContextMenu } from '../ContextMenu';
@@ -327,6 +328,15 @@ describe('ExplorerTab standardization', () => {
 
         // Returns null when neither selected nor focused in sortedFiles
         expect(resolveSpaceQuickLookTarget(new Set(), null, files, null)).toBeNull();
+    });
+
+    test('resolveExtractProgressPercent maps null/undefined/NaN to undefined for indeterminate wavy ProgressIndicator', () => {
+        expect(resolveExtractProgressPercent(null)).toBeUndefined();
+        expect(resolveExtractProgressPercent(undefined)).toBeUndefined();
+        expect(resolveExtractProgressPercent(Number.NaN)).toBeUndefined();
+        expect(resolveExtractProgressPercent(0)).toBe(0);
+        expect(resolveExtractProgressPercent(42.6)).toBe(43);
+        expect(resolveExtractProgressPercent(100)).toBe(100);
     });
 });
 

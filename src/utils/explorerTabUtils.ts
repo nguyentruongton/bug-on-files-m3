@@ -87,3 +87,11 @@ export function shouldSyncQuickLookOnRender<T>(
   return quickLookPath !== null && prevSorted !== currentSorted;
 }
 
+export function resolveExtractProgressPercent(percent?: number | null): number | undefined {
+  if (typeof percent !== 'number' || !Number.isFinite(percent)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+

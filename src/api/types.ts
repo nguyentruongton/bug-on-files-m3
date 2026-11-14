@@ -33,7 +33,7 @@ export interface ExtractProgressEvent {
     currentFile: string;
     extractedCount: number;
     totalCount: number;
-    percent?: number;
+    percent?: number | null;
     done: boolean;
     error?: string;
 }

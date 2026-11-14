@@ -32,6 +32,7 @@ import {
     recoverMissingFolder,
     shouldApplyReload,
     resolveDragCompletion,
+    resolveExtractProgressPercent,
 } from '../utils/explorerTabUtils';
 import { filterTrashFiles, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
 import { compareFiles, normalizeSortField, type SortField } from '../utils/fileListUtils';
@@ -130,6 +131,7 @@ export function ExplorerTab({
         });
         return () => {
             unsubscribe?.();
+            setExtractProgress(null);
         };
     }, [isActive]);
 
@@ -1137,6 +1139,8 @@ export function ExplorerTab({
                                                                 } catch (err) {
                                                                     console.error('Extract failed', err);
                                                                     showToast(`Failed to extract "${archiveFile.name}"`, 'error');
+                                                                } finally {
+                                                                    setExtractProgress(null);
                                                                 }
                                                             }}
                                                         >
@@ -1231,47 +1235,50 @@ export function ExplorerTab({
                 />
             )}
 
-            {extractProgress && !extractProgress.done && (
-                <div
-                    role="status"
-                    aria-live="polite"
-                    className="absolute bottom-12 right-4 z-30 w-80 rounded-[20px] bg-m3-surface-container-high text-m3-on-surface p-4 flex flex-col gap-2.5"
-                >
-                    <div className="flex items-center justify-between gap-2 min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <Icon name="folder_zip" size={20} className="text-m3-primary shrink-0" />
-                            <span className="text-sm font-medium truncate">
-                                Extracting {extractProgress.archiveName}
-                            </span>
-                        </div>
-                        {extractProgress.percent !== undefined && (
-                            <span className="text-xs font-semibold text-m3-primary shrink-0 tabular-nums">
-                                {Math.round(extractProgress.percent)}%
-                            </span>
-                        )}
-                    </div>
-                    {(extractProgress.currentFile || extractProgress.totalCount > 0) && (
-                        <div className="flex items-center justify-between gap-2 text-xs text-m3-on-surface-variant min-w-0">
-                            <span className="truncate flex-1">
-                                {extractProgress.currentFile || 'Preparing extraction...'}
-                            </span>
-                            {extractProgress.totalCount > 0 && (
-                                <span className="shrink-0 tabular-nums">
-                                    {extractProgress.extractedCount} / {extractProgress.totalCount}
+            {extractProgress && !extractProgress.done && (() => {
+                const displayPercent = resolveExtractProgressPercent(extractProgress.percent);
+                return (
+                    <div
+                        role="status"
+                        aria-live="polite"
+                        className="absolute bottom-12 right-4 z-30 w-80 rounded-[20px] bg-m3-surface-container-high text-m3-on-surface p-4 flex flex-col gap-2.5"
+                    >
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Icon name="folder_zip" size={20} className="text-m3-primary shrink-0" />
+                                <span className="text-sm font-medium truncate">
+                                    Extracting {extractProgress.archiveName}
+                                </span>
+                            </div>
+                            {displayPercent !== undefined && (
+                                <span className="text-xs font-semibold text-m3-primary shrink-0 tabular-nums">
+                                    {displayPercent}%
                                 </span>
                             )}
                         </div>
-                    )}
-                    <ProgressIndicator
-                        variant="linear"
-                        shape="wavy"
-                        value={extractProgress.percent !== undefined ? Math.round(extractProgress.percent) : undefined}
-                        aria-label={`Extracting ${extractProgress.archiveName}`}
-                        color="var(--md-sys-color-primary)"
-                        trackColor="var(--md-sys-color-secondary-container)"
-                    />
-                </div>
-            )}
+                        {(extractProgress.currentFile || extractProgress.totalCount > 0) && (
+                            <div className="flex items-center justify-between gap-2 text-xs text-m3-on-surface-variant min-w-0">
+                                <span className="truncate flex-1">
+                                    {extractProgress.currentFile || 'Preparing extraction...'}
+                                </span>
+                                {extractProgress.totalCount > 0 && (
+                                    <span className="shrink-0 tabular-nums">
+                                        {extractProgress.extractedCount} / {extractProgress.totalCount}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        <ProgressIndicator
+                            variant="linear"
+                            shape="wavy"
+                            value={displayPercent}
+                            aria-label={`Extracting ${extractProgress.archiveName}`}
+                            color="var(--md-sys-color-primary)"
+                            trackColor="var(--md-sys-color-secondary-container)"
+                        />
+                    </div>
+                );
+            })()}
 
             {quickLookFile && (
                 <QuickLook
