@@ -29,6 +29,48 @@ export function getExtractCommand(filePath: string): ExtractCommand | null {
   return null;
 }
 
+export function getListEntriesCommand(filePath: string): ExtractCommand | null {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.zip') {
+    return { cmd: 'unzip', args: ['-Z1', filePath] };
+  }
+  if (ext === '.tar' || ext === '.gz' || ext === '.xz' || ext === '.tgz') {
+    return { cmd: 'tar', args: ['-tf', filePath] };
+  }
+  return null;
+}
+
+export function getVerboseExtractCommand(filePath: string): ExtractCommand | null {
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.zip') {
+    return { cmd: 'unzip', args: ['-o', filePath, '-d', dir] };
+  }
+  if (ext === '.tar' || ext === '.gz' || ext === '.xz' || ext === '.tgz') {
+    return { cmd: 'tar', args: ['-xvf', filePath, '-C', dir] };
+  }
+  return null;
+}
+
+export function parseExtractedEntryLine(cmd: string, line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  if (cmd === 'unzip') {
+    const lower = trimmed.toLowerCase();
+    for (const prefix of ['inflating:', 'extracting:', 'creating:', 'linking:']) {
+      if (lower.startsWith(prefix)) {
+        const rest = trimmed.slice(prefix.length).trim();
+        return rest || null;
+      }
+    }
+    return null;
+  }
+  if (cmd === 'tar') {
+    return trimmed;
+  }
+  return null;
+}
+
 function getMainDesktopSection(content: string): string {
   const entryIndex = content.indexOf('[Desktop Entry]');
   if (entryIndex === -1) return content;

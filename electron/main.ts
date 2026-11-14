@@ -6,7 +6,15 @@ import os from 'os';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { setupPtyHandlers, setMainWindow, killAllPty } from './pty';
-import { getExtractCommand, parseDesktopEntry, matchesMimeType, resolvePlaces } from './systemUtils';
+import {
+    getExtractCommand,
+    getListEntriesCommand,
+    getVerboseExtractCommand,
+    parseExtractedEntryLine,
+    parseDesktopEntry,
+    matchesMimeType,
+    resolvePlaces,
+} from './systemUtils';
 import { DirWatchers } from './dirWatcher';
 import { readTextPreview } from './textPreview';
 
@@ -147,11 +155,125 @@ ipcMain.handle('fs:open', async (_, filePath: string) => {
 });
 
 ipcMain.handle('fs:extract', async (_, filePath: string) => {
+    const sendProgress = (payload: {
+        path: string;
+        archiveName: string;
+        currentFile: string;
+        extractedCount: number;
+        totalCount: number;
+        percent?: number;
+        done: boolean;
+        error?: string;
+    }) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('fs:extract-progress', payload);
+        }
+    };
+
     try {
-        const extractCmd = getExtractCommand(filePath);
+        const extractCmd = getVerboseExtractCommand(filePath) ?? getExtractCommand(filePath);
         if (!extractCmd) return false;
-        await execFileAsync(extractCmd.cmd, extractCmd.args);
-        return true;
+
+        const archiveName = path.basename(filePath);
+        let totalCount = 0;
+        const listCmd = getListEntriesCommand(filePath);
+        if (listCmd) {
+            try {
+                const { stdout } = await execFileAsync(listCmd.cmd, listCmd.args, { maxBuffer: 64 * 1024 * 1024 });
+                totalCount = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+            } catch {
+                totalCount = 0;
+            }
+        }
+
+        const computePercent = (extracted: number) =>
+            totalCount > 0 ? Math.min(100, (extracted / totalCount) * 100) : undefined;
+
+        sendProgress({
+            path: filePath,
+            archiveName,
+            currentFile: '',
+            extractedCount: 0,
+            totalCount,
+            percent: computePercent(0),
+            done: false,
+        });
+
+        return await new Promise<boolean>((resolve) => {
+            const child = spawn(extractCmd.cmd, extractCmd.args);
+            let extractedCount = 0;
+            let lastEntry = '';
+            let lastEmitMs = 0;
+            let stdoutBuffer = '';
+            let stderrBuffer = '';
+
+            child.stdout.on('data', (chunk: Buffer) => {
+                stdoutBuffer += chunk.toString('utf8');
+                const lines = stdoutBuffer.split(/\r?\n/);
+                stdoutBuffer = lines.pop() ?? '';
+                for (const line of lines) {
+                    const entry = parseExtractedEntryLine(extractCmd.cmd, line);
+                    if (entry) {
+                        extractedCount += 1;
+                        lastEntry = entry;
+                        const now = Date.now();
+                        const isBoundary = extractedCount === 1 || (totalCount > 0 && extractedCount === totalCount);
+                        if (isBoundary || now - lastEmitMs >= 40) {
+                            sendProgress({
+                                path: filePath,
+                                archiveName,
+                                currentFile: entry,
+                                extractedCount,
+                                totalCount,
+                                percent: computePercent(extractedCount),
+                                done: false,
+                            });
+                            lastEmitMs = now;
+                        }
+                    }
+                }
+            });
+
+            child.stderr.on('data', (chunk: Buffer) => {
+                stderrBuffer += chunk.toString('utf8');
+            });
+
+            child.on('error', (err) => {
+                sendProgress({
+                    path: filePath,
+                    archiveName,
+                    currentFile: lastEntry,
+                    extractedCount,
+                    totalCount,
+                    percent: computePercent(extractedCount),
+                    done: true,
+                    error: err.message,
+                });
+                resolve(false);
+            });
+
+            child.on('close', (code) => {
+                if (stdoutBuffer.trim()) {
+                    const entry = parseExtractedEntryLine(extractCmd.cmd, stdoutBuffer);
+                    if (entry) {
+                        extractedCount += 1;
+                        lastEntry = entry;
+                    }
+                }
+                const success = code === 0;
+                sendProgress({
+                    path: filePath,
+                    archiveName,
+                    currentFile: lastEntry,
+                    extractedCount,
+                    totalCount,
+                    percent: success ? 100 : computePercent(extractedCount),
+                    done: true,
+                    ...(success ? {} : { error: stderrBuffer.trim() || `Extraction exited with status ${code}` }),
+                });
+                resolve(success);
+            });
+        });
     } catch (e) {
         console.error('Extract failed', e);
         return false;

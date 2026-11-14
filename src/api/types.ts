@@ -27,6 +27,17 @@ export interface VideoMetadata {
     codec?: string | null;
 }
 
+export interface ExtractProgressEvent {
+    path: string;
+    archiveName: string;
+    currentFile: string;
+    extractedCount: number;
+    totalCount: number;
+    percent?: number;
+    done: boolean;
+    error?: string;
+}
+
 export interface IApi {
     getThemeCss: () => Promise<string | null>;
     listDir: (path: string) => Promise<IFile[]>;
@@ -62,6 +73,7 @@ export interface IApi {
     watchStart: (dir: string) => Promise<number>;
     watchStop: (id: number) => Promise<void>;
     onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
+    onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     getVideoMetadata: (path: string) => Promise<VideoMetadata | null>;
 
     // PTY

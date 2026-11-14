@@ -1,5 +1,5 @@
 import type { IFile } from '../types/files';
-import type { IApi, IDrive, TextPreview, VideoMetadata, WatchEvent } from './types';
+import type { ExtractProgressEvent, IApi, IDrive, TextPreview, VideoMetadata, WatchEvent } from './types';
 import { COMMAND_MAP } from './commandMap';
 
 export type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -163,6 +163,11 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
         onWatchEvent: (cb: (e: WatchEvent) => void) => {
             return wrapListener(
                 listen('fs:watch-event', (payload) => cb(payload as WatchEvent))
+            );
+        },
+        onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => {
+            return wrapListener(
+                listen('fs:extract-progress', (payload) => cb(payload as ExtractProgressEvent))
             );
         },
         getVideoMetadata: (path: string) =>

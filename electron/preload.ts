@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('fs:watch-event', handler);
     return () => ipcRenderer.removeListener('fs:watch-event', handler);
   },
+  onExtractProgress: (cb: (e: unknown) => void) => {
+    const handler = (_event: unknown, e: unknown) => cb(e);
+    ipcRenderer.on('fs:extract-progress', handler);
+    return () => ipcRenderer.removeListener('fs:extract-progress', handler);
+  },
 
   // PTY
   ptySpawn: (cwd: string) => ipcRenderer.invoke('terminal:spawn', cwd),

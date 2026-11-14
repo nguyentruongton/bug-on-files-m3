@@ -263,4 +263,34 @@ describe('tauriAdapter', () => {
             { cmd: 'empty_trash', args: undefined },
         ]);
     });
+
+    test('onExtractProgress subscribes to fs:extract-progress and forwards payload', async () => {
+        let subscribedEvent = '';
+        let received: unknown = null;
+        let registeredCb: ((payload: unknown) => void) | null = null;
+
+        const listen = async (event: string, cb: (payload: unknown) => void) => {
+            subscribedEvent = event;
+            registeredCb = cb;
+            return () => {};
+        };
+        const adapter = createTauriAdapter(async () => {}, listen);
+
+        adapter.onExtractProgress((e) => {
+            received = e;
+        });
+
+        expect(subscribedEvent).toBe('fs:extract-progress');
+        const sample = {
+            path: '/tmp/a.zip',
+            archiveName: 'a.zip',
+            currentFile: 'hello.txt',
+            extractedCount: 1,
+            totalCount: 2,
+            percent: 50,
+            done: false,
+        };
+        registeredCb!(sample);
+        expect(received).toEqual(sample);
+    });
 });

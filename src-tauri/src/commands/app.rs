@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -59,15 +59,14 @@ pub fn resolve_icon_path(app_res_dir: Option<&Path>, icon_type: &str) -> Option<
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn extract_file(path: String) -> Result<bool, String> {
-    let Some((cmd, args)) = crate::extract::extract_command(&path) else {
-        return Ok(false);
-    };
-
-    match std::process::Command::new(&cmd).args(&args).status() {
-        Ok(status) => Ok(status.success()),
-        Err(err) => Err(err.to_string()),
-    }
+pub async fn extract_file(app: tauri::AppHandle, path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::extract::extract_file_with_progress(&path, |payload| {
+            let _ = app.emit("fs:extract-progress", payload);
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -215,7 +214,10 @@ mod tests {
 
     #[test]
     fn test_extract_file_unsupported_returns_false() {
-        let result = extract_file("/tmp/nonexistent_archive.unsupported".to_string());
+        let result = crate::extract::extract_file_with_progress(
+            "/tmp/nonexistent_archive.unsupported",
+            |_| {},
+        );
         assert_eq!(result, Ok(false));
     }
 
@@ -241,13 +243,21 @@ mod tests {
         let tar_copy = extract_dir.path().join("archive.tar");
         std::fs::copy(&tar_file, &tar_copy).expect("copy tar");
 
-        let result = extract_file(tar_copy.to_str().unwrap().to_string());
+        let mut events = Vec::new();
+        let result = crate::extract::extract_file_with_progress(
+            tar_copy.to_str().unwrap(),
+            |ev| events.push(ev),
+        );
         assert_eq!(result, Ok(true));
         assert!(extract_dir.path().join("hello.txt").exists());
         assert_eq!(
             std::fs::read_to_string(extract_dir.path().join("hello.txt")).unwrap(),
             "hello archive"
         );
+        assert!(events.iter().any(|e| e.total_count == 1 && e.extracted_count == 1));
+        let last = events.last().expect("final progress event");
+        assert!(last.done);
+        assert_eq!(last.percent, Some(100.0));
     }
 
     #[test]
