@@ -5,6 +5,8 @@ export interface IFile {
     size: number;
     mtime: Date;
     mediaKind?: 'video';
+    trashId?: string;
+    originalParent?: string;
 }
 
 export interface IFileSystemAPI {

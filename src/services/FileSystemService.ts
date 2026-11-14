@@ -18,6 +18,30 @@ export const FileSystemService = {
         return api.trashFile(path);
     },
 
+    async listTrash(): Promise<IFile[]> {
+        if (api && api.listTrash) {
+            try {
+                return await api.listTrash();
+            } catch (error) {
+                console.error('Trash list error:', error);
+                return [];
+            }
+        }
+        return [];
+    },
+
+    async restoreTrash(ids: string[]): Promise<boolean> {
+        return api.restoreTrashItems(ids);
+    },
+
+    async purgeTrash(ids: string[]): Promise<boolean> {
+        return api.purgeTrashItems(ids);
+    },
+
+    async emptyTrash(): Promise<boolean> {
+        return api.emptyTrash();
+    },
+
     async rename(oldPath: string, newPath: string): Promise<boolean> {
         return api.renameFile(oldPath, newPath);
     },

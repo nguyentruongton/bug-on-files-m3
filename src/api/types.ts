@@ -36,6 +36,10 @@ export interface IApi {
     copyFile: (source: string, dest: string) => Promise<boolean>;
     moveFile: (source: string, dest: string) => Promise<boolean>;
     trashFile: (path: string) => Promise<boolean>;
+    listTrash: () => Promise<IFile[]>;
+    restoreTrashItems: (ids: string[]) => Promise<boolean>;
+    purgeTrashItems: (ids: string[]) => Promise<boolean>;
+    emptyTrash: () => Promise<boolean>;
     renameFile: (oldPath: string, newPath: string) => Promise<boolean>;
     createDirectory: (path: string) => Promise<boolean>;
     openPath: (path: string) => Promise<string>;

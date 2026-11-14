@@ -14,6 +14,8 @@ import {
   formatFileSize,
   formatFileDate,
   validateFileName,
+  formatOriginalParent,
+  filterTrashFiles,
 } from '../fileUtils';
 import type { IFile } from '../../types/files';
 
@@ -189,5 +191,22 @@ describe('fileUtils', () => {
     expect(isMediaThumbnailCandidate(makeFile('song.mp3'))).toBe(false);
     expect(isMediaThumbnailCandidate(makeFile('document.pdf'))).toBe(false);
     expect(isMediaThumbnailCandidate(makeFile('folder', true))).toBe(false);
+  });
+
+  test('formatOriginalParent shortens home prefix to ~', () => {
+    expect(formatOriginalParent('/home/stark/Documents/work', '/home/stark')).toBe('~/Documents/work');
+    expect(formatOriginalParent('/home/stark', '/home/stark')).toBe('~');
+    expect(formatOriginalParent('/var/log', '/home/stark')).toBe('/var/log');
+    expect(formatOriginalParent(undefined, '/home/stark')).toBe('—');
+  });
+
+  test('filterTrashFiles matches name or originalParent case-insensitively', () => {
+    const items: IFile[] = [
+      { name: 'Report.pdf', path: '/t/1', isDirectory: false, size: 10, mtime: new Date(), originalParent: '/home/stark/Work' },
+      { name: 'photo.png', path: '/t/2', isDirectory: false, size: 20, mtime: new Date(), originalParent: '/home/stark/Pictures' },
+    ];
+    expect(filterTrashFiles(items, 'report').map((f) => f.name)).toEqual(['Report.pdf']);
+    expect(filterTrashFiles(items, 'pictures').map((f) => f.name)).toEqual(['photo.png']);
+    expect(filterTrashFiles(items, '').map((f) => f.name)).toEqual(['Report.pdf', 'photo.png']);
   });
 });

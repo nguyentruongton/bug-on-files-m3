@@ -224,4 +224,43 @@ describe('tauriAdapter', () => {
         expect(calls).toEqual([{ cmd: 'get_video_metadata', args: { path: '/tmp/clip.mkv' } }]);
         expect(result).toEqual(mockPayload);
     });
+
+    test('listTrash maps trashId and originalParent, and restoreTrashItems/purgeTrashItems/emptyTrash invoke expected commands', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+            if (cmd === 'list_trash') {
+                return [
+                    {
+                        name: 'deleted.txt',
+                        path: '/home/u/.local/share/Trash/files/deleted.txt',
+                        isDirectory: false,
+                        size: 42,
+                        mtimeMs: 1700000000000,
+                        trashId: '/home/u/.local/share/Trash/info/deleted.txt.trashinfo',
+                        originalParent: '/home/u/Documents',
+                    },
+                ];
+            }
+            return true;
+        };
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        const items = await adapter.listTrash();
+        expect(items).toHaveLength(1);
+        expect(items[0].trashId).toBe('/home/u/.local/share/Trash/info/deleted.txt.trashinfo');
+        expect(items[0].originalParent).toBe('/home/u/Documents');
+
+        await adapter.restoreTrashItems(['id1']);
+        await adapter.purgeTrashItems(['id2']);
+        await adapter.emptyTrash();
+
+        expect(calls).toEqual([
+            { cmd: 'list_trash', args: undefined },
+            { cmd: 'restore_trash_items', args: { ids: ['id1'] } },
+            { cmd: 'purge_trash_items', args: { ids: ['id2'] } },
+            { cmd: 'empty_trash', args: undefined },
+        ]);
+    });
 });

@@ -193,3 +193,26 @@ export function validateFileName(rawName: string): { valid: boolean; error: stri
     }
     return { valid: true, error: null };
 }
+
+export function formatOriginalParent(originalParent?: string, homePath?: string): string {
+    if (!originalParent) return '—';
+    if (!homePath) return originalParent;
+    const normHome = homePath.length > 1 ? homePath.replace(/\/+$/, '') : homePath;
+    if (normHome && normHome !== '/') {
+        if (originalParent === normHome) return '~';
+        if (originalParent.startsWith(`${normHome}/`)) {
+            return `~${originalParent.slice(normHome.length)}`;
+        }
+    }
+    return originalParent;
+}
+
+export function filterTrashFiles(files: IFile[], query: string): IFile[] {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return files;
+    return files.filter(
+        (f) =>
+            f.name.toLowerCase().includes(trimmed) ||
+            (f.originalParent?.toLowerCase().includes(trimmed) ?? false)
+    );
+}

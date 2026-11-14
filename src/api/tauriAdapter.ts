@@ -15,11 +15,17 @@ interface RawFileEntry {
     mtime_ms?: number;
     mediaKind?: 'video';
     media_kind?: 'video';
+    trashId?: string;
+    trash_id?: string;
+    originalParent?: string;
+    original_parent?: string;
 }
 
 function toIFile(entry: RawFileEntry): IFile {
     const mtimeMs = entry.mtimeMs ?? entry.mtime_ms ?? 0;
     const rawMediaKind = entry.mediaKind ?? entry.media_kind;
+    const trashId = entry.trashId ?? entry.trash_id;
+    const originalParent = entry.originalParent ?? entry.original_parent;
     const file: IFile = {
         name: entry.name,
         path: entry.path,
@@ -29,6 +35,12 @@ function toIFile(entry: RawFileEntry): IFile {
     };
     if (rawMediaKind === 'video') {
         file.mediaKind = 'video';
+    }
+    if (trashId !== undefined) {
+        file.trashId = trashId;
+    }
+    if (originalParent !== undefined) {
+        file.originalParent = originalParent;
     }
     return file;
 }
@@ -80,6 +92,16 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
             invoke(COMMAND_MAP.moveFile, { source, dest }) as Promise<boolean>,
         trashFile: (path: string) =>
             invoke(COMMAND_MAP.trashFile, { path }) as Promise<boolean>,
+        listTrash: async (): Promise<IFile[]> => {
+            const raw = (await invoke(COMMAND_MAP.listTrash)) as RawFileEntry[];
+            return raw.map(toIFile);
+        },
+        restoreTrashItems: (ids: string[]) =>
+            invoke(COMMAND_MAP.restoreTrashItems, { ids }) as Promise<boolean>,
+        purgeTrashItems: (ids: string[]) =>
+            invoke(COMMAND_MAP.purgeTrashItems, { ids }) as Promise<boolean>,
+        emptyTrash: () =>
+            invoke(COMMAND_MAP.emptyTrash) as Promise<boolean>,
         renameFile: (oldPath: string, newPath: string) =>
             invoke(COMMAND_MAP.renameFile, { oldPath, newPath }) as Promise<boolean>,
         createDirectory: (path: string) =>
