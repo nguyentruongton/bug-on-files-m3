@@ -133,6 +133,29 @@ describe('TabBar standardization', () => {
         expect(html).not.toContain('aria-label="Close Home"');
         expect(html).toContain('aria-label="New tab"');
     });
+
+    test('pinned tab keeps its title, hides close button, renders keep icon, and accepts context menu handlers', () => {
+        const pinnedTabs: Tab[] = [
+            { id: 't1', path: '/home/user', title: 'Home', pinned: true },
+            { id: 't2', path: '/home/user/Documents', title: 'Documents' },
+        ];
+        const html = renderToStaticMarkup(
+            <TabBar
+                tabs={pinnedTabs}
+                activeTabId="t1"
+                onTabClick={() => {}}
+                onTabClose={() => {}}
+                onNewTab={() => {}}
+                onTabContextMenu={() => {}}
+                onTabBarContextMenu={() => {}}
+            />
+        );
+
+        expect(html).toContain('Home');
+        expect(html).not.toContain('aria-label="Close Home"');
+        expect(html).toContain('aria-label="Close Documents"');
+        expect(html).toContain('data-icon="keep"');
+    });
 });
 
 describe('FileList standardization', () => {
