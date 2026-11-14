@@ -676,3 +676,49 @@ describe('Trash view in FileList and ExplorerTab', () => {
         expect(html).not.toContain('aria-label="New Folder"');
     });
 });
+
+describe('Self-hosted M3 fonts & Icon standardization', () => {
+    test('AppThemeProvider wraps tree in MaterialSymbolsProvider source="local" and suppresses Google Fonts CDN preinit', () => {
+        const html = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <AppThemeProvider>
+                    <Icon name="folder" filled />
+                </AppThemeProvider>
+            )
+        );
+
+        expect(html).not.toContain('fonts.googleapis.com');
+        expect(html).toContain('md-icon');
+        expect(html).toContain('data-icon="folder"');
+        expect(html).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+    });
+
+    test('Icon resolves fill vs filled precedence, opticalSize from size, and forwards className and style', () => {
+        const explicitZero = renderToStaticMarkup(<Icon name="folder" filled fill={0} size={16} />);
+        expect(explicitZero).toMatch(/(&#x27;|')FILL(&#x27;|')\s*0/);
+        expect(explicitZero).toMatch(/(&#x27;|')opsz(&#x27;|')\s*20/);
+        expect(explicitZero).toContain('font-size:16px');
+
+        const largeFilled = renderToStaticMarkup(
+            <Icon name="movie" filled size={48} className="text-m3-primary" style={{ opacity: 0.5 }} />
+        );
+        expect(largeFilled).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+        expect(largeFilled).toMatch(/(&#x27;|')opsz(&#x27;|')\s*48/);
+        expect(largeFilled).toContain('md-icon');
+        expect(largeFilled).toContain('text-m3-primary');
+        expect(largeFilled).toContain('opacity:0.5');
+    });
+
+    test('index.html and src/index.css configure self-hosted @bug-on/m3-fonts and font-md3-expressive without legacy overrides', async () => {
+        const indexHtml = await Bun.file('index.html').text();
+        const indexCss = await Bun.file('src/index.css').text();
+
+        expect(indexHtml).toContain('font-md3-expressive');
+        expect(indexCss).toContain('@import "@bug-on/m3-fonts/typography.css";');
+        expect(indexCss).toContain('@import "@bug-on/m3-fonts/material-symbols.css";');
+        expect(indexCss).toContain('@import "@bug-on/m3-expressive/typography.css";');
+        expect(indexCss).not.toContain('@fontsource/material-symbols-rounded');
+        expect(indexCss).not.toContain('.material-symbols-rounded');
+        expect(indexCss).not.toContain("font-family: 'Roboto'");
+    });
+});

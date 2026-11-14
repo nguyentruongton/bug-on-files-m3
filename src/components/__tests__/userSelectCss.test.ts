@@ -28,13 +28,11 @@ describe('Global user-select CSS rules', () => {
   const propertiesDialogTsx = readFileSync(resolve(__dirname, '../PropertiesDialog.tsx'), 'utf-8');
   const indexRules = parseCssRules(indexCss);
 
-  test('disables text selection globally on :root and .material-symbols-rounded with webkit prefix', () => {
-    for (const selector of [':root', '.material-symbols-rounded']) {
-      const matchingRules = indexRules.filter((r) => r.selectors.includes(selector));
-      const combinedBody = matchingRules.map((r) => r.body).join('\n');
-      expect(combinedBody).toMatch(/(?:^|;|\s)-webkit-user-select:\s*none\b/);
-      expect(combinedBody).toMatch(/(?:^|;|\s)user-select:\s*none\b/);
-    }
+  test('disables text selection globally on :root with webkit prefix', () => {
+    const matchingRules = indexRules.filter((r) => r.selectors.includes(':root'));
+    const combinedBody = matchingRules.map((r) => r.body).join('\n');
+    expect(combinedBody).toMatch(/(?:^|;|\s)-webkit-user-select:\s*none\b/);
+    expect(combinedBody).toMatch(/(?:^|;|\s)user-select:\s*none\b/);
   });
 
   test('enables text selection on editable elements with webkit prefix', () => {
