@@ -473,3 +473,60 @@ describe('Shell & StatusBar radius standardization', () => {
         expect(sidebarHtml).not.toContain('rounded-m3-xl');
     });
 });
+
+describe('Trash UI support in Sidebar, Omnibar, SettingsDialog, and PropertiesDialog', () => {
+    test('Sidebar renders Trash item in Places and marks it selected when currentPath is app://trash', () => {
+        const html = renderToStaticMarkup(
+            <Sidebar onNavigate={() => {}} currentPath="app://trash" collapsed={false} />
+        );
+        expect(html).toContain('Trash');
+        expect(html).toContain('>delete<');
+    });
+
+    test('Omnibar displays Trash title and delete icon when currentPath is app://trash', () => {
+        const html = renderToStaticMarkup(
+            <Omnibar currentPath="app://trash" onNavigate={() => {}} onSearch={() => {}} />
+        );
+        expect(html).toContain('Trash');
+        expect(html).toContain('>delete<');
+    });
+
+    test('SettingsDialog renders Confirm before moving to Trash switch', () => {
+        const html = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <AppThemeProvider>
+                    <SettingsDialog
+                        open={true}
+                        onClose={() => {}}
+                        showHiddenFiles={true}
+                        onToggleHiddenFiles={() => {}}
+                        iconSize={64}
+                        onIconSizeChange={() => {}}
+                        viewMode="grid"
+                        onViewModeChange={() => {}}
+                        filledIcons={false}
+                        onToggleFilledIcons={() => {}}
+                        confirmTrash={true}
+                        onToggleConfirmTrash={() => {}}
+                    />
+                </AppThemeProvider>
+            )
+        );
+        expect(html).toContain('Confirm before moving to Trash');
+        expect(html).toContain('Ask for confirmation before moving files or folders to Trash');
+    });
+
+    test('PropertiesDialog shows Original Location and Deleted timestamp for trashed items', () => {
+        const trashedFile = makeFile('old.txt', {
+            path: '/home/stark/.local/share/Trash/files/old.txt',
+            originalParent: '/home/stark/Documents',
+            trashId: '/home/stark/.local/share/Trash/info/old.txt.trashinfo',
+        });
+        const html = renderToStaticMarkup(
+            <PropertiesDialog open={true} onClose={() => {}} file={trashedFile} />
+        );
+        expect(html).toContain('Original Location');
+        expect(html).toContain('/home/stark/Documents');
+        expect(html).toContain('Deleted');
+    });
+});

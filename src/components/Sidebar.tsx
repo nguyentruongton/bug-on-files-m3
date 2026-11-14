@@ -124,6 +124,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 />
                             );
                         })}
+                        <NavigationDrawerItem
+                            key="app://trash"
+                            selected={normCurrent === 'app://trash'}
+                            shape="pill"
+                            icon={<Icon name="delete" size={20} />}
+                            activeIcon={<Icon name="delete" size={20} filled />}
+                            label="Trash"
+                            onClick={() => onNavigate('app://trash')}
+                        />
 
                         <NavigationDrawerDivider className="my-2" />
 

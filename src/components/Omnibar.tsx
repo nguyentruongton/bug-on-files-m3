@@ -69,7 +69,7 @@ export const Omnibar: React.FC<OmnibarProps> = ({
             }`}
         >
             <Icon
-                name={isEditing ? 'search' : 'folder_open'}
+                name={isEditing ? 'search' : currentPath === 'app://trash' ? 'delete' : 'folder_open'}
                 size={18}
                 className="text-m3-on-surface-variant shrink-0 mr-2"
             />
@@ -107,6 +107,10 @@ export const Omnibar: React.FC<OmnibarProps> = ({
                     {currentPath.startsWith('app://dashboard') || currentPath === 'dashboard://' ? (
                         <span className="text-sm font-medium text-m3-on-surface truncate">
                             Home Dashboard
+                        </span>
+                    ) : currentPath === 'app://trash' ? (
+                        <span className="text-sm font-medium text-m3-on-surface truncate">
+                            Trash
                         </span>
                     ) : currentPath.startsWith('search://') ? (
                         <span className="text-sm font-medium text-m3-primary truncate">

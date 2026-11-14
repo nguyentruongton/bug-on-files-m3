@@ -18,6 +18,8 @@ interface SettingsDialogProps {
     onViewModeChange: (mode: 'grid' | 'list') => void;
     filledIcons: boolean;
     onToggleFilledIcons: () => void;
+    confirmTrash?: boolean;
+    onToggleConfirmTrash?: () => void;
 }
 
 const THEME_MODES = [
@@ -37,6 +39,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     onViewModeChange,
     filledIcons,
     onToggleFilledIcons,
+    confirmTrash = true,
+    onToggleConfirmTrash,
 }) => {
     const {
         themeMode,
@@ -259,6 +263,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                 checked={filledIcons}
                                 onCheckedChange={() => onToggleFilledIcons()}
                                 ariaLabel="Filled File Icons"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4 rounded-m3-md bg-m3-surface-container-low p-3">
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-m3-on-surface">
+                                    Confirm before moving to Trash
+                                </span>
+                                <span className="text-xs text-m3-on-surface-variant">
+                                    Ask for confirmation before moving files or folders to Trash
+                                </span>
+                            </div>
+                            <Switch
+                                checked={confirmTrash}
+                                onCheckedChange={() => onToggleConfirmTrash?.()}
+                                ariaLabel="Confirm before moving to Trash"
                             />
                         </div>
                     </section>
