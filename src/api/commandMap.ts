@@ -2,7 +2,7 @@ import type { IApi } from './types';
 
 export type CommandKey = Exclude<
     keyof IApi,
-    'startDrag' | 'onWatchEvent' | 'onExtractProgress' | 'ptyOnData' | 'ptyOnExit'
+    'startDrag' | 'quitApp' | 'onWatchEvent' | 'onExtractProgress' | 'ptyOnData' | 'ptyOnExit'
 >;
 
 export const COMMAND_MAP: Record<CommandKey, string> = {
@@ -29,7 +29,6 @@ export const COMMAND_MAP: Record<CommandKey, string> = {
     readFile: 'read_file',
     readTextPreview: 'read_text_preview',
     getStartupPath: 'get_startup_path',
-    quitApp: 'quit_app',
     search: 'search',
     getDirectorySize: 'get_directory_size',
     setIcon: 'set_icon',
