@@ -51,7 +51,7 @@ export const Dialog: React.FC<DialogProps> = ({
           )}
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <DialogBody>{children}</DialogBody>
+        <DialogBody contentClassName="pt-2">{children}</DialogBody>
         {actions && <DialogFooter>{actions}</DialogFooter>}
       </DialogContent>
     </M3Dialog>

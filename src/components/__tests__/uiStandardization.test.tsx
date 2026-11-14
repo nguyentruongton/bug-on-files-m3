@@ -9,9 +9,11 @@ import { resolveSpaceQuickLookTarget } from '../../utils/quickLook';
 import { shouldEnableItemMorph } from '../../utils/shapeUtils';
 import { ContextMenu } from '../ContextMenu';
 import { Dashboard } from '../Dashboard';
+import { Dialog } from '../Dialog';
 import { ExplorerTab } from '../ExplorerTab';
 import { FileList } from '../FileList';
 import { FileListSkeleton } from '../FileListSkeleton';
+import { Icon } from '../Icon';
 import { Omnibar } from '../Omnibar';
 import { OpenWithDialog } from '../OpenWithDialog';
 import { PropertiesDialog } from '../PropertiesDialog';
@@ -321,24 +323,44 @@ describe('Omnibar standardization', () => {
 });
 
 describe('Phase 4 Views & Overlays standardization', () => {
-    test('ContextMenu uses role="menu", role="menuitem", MD3 Divider role="separator", and zero shadow-xl/border', () => {
+    test('Dialog adds pt-2 to DialogBody content container so outlined TextField floating labels are not clipped', () => {
+        const html = renderToStaticMarkup(
+            <Dialog open onClose={() => {}} title="New Folder">
+                <div>Body content</div>
+            </Dialog>
+        );
+        expect(html).toContain('pt-2');
+    });
+
+    test('Icon supports fill={1}, fill={0}, and animateFill with font-variation-settings', () => {
+        const filledHtml = renderToStaticMarkup(<Icon name="folder" fill={1} animateFill />);
+        expect(filledHtml).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+
+        const outlinedHtml = renderToStaticMarkup(<Icon name="folder" fill={0} animateFill />);
+        expect(outlinedHtml).toMatch(/(&#x27;|')FILL(&#x27;|')\s*0/);
+    });
+
+    test('ContextMenu uses Expressive VerticalMenu, VerticalMenuGroup role="group", MenuItem role="menuitem", and filters empty divider groups', () => {
         const html = renderToStaticMarkup(
             <ContextMenu
                 x={120}
                 y={80}
                 onClose={() => {}}
                 items={[
+                    { label: '', divider: true, action: () => {} },
                     { label: 'Open', icon: 'open_in_new', action: () => {} },
                     { label: '', divider: true, action: () => {} },
+                    { label: '', divider: true, action: () => {} },
                     { label: 'Properties', icon: 'info', action: () => {} },
+                    { label: '', divider: true, action: () => {} },
                 ]}
             />
         );
 
         expect(html).toContain('role="menu"');
+        expect(html.match(/role="group"/g)?.length ?? 0).toBe(2);
         expect(html.match(/role="menuitem"/g)?.length ?? 0).toBe(2);
-        expect(html).toContain('role="separator"');
-        expect(html).toContain('bg-m3-surface-container-high');
+        expect(html).toContain('bg-m3-surface-container-low');
         expect(html).not.toContain('shadow-xl');
         expect(html).not.toContain('border-m3-outline-variant/40');
     });
