@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-14
 - **Size:** Small change
-- **Status:** Pending approval
+- **Status:** Approved
 
 ## 1. Intent & Why
 
@@ -13,7 +13,7 @@ Set up **Google Sans Flex** (`"ROND" 100`) and **Material Symbols** variable fon
 - **Goals:**
   - Install `@bug-on/m3-fonts` and remove `@fontsource/material-symbols-rounded` (which only provided static weights 100–400 without the variable `FILL` axis).
   - Load self-hosted Google Sans Flex (`@bug-on/m3-fonts/typography.css`) and Material Symbols (`@bug-on/m3-fonts/material-symbols.css`) plus MD3 Expressive typography utilities (`@bug-on/m3-expressive/typography.css`) in `src/index.css`.
-  - Apply `"Google Sans Flex"` with `font-variation-settings: "ROND" 100` as the root default typography instead of the legacy `'Roboto', 'Inter'` fallback override.
+  - Apply the built-in `font-md3-expressive` class (from `@bug-on/m3-expressive/typography.css`) on the root element (`index.html` / app root) and remove the legacy `:root { font-family: 'Roboto', 'Inter', ... }` override in `src/index.css`.
   - Wrap the application root in `<MaterialSymbolsProvider source="local">` so `@bug-on/m3-expressive` never triggers `ReactDOM.preinit()` requests to `fonts.googleapis.com`.
   - Standardize `src/components/Icon.tsx` to delegate to `<Icon>` from `@bug-on/m3-expressive` while preserving the existing `filled?: boolean` convenience prop used across the codebase.
 - **Non-Goals:**
@@ -43,14 +43,14 @@ Set up **Google Sans Flex** (`"ROND" 100`) and **Material Symbols** variable fon
 1. **`package.json`**:
    - Add `"@bug-on/m3-fonts"` to `dependencies`.
    - Remove `"@fontsource/material-symbols-rounded"` from `dependencies`.
-2. **`src/index.css` & `src/spike/spike.css`**:
+2. **`src/index.css`, `index.html`, & `src/spike/spike.css`**:
    - Replace `@import "@fontsource/material-symbols-rounded/index.css";` with:
      ```css
      @import "@bug-on/m3-fonts/typography.css";
      @import "@bug-on/m3-fonts/material-symbols.css";
      @import "@bug-on/m3-expressive/typography.css";
      ```
-   - Update `:root` in `src/index.css` to use `font-family: var(--font-md3-expressive, "Google Sans Flex", system-ui, sans-serif);` and `font-variation-settings: "ROND" 100;`.
+   - Remove the legacy `font-family: 'Roboto', 'Inter', ...` override from `:root` in `src/index.css` and apply the built-in `font-md3-expressive` class (provided by `@bug-on/m3-expressive/typography.css`) to `<html lang="en" class="font-md3-expressive">` in `index.html` and the root container in `src/App.tsx`.
    - Remove the redundant manual `.material-symbols-rounded` block in `src/index.css` (handled by `@bug-on/m3-expressive`'s `<Icon>` / `.md-icon`).
 3. **`src/contexts/AppThemeContext.tsx`**:
    - Import `MaterialSymbolsProvider` from `@bug-on/m3-expressive` and wrap `<MD3ThemeProvider>` with `<MaterialSymbolsProvider source="local">`.
