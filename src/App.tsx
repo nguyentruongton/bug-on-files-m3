@@ -29,6 +29,12 @@ import {
   normalizePath,
 } from './utils/navigationHistory';
 import { isArchiveFile, validateFileName } from './utils/fileUtils';
+import {
+  executePurgeAction,
+  executeRestoreBatch,
+  executeTrashBatch,
+  type PurgeTarget,
+} from './utils/trashActions';
 import { api } from './api';
 
 interface TabState {
@@ -79,9 +85,7 @@ function AppContent() {
 
   // Trash & Purge Confirmation Dialog State
   const [trashConfirmItems, setTrashConfirmItems] = useState<IFile[] | null>(null);
-  const [purgeConfirmState, setPurgeConfirmState] = useState<
-    { mode: 'items'; items: IFile[] } | { mode: 'empty' } | null
-  >(null);
+  const [purgeConfirmState, setPurgeConfirmState] = useState<PurgeTarget | null>(null);
 
   // Clipboard & Toast State
   const { clipboard, copy, cut } = useClipboard();
@@ -248,22 +252,11 @@ function AppContent() {
   };
 
   const executeTrashItems = useCallback(async (items: IFile[]) => {
-    if (items.length === 0) return;
-    try {
-      for (const item of items) {
-        await FileSystemService.trash(item.path);
-      }
-      showToast(
-        items.length === 1
-          ? `Moved "${items[0].name}" to Trash`
-          : `Moved ${items.length} items to Trash`,
-        'success'
-      );
-      refreshActiveTab();
-    } catch (err) {
-      console.error('Move to trash failed', err);
-      showToast('Failed to move selected item(s) to Trash', 'error');
-    }
+    await executeTrashBatch(items, {
+      trash: FileSystemService.trash,
+      showToast,
+      refresh: refreshActiveTab,
+    });
   }, [showToast, refreshActiveTab]);
 
   const handleTrashRequest = useCallback((items: IFile[]) => {
@@ -276,27 +269,11 @@ function AppContent() {
   }, [confirmTrash, executeTrashItems]);
 
   const handleRestoreRequest = useCallback(async (items: IFile[]) => {
-    const ids = items.map((item) => item.trashId).filter((id): id is string => Boolean(id));
-    if (ids.length === 0) {
-      showToast('Cannot restore item(s): missing trash metadata', 'error');
-      return;
-    }
-    try {
-      const ok = await FileSystemService.restoreTrash(ids);
-      if (!ok) {
-        throw new Error('Restore command returned false');
-      }
-      showToast(
-        items.length === 1
-          ? `Restored "${items[0].name}"`
-          : `Restored ${items.length} items`,
-        'success'
-      );
-      refreshActiveTab();
-    } catch (err) {
-      console.error('Restore failed', err);
-      showToast('Failed to restore selected item(s)', 'error');
-    }
+    await executeRestoreBatch(items, {
+      restoreTrash: FileSystemService.restoreTrash,
+      showToast,
+      refresh: refreshActiveTab,
+    });
   }, [showToast, refreshActiveTab]);
 
   const handlePurgeRequest = useCallback((items: IFile[]) => {
@@ -312,41 +289,12 @@ function AppContent() {
     if (!purgeConfirmState) return;
     const targetState = purgeConfirmState;
     setPurgeConfirmState(null);
-    try {
-      if (targetState.mode === 'empty') {
-        const ok = await FileSystemService.emptyTrash();
-        if (!ok) {
-          throw new Error('Empty trash command returned false');
-        }
-        showToast('Emptied Trash', 'success');
-      } else {
-        const ids = targetState.items
-          .map((item) => item.trashId)
-          .filter((id): id is string => Boolean(id));
-        if (ids.length === 0) {
-          throw new Error('Missing trash metadata');
-        }
-        const ok = await FileSystemService.purgeTrash(ids);
-        if (!ok) {
-          throw new Error('Purge command returned false');
-        }
-        showToast(
-          targetState.items.length === 1
-            ? `Permanently deleted "${targetState.items[0].name}"`
-            : `Permanently deleted ${targetState.items.length} items`,
-          'success'
-        );
-      }
-      refreshActiveTab();
-    } catch (err) {
-      console.error('Permanent delete failed', err);
-      showToast(
-        targetState.mode === 'empty'
-          ? 'Failed to empty Trash'
-          : 'Failed to permanently delete selected item(s)',
-        'error'
-      );
-    }
+    await executePurgeAction(targetState, {
+      purgeTrash: FileSystemService.purgeTrash,
+      emptyTrash: FileSystemService.emptyTrash,
+      showToast,
+      refresh: refreshActiveTab,
+    });
   }, [purgeConfirmState, showToast, refreshActiveTab]);
 
   const targetItems = contextMenu?.item
@@ -830,6 +778,7 @@ function AppContent() {
 
         <Dialog
           title="Move to Trash?"
+          icon={<Icon name="delete" />}
           open={Boolean(trashConfirmItems && trashConfirmItems.length > 0)}
           onClose={() => setTrashConfirmItems(null)}
           actions={
@@ -858,6 +807,7 @@ function AppContent() {
 
         <Dialog
           title={purgeConfirmState?.mode === 'empty' ? 'Empty Trash?' : 'Delete Permanently?'}
+          icon={<Icon name="delete_forever" />}
           open={Boolean(purgeConfirmState)}
           onClose={() => setPurgeConfirmState(null)}
           actions={
