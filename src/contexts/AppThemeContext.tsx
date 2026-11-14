@@ -150,7 +150,6 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    setMediaQueryDark(mq.matches);
     const onChange = (event: MediaQueryListEvent) => setMediaQueryDark(event.matches);
     mq.addEventListener?.('change', onChange);
     return () => mq.removeEventListener?.('change', onChange);

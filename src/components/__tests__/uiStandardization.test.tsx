@@ -106,6 +106,12 @@ describe('TabBar standardization', () => {
         const secondTabMatch = html.match(/<button[^>]*data-tab-id="t2"[^>]*>/);
         expect(secondTabMatch?.[0]).toBeDefined();
         expect(secondTabMatch?.[0]).not.toContain('border-radius:9999px');
+
+        // Active tab icon uses filled Material Symbol ('FILL' 1), inactive uses outlined ('FILL' 0)
+        const tab1Match = html.match(/<button[^>]*data-tab-id="t1"[\s\S]*?<\/button>/);
+        const tab2Match = html.match(/<button[^>]*data-tab-id="t2"[\s\S]*?<\/button>/);
+        expect(tab1Match?.[0]).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+        expect(tab2Match?.[0]).toMatch(/(&#x27;|')FILL(&#x27;|')\s*0/);
     });
 
     test('hides close buttons when only one tab is open', () => {
@@ -240,7 +246,7 @@ describe('FileListSkeleton standardization', () => {
 });
 
 describe('ExplorerTab standardization', () => {
-    test('renders Type sort button, vertical Divider, and removes toolbar border-b', () => {
+    test('renders standalone IconButtons with aria-pressed and animateFill icons, vertical Divider, and zero ButtonGroup fieldsets', () => {
         const html = withMockLocalStorage(() =>
             renderToStaticMarkup(
                 <ToastProvider>
@@ -252,8 +258,10 @@ describe('ExplorerTab standardization', () => {
                             onPathChange={() => {}}
                             onContextMenu={() => {}}
                             showHiddenFiles={false}
+                            onToggleHiddenFiles={() => {}}
                             iconSize={64}
                             viewMode="list"
+                            onViewModeChange={() => {}}
                             filledIcons
                         />
                     </ClipboardProvider>
@@ -267,16 +275,33 @@ describe('ExplorerTab standardization', () => {
         expect(html).toContain('aria-label="Sort by Type"');
         expect(html).toContain('>category<');
         expect(html).toContain('aria-orientation="vertical"');
-        expect(html.match(/<fieldset\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+        expect(html.match(/<fieldset\b/g)?.length ?? 0).toBe(0);
         expect(html).toContain('rounded-[24px] overflow-hidden bg-m3-surface-container-low');
         expect(html).not.toContain('[scrollbar-gutter:stable]');
         expect(html).not.toContain('border-b border-m3-outline-variant/30');
 
-        // Enabled toolbar buttons inside ButtonGroups remain keyboard-reachable (never forced to tabindex="-1")
+        // Enabled toolbar buttons remain keyboard-reachable and expose aria-pressed + FILL state for toggles
         for (const label of ['Up', 'Sort by Name', 'Sort by Date', 'Sort by Type', 'Sort by Size', 'Toggle Sort Order']) {
             const btnMatch = html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`));
             expect(btnMatch?.[0]).toBeDefined();
             expect(btnMatch?.[0]).not.toContain('tabindex="-1"');
+        }
+
+        const toggleExpectations: Array<{ label: string; pressed: 'true' | 'false'; fill: '0' | '1' }> = [
+            { label: 'Show Hidden Files', pressed: 'false', fill: '0' },
+            { label: 'Disable Category Grouping', pressed: 'true', fill: '1' },
+            { label: 'Sort by Name', pressed: 'true', fill: '1' },
+            { label: 'Sort by Date', pressed: 'false', fill: '0' },
+            { label: 'Sort by Type', pressed: 'false', fill: '0' },
+            { label: 'Sort by Size', pressed: 'false', fill: '0' },
+            { label: 'Switch to Grid View', pressed: 'true', fill: '1' },
+        ];
+        for (const item of toggleExpectations) {
+            const fullBtn = html.match(
+                new RegExp(`<button[^>]*aria-label="${item.label}"[\\s\\S]*?<\\/button>`)
+            );
+            expect(fullBtn?.[0]).toContain(`aria-pressed="${item.pressed}"`);
+            expect(fullBtn?.[0]).toMatch(new RegExp(`(&#x27;|')FILL(&#x27;|')\\s*${item.fill}`));
         }
     });
 
@@ -497,12 +522,14 @@ describe('Shell & StatusBar radius standardization', () => {
 });
 
 describe('Trash UI support in Sidebar, Omnibar, SettingsDialog, and PropertiesDialog', () => {
-    test('Sidebar renders Trash item in Places and marks it selected when currentPath is app://trash', () => {
+    test('Sidebar renders Trash item in Places and marks it selected with filled icon when currentPath is app://trash', () => {
         const html = renderToStaticMarkup(
             <Sidebar onNavigate={() => {}} currentPath="app://trash" collapsed={false} />
         );
         expect(html).toContain('Trash');
         expect(html).toContain('>delete<');
+        const trashBtn = html.match(/<button[^>]*aria-label="Trash"[\s\S]*?<\/button>|<button[^>]*>[\s\S]*?>Trash<[\s\S]*?<\/button>/);
+        expect(trashBtn?.[0]).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
     });
 
     test('Omnibar displays Trash title and delete icon when currentPath is app://trash', () => {

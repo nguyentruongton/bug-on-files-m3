@@ -137,7 +137,8 @@ export const TabBar: React.FC<TabBarProps> = ({
                                         <Icon
                                             name={getTabIconName(tab.path)}
                                             size={16}
-                                            filled={isActive}
+                                            fill={isActive ? 1 : 0}
+                                            animateFill
                                             className="shrink-0"
                                         />
                                         <span className="truncate">{tab.title}</span>

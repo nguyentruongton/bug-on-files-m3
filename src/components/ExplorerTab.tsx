@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react';
 import {
     Button,
-    ButtonGroup,
-    type ButtonProps,
     Divider,
     FAST_SPATIAL_SPRING,
     HorizontalFloatingToolbar,
+    ProgressIndicator,
     ToolbarDivider,
     ToolbarIconButton,
 } from '@bug-on/m3-expressive';
@@ -20,6 +19,7 @@ import { Icon } from './Icon';
 import { FileSystemService } from '../services/FileSystemService';
 import type { IFile } from '../types/files';
 import { api } from '../api';
+import type { ExtractProgressEvent } from '../api/types';
 import { isModalDialogOpen } from '../utils/themeUtils';
 
 import { Omnibar } from './Omnibar';
@@ -46,14 +46,6 @@ import {
     stepForward,
     type HistoryState,
 } from '../utils/navigationHistory';
-
-/**
- * Preserves keyboard `Tab` reachability for every enabled button inside a
- * `ButtonGroup` (which otherwise forces `tabIndex={-1}` on non-first items).
- */
-const ToolbarGroupButton: React.FC<ButtonProps> = (props) => (
-    <Button {...props} tabIndex={props.disabled ? undefined : 0} />
-);
 
 interface ExplorerTabProps {
     tabId: string;
@@ -125,6 +117,21 @@ export function ExplorerTab({
 
     // Quick Look State
     const [quickLookPath, setQuickLookPath] = useState<string | null>(null);
+    const [extractProgress, setExtractProgress] = useState<ExtractProgressEvent | null>(null);
+
+    useEffect(() => {
+        if (!isActive || !api?.onExtractProgress) return;
+        const unsubscribe = api.onExtractProgress((event) => {
+            if (event.done) {
+                setExtractProgress(null);
+            } else {
+                setExtractProgress(event);
+            }
+        });
+        return () => {
+            unsubscribe?.();
+        };
+    }, [isActive]);
 
     // Track recents
     const [, setRecentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
@@ -703,49 +710,43 @@ export function ExplorerTab({
 
     return (
         <div
-            className={`flex-col flex-1 h-full overflow-hidden bg-m3-surface-container ${isActive ? 'flex' : 'hidden'}`}
+            className={`relative flex-col flex-1 h-full overflow-hidden bg-m3-surface-container ${isActive ? 'flex' : 'hidden'}`}
         >
             {/* Top Bar (Breadcrumb/Path + Quick Actions) */}
             {currentPath !== 'app://dashboard' && (
                 <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-m3-surface-container">
-                    <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
-                        <ToolbarGroupButton
+                    <div className="flex items-center gap-1 shrink-0">
+                        <IconButton
                             onClick={handleBack}
                             disabled={historyState.index <= 0}
-                            variant="default"
-                            colorStyle="tonal"
+                            variant="tonal"
                             size="sm"
                             aria-label="Back"
                             title="Back (Alt+Left)"
-                            className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_back" size={18} />
-                        </ToolbarGroupButton>
-                        <ToolbarGroupButton
+                        </IconButton>
+                        <IconButton
                             onClick={handleForward}
                             disabled={historyState.index >= historyState.entries.length - 1}
-                            variant="default"
-                            colorStyle="tonal"
+                            variant="tonal"
                             size="sm"
                             aria-label="Forward"
                             title="Forward (Alt+Right)"
-                            className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_forward" size={18} />
-                        </ToolbarGroupButton>
-                        <ToolbarGroupButton
+                        </IconButton>
+                        <IconButton
                             onClick={handleUp}
                             disabled={!currentPath || currentPath === '/' || isTrash}
-                            variant="default"
-                            colorStyle="tonal"
+                            variant="tonal"
                             size="sm"
                             aria-label="Up"
                             title="Up (Alt+Up)"
-                            className="!px-2.5 !min-w-0 !h-9"
                         >
                             <Icon name="arrow_upward" size={18} />
-                        </ToolbarGroupButton>
-                    </ButtonGroup>
+                        </IconButton>
+                    </div>
 
                     <div className="flex-1 min-w-0">
                         <Omnibar
@@ -771,122 +772,150 @@ export function ExplorerTab({
                                 <span>Empty Trash</span>
                             </Button>
                         )}
-                        <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
+                        <div className="flex items-center gap-1 shrink-0">
                             {!isTrash && onCreateFolderRequest && (
-                                <ToolbarGroupButton
-                                    variant="default"
-                                    colorStyle="tonal"
+                                <IconButton
+                                    variant="tonal"
                                     size="sm"
                                     onClick={onCreateFolderRequest}
                                     aria-label="New Folder"
                                     title="New Folder (Ctrl+Shift+N)"
-                                    className="!px-2.5 !min-w-0 !h-9"
                                 >
                                     <Icon name="create_new_folder" size={18} />
-                                </ToolbarGroupButton>
+                                </IconButton>
                             )}
                             {onToggleHiddenFiles && (
-                                <ToolbarGroupButton
-                                    variant="toggle"
-                                    selected={showHiddenFiles}
-                                    colorStyle="tonal"
+                                <IconButton
+                                    variant="tonal"
                                     size="sm"
+                                    toggle
+                                    selected={showHiddenFiles}
                                     onClick={onToggleHiddenFiles}
                                     aria-label={showHiddenFiles ? 'Hide Hidden Files' : 'Show Hidden Files'}
                                     title={showHiddenFiles ? 'Hide Hidden Files (Ctrl+H)' : 'Show Hidden Files (Ctrl+H)'}
-                                    className="!px-2.5 !min-w-0 !h-9"
                                 >
-                                    <Icon name={showHiddenFiles ? 'visibility' : 'visibility_off'} size={18} />
-                                </ToolbarGroupButton>
+                                    <Icon
+                                        name={showHiddenFiles ? 'visibility' : 'visibility_off'}
+                                        size={18}
+                                        fill={showHiddenFiles ? 1 : 0}
+                                        animateFill
+                                    />
+                                </IconButton>
                             )}
-                            <ToolbarGroupButton
-                                variant="toggle"
-                                selected={groupingEnabled}
-                                colorStyle="tonal"
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
+                                toggle
+                                selected={groupingEnabled}
                                 onClick={() => setGroupingEnabled(!groupingEnabled)}
                                 aria-label={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
                                 title={groupingEnabled ? 'Disable Category Grouping' : 'Enable Category Grouping'}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="view_agenda" size={18} />
-                            </ToolbarGroupButton>
-                        </ButtonGroup>
+                                <Icon
+                                    name="view_agenda"
+                                    size={18}
+                                    fill={groupingEnabled ? 1 : 0}
+                                    animateFill
+                                />
+                            </IconButton>
+                        </div>
 
                         <Divider orientation="vertical" className="h-6 mx-0.5" />
 
-                        <ButtonGroup variant="connected" size="sm" className="shrink-0 overflow-visible">
-                            <ToolbarGroupButton
-                                variant="toggle"
-                                selected={sortBy === 'name'}
-                                colorStyle="tonal"
+                        <div className="flex items-center gap-1 shrink-0">
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
+                                toggle
+                                selected={sortBy === 'name'}
                                 onClick={() => handleSortChange('name')}
                                 aria-label="Sort by Name"
                                 title={`Sort by Name (${sortBy === 'name' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="sort_by_alpha" size={18} />
-                            </ToolbarGroupButton>
-                            <ToolbarGroupButton
-                                variant="toggle"
-                                selected={sortBy === 'date'}
-                                colorStyle="tonal"
+                                <Icon
+                                    name="sort_by_alpha"
+                                    size={18}
+                                    fill={sortBy === 'name' ? 1 : 0}
+                                    animateFill
+                                />
+                            </IconButton>
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
+                                toggle
+                                selected={sortBy === 'date'}
                                 onClick={() => handleSortChange('date')}
                                 aria-label="Sort by Date"
                                 title={`Sort by Date (${sortBy === 'date' ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'click to sort'})`}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="calendar_today" size={18} />
-                            </ToolbarGroupButton>
-                            <ToolbarGroupButton
-                                variant="toggle"
-                                selected={sortBy === 'type'}
-                                colorStyle="tonal"
+                                <Icon
+                                    name="calendar_today"
+                                    size={18}
+                                    fill={sortBy === 'date' ? 1 : 0}
+                                    animateFill
+                                />
+                            </IconButton>
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
+                                toggle
+                                selected={sortBy === 'type'}
                                 onClick={() => handleSortChange('type')}
                                 aria-label="Sort by Type"
                                 title={`Sort by Type (${sortBy === 'type' ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A') : 'click to sort'})`}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="category" size={18} />
-                            </ToolbarGroupButton>
-                            <ToolbarGroupButton
-                                variant="toggle"
-                                selected={sortBy === 'size'}
-                                colorStyle="tonal"
+                                <Icon
+                                    name="category"
+                                    size={18}
+                                    fill={sortBy === 'type' ? 1 : 0}
+                                    animateFill
+                                />
+                            </IconButton>
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
+                                toggle
+                                selected={sortBy === 'size'}
                                 onClick={() => handleSortChange('size')}
                                 aria-label="Sort by Size"
                                 title={`Sort by Size (${sortBy === 'size' ? (sortOrder === 'asc' ? 'Smallest' : 'Largest') : 'click to sort'})`}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
-                                <Icon name="straighten" size={18} />
-                            </ToolbarGroupButton>
-                            <ToolbarGroupButton
-                                variant="default"
-                                colorStyle="tonal"
+                                <Icon
+                                    name="straighten"
+                                    size={18}
+                                    fill={sortBy === 'size' ? 1 : 0}
+                                    animateFill
+                                />
+                            </IconButton>
+                            <IconButton
+                                variant="tonal"
                                 size="sm"
                                 onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
                                 aria-label="Toggle Sort Order"
                                 title={sortOrder === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
-                                className="!px-2.5 !min-w-0 !h-9"
                             >
                                 <Icon name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={18} />
-                            </ToolbarGroupButton>
-                        </ButtonGroup>
+                            </IconButton>
+                        </div>
 
                         {onViewModeChange && (
                             <>
                                 <Divider orientation="vertical" className="h-6 mx-0.5" />
                                 <IconButton
                                     variant="tonal"
+                                    size="sm"
+                                    toggle
+                                    selected={viewMode === 'list'}
                                     onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
                                     aria-label={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
                                     title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
                                 >
-                                    <Icon name={viewMode === 'grid' ? 'view_list' : 'grid_view'} />
+                                    <Icon
+                                        name={viewMode === 'grid' ? 'view_list' : 'grid_view'}
+                                        size={18}
+                                        fill={viewMode === 'list' ? 1 : 0}
+                                        animateFill
+                                    />
                                 </IconButton>
                             </>
                         )}
@@ -1200,6 +1229,48 @@ export function ExplorerTab({
                     selectedCount={selectedFiles.size}
                     selectedSize={selectedSize}
                 />
+            )}
+
+            {extractProgress && !extractProgress.done && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className="absolute bottom-12 right-4 z-30 w-80 rounded-[20px] bg-m3-surface-container-high text-m3-on-surface p-4 flex flex-col gap-2.5"
+                >
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <Icon name="folder_zip" size={20} className="text-m3-primary shrink-0" />
+                            <span className="text-sm font-medium truncate">
+                                Extracting {extractProgress.archiveName}
+                            </span>
+                        </div>
+                        {extractProgress.percent !== undefined && (
+                            <span className="text-xs font-semibold text-m3-primary shrink-0 tabular-nums">
+                                {Math.round(extractProgress.percent)}%
+                            </span>
+                        )}
+                    </div>
+                    {(extractProgress.currentFile || extractProgress.totalCount > 0) && (
+                        <div className="flex items-center justify-between gap-2 text-xs text-m3-on-surface-variant min-w-0">
+                            <span className="truncate flex-1">
+                                {extractProgress.currentFile || 'Preparing extraction...'}
+                            </span>
+                            {extractProgress.totalCount > 0 && (
+                                <span className="shrink-0 tabular-nums">
+                                    {extractProgress.extractedCount} / {extractProgress.totalCount}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    <ProgressIndicator
+                        variant="linear"
+                        shape="wavy"
+                        value={extractProgress.percent !== undefined ? Math.round(extractProgress.percent) : undefined}
+                        aria-label={`Extracting ${extractProgress.archiveName}`}
+                        color="var(--md-sys-color-primary)"
+                        trackColor="var(--md-sys-color-secondary-container)"
+                    />
+                </div>
             )}
 
             {quickLookFile && (

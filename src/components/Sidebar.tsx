@@ -117,8 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     key={place.path}
                                     selected={isSelected}
                                     shape="pill"
-                                    icon={<Icon name={getPlaceIconName(place.name)} size={20} />}
-                                    activeIcon={<Icon name={getPlaceIconName(place.name)} size={20} filled />}
+                                    icon={<Icon name={getPlaceIconName(place.name)} size={20} fill={isSelected ? 1 : 0} animateFill />}
                                     label={place.name}
                                     onClick={() => onNavigate(place.path)}
                                 />
@@ -128,8 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             key="app://trash"
                             selected={normCurrent === 'app://trash'}
                             shape="pill"
-                            icon={<Icon name="delete" size={20} />}
-                            activeIcon={<Icon name="delete" size={20} filled />}
+                            icon={<Icon name="delete" size={20} fill={normCurrent === 'app://trash' ? 1 : 0} animateFill />}
                             label="Trash"
                             onClick={() => onNavigate('app://trash')}
                         />
@@ -154,8 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     key={drive.mountpoint}
                                     selected={isSelected}
                                     shape="pill"
-                                    icon={<Icon name={iconName} size={20} />}
-                                    activeIcon={<Icon name={iconName} size={20} filled />}
+                                    icon={<Icon name={iconName} size={20} fill={isSelected ? 1 : 0} animateFill />}
                                     label={label}
                                     badge={
                                         <span className="text-[11px] font-medium text-m3-on-surface-variant">
@@ -171,8 +168,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <NavigationDrawerItem
                                 selected={normCurrent === '/'}
                                 shape="pill"
-                                icon={<Icon name="hard_drive" size={20} />}
-                                activeIcon={<Icon name="hard_drive" size={20} filled />}
+                                icon={<Icon name="hard_drive" size={20} fill={normCurrent === '/' ? 1 : 0} animateFill />}
                                 label="Computer"
                                 onClick={() => onNavigate('/')}
                             />

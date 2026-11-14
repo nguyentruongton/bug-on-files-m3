@@ -101,7 +101,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                         key={m.value}
                                         colorStyle={themeMode === m.value ? 'filled' : 'outlined'}
                                         size="sm"
-                                        icon={<Icon name={m.icon} size={18} />}
+                                        icon={<Icon name={m.icon} size={18} fill={themeMode === m.value ? 1 : 0} animateFill />}
                                         onClick={() => setThemeMode(m.value)}
                                         className="w-full justify-center"
                                     >
@@ -197,7 +197,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                 <Button
                                     colorStyle={viewMode === 'grid' ? 'filled' : 'outlined'}
                                     size="sm"
-                                    icon={<Icon name="grid_view" size={18} />}
+                                    icon={<Icon name="grid_view" size={18} fill={viewMode === 'grid' ? 1 : 0} animateFill />}
                                     onClick={() => onViewModeChange('grid')}
                                     className="w-full justify-center"
                                 >
@@ -206,7 +206,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                 <Button
                                     colorStyle={viewMode === 'list' ? 'filled' : 'outlined'}
                                     size="sm"
-                                    icon={<Icon name="view_list" size={18} />}
+                                    icon={<Icon name="view_list" size={18} fill={viewMode === 'list' ? 1 : 0} animateFill />}
                                     onClick={() => onViewModeChange('list')}
                                     className="w-full justify-center"
                                 >

@@ -108,7 +108,7 @@ function AppContent() {
   // Tab Handlers
   const handleAddTab = useCallback((path?: string) => {
     const newTabId = Date.now().toString();
-    const newPath = path || currentPath || '/';
+    const newPath = path || 'app://dashboard';
     const folderName = resolveTabTitle(newPath);
     const newTab: TabState = { id: newTabId, title: folderName, path: newPath };
 
@@ -117,7 +117,7 @@ function AppContent() {
     if (newPath && !newPath.startsWith('app://')) {
       setTerminalCwd(newPath);
     }
-  }, [currentPath]);
+  }, []);
 
   // -- Effects --
 
@@ -520,8 +520,7 @@ function AppContent() {
         items={[
           {
             id: 'dashboard',
-            icon: <Icon name="dashboard" />,
-            activeIcon: <Icon name="dashboard" filled />,
+            icon: <Icon name="dashboard" fill={currentPath === 'app://dashboard' ? 1 : 0} animateFill />,
             label: 'Dashboard',
             isActive: currentPath === 'app://dashboard',
             onClick: () => {
@@ -535,8 +534,7 @@ function AppContent() {
           },
           {
             id: 'home',
-            icon: <Icon name="home" />,
-            activeIcon: <Icon name="home" filled />,
+            icon: <Icon name="home" fill={isInHome ? 1 : 0} animateFill />,
             label: 'Home',
             isActive: isInHome,
             onClick: async () => {
@@ -552,24 +550,21 @@ function AppContent() {
           },
           {
             id: 'files',
-            icon: <Icon name="folder" />,
-            activeIcon: <Icon name="folder" filled />,
+            icon: <Icon name="folder" fill={isRootOrSystemFiles ? 1 : 0} animateFill />,
             label: 'Files',
             isActive: isRootOrSystemFiles,
             onClick: () => handleSidebarNavigate('/')
           },
           {
             id: 'terminal',
-            icon: <Icon name="terminal" />,
-            activeIcon: <Icon name="terminal" filled />,
+            icon: <Icon name="terminal" fill={terminalOpen ? 1 : 0} animateFill />,
             label: 'Terminal',
             isActive: terminalOpen,
             onClick: toggleTerminal
           },
           {
             id: 'settings',
-            icon: <Icon name="settings" />,
-            activeIcon: <Icon name="settings" filled />,
+            icon: <Icon name="settings" fill={settingsDialogOpen ? 1 : 0} animateFill />,
             label: 'Settings',
             isActive: settingsDialogOpen,
             onClick: () => setSettingsDialogOpen(true)
