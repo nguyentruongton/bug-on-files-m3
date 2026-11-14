@@ -8,6 +8,9 @@ import {
   resolveAfterTabClose,
   normalizePath,
   getActiveDriveMountpoint,
+  togglePinTab,
+  closeOtherTabs,
+  hasClosableOtherTabs,
 } from '../navigationHistory';
 
 describe('navigationHistory', () => {
@@ -116,5 +119,84 @@ describe('normalizePath and getActiveDriveMountpoint', () => {
     expect(getActiveDriveMountpoint('/run/media/stark/USB/photos', mounts)).toBe('/run/media/stark/USB');
     expect(getActiveDriveMountpoint('/etc/nginx', mounts)).toBe('/');
     expect(getActiveDriveMountpoint('app://dashboard', mounts)).toBeNull();
+  });
+});
+
+describe('togglePinTab, closeOtherTabs, and hasClosableOtherTabs', () => {
+  test('togglePinTab pins an unpinned tab and moves it to the end of the pinned group', () => {
+    const tabs = [
+      { id: '1', title: 'A', path: '/a', pinned: true },
+      { id: '2', title: 'B', path: '/b' },
+      { id: '3', title: 'C', path: '/c' },
+    ];
+    expect(togglePinTab(tabs, '3')).toEqual([
+      { id: '1', title: 'A', path: '/a', pinned: true },
+      { id: '3', title: 'C', path: '/c', pinned: true },
+      { id: '2', title: 'B', path: '/b' },
+    ]);
+  });
+
+  test('togglePinTab unpins a pinned tab and moves it to the start of the unpinned group', () => {
+    const tabs = [
+      { id: '1', title: 'A', path: '/a', pinned: true },
+      { id: '2', title: 'B', path: '/b', pinned: true },
+      { id: '3', title: 'C', path: '/c' },
+    ];
+    expect(togglePinTab(tabs, '1')).toEqual([
+      { id: '2', title: 'B', path: '/b', pinned: true },
+      { id: '1', title: 'A', path: '/a', pinned: false },
+      { id: '3', title: 'C', path: '/c' },
+    ]);
+  });
+
+  test('closeOtherTabs keeps target tab and all pinned tabs, removing other unpinned tabs', () => {
+    const tabs = [
+      { id: '1', title: 'Pinned', path: '/pinned', pinned: true },
+      { id: '2', title: 'Keep', path: '/keep' },
+      { id: '3', title: 'Drop', path: '/drop' },
+    ];
+    expect(closeOtherTabs(tabs, '2', '2', '/keep')).toEqual({
+      tabs: [
+        { id: '1', title: 'Pinned', path: '/pinned', pinned: true },
+        { id: '2', title: 'Keep', path: '/keep' },
+      ],
+      activeTabId: '2',
+      terminalCwd: '/keep',
+    });
+  });
+
+  test('closeOtherTabs switches activeTabId to keepId and updates terminalCwd when active tab is closed', () => {
+    const tabs = [
+      { id: '1', title: 'Dashboard', path: 'app://dashboard' },
+      { id: '2', title: 'Active', path: '/active' },
+    ];
+    expect(closeOtherTabs(tabs, '2', '1', '/active')).toEqual({
+      tabs: [{ id: '1', title: 'Dashboard', path: 'app://dashboard' }],
+      activeTabId: '1',
+      terminalCwd: undefined,
+    });
+  });
+
+  test('hasClosableOtherTabs returns true only when at least one other unpinned tab exists', () => {
+    expect(
+      hasClosableOtherTabs(
+        [
+          { id: '1', title: 'A', path: '/a', pinned: true },
+          { id: '2', title: 'B', path: '/b' },
+        ],
+        '2'
+      )
+    ).toBe(false);
+
+    expect(
+      hasClosableOtherTabs(
+        [
+          { id: '1', title: 'A', path: '/a', pinned: true },
+          { id: '2', title: 'B', path: '/b' },
+          { id: '3', title: 'C', path: '/c' },
+        ],
+        '2'
+      )
+    ).toBe(true);
   });
 });

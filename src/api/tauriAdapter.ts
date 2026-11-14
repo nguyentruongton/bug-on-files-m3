@@ -129,6 +129,11 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
         },
         getStartupPath: () =>
             invoke(COMMAND_MAP.getStartupPath) as Promise<string | null>,
+        quitApp: async () => {
+            if (typeof window !== 'undefined') {
+                window.close();
+            }
+        },
         search: async (
             directory: string,
             query: string,

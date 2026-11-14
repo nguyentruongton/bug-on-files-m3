@@ -1,22 +1,22 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { FAST_EFFECTS_TRANSITION } from '@bug-on/m3-expressive';
+import { Icon as M3Icon, type IconProps as M3IconProps } from '@bug-on/m3-expressive';
 
-export interface IconProps {
+export interface IconProps extends Omit<M3IconProps, 'fill' | 'opticalSize' | 'size'> {
   name: string;
   className?: string;
   filled?: boolean;
   fill?: 0 | 1;
   weight?: 100 | 200 | 300 | 400 | 500 | 600 | 700;
-  grade?: -25 | 0 | 200;
+  grade?: -50 | -25 | 0 | 100 | 200;
   opticalSize?: 20 | 24 | 40 | 48;
   animateFill?: boolean;
   size?: number;
   style?: React.CSSProperties;
 }
 
-export const Icon: React.FC<IconProps> = ({
+export const Icon: React.FC<IconProps> & { isMD3Icon?: boolean } = ({
   name,
+  variant = 'rounded',
   className = '',
   filled = false,
   fill,
@@ -25,36 +25,28 @@ export const Icon: React.FC<IconProps> = ({
   opticalSize,
   animateFill = false,
   size,
-  style = {},
+  style,
+  ...rest
 }) => {
   const effectiveFill: 0 | 1 = fill !== undefined ? fill : filled ? 1 : 0;
-  const resolvedOpsz = opticalSize ?? (size && size <= 20 ? 20 : size && size >= 40 ? 40 : 24);
-  const fontVariationSettings = `'FILL' ${effectiveFill}, 'wght' ${weight}, 'GRAD' ${grade}, 'opsz' ${resolvedOpsz}`;
-  const baseClassName = `material-symbols-rounded select-none inline-flex items-center justify-center leading-none ${className}`;
-  const baseStyle: React.CSSProperties = {
-    fontVariationSettings,
-    ...(size ? { fontSize: `${size}px` } : {}),
-    ...style,
-  };
-
-  if (animateFill) {
-    return (
-      <motion.span
-        className={baseClassName}
-        style={baseStyle}
-        initial={false}
-        animate={{ fontVariationSettings }}
-        transition={FAST_EFFECTS_TRANSITION}
-        aria-hidden="true"
-      >
-        {name}
-      </motion.span>
-    );
-  }
+  const resolvedOpsz: 20 | 24 | 40 | 48 =
+    opticalSize ?? (size && size <= 20 ? 20 : size && size >= 48 ? 48 : size && size >= 40 ? 40 : 24);
 
   return (
-    <span className={baseClassName} style={baseStyle} aria-hidden="true">
-      {name}
-    </span>
+    <M3Icon
+      name={name}
+      variant={variant}
+      fill={effectiveFill}
+      weight={weight}
+      grade={grade}
+      opticalSize={resolvedOpsz}
+      size={size}
+      animateFill={animateFill}
+      className={className}
+      style={style}
+      {...rest}
+    />
   );
 };
+
+Icon.isMD3Icon = true;

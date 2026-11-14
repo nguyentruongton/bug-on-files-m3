@@ -1,2 +1,5 @@
 @import "tailwindcss";
 @import "@bug-on/m3-expressive/index.css";
+@import "@bug-on/m3-fonts/typography.css";
+@import "@bug-on/m3-fonts/material-symbols.css";
+@import "@bug-on/m3-expressive/typography.css";

@@ -153,14 +153,8 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
         const leadingContent = (
             <ExpressiveShape
                 shape={isSelected ? shapePair.morph : shapePair.rest}
-                morphTo={
-                    morphEnabled
-                        ? isSelected
-                            ? shapePair.rest
-                            : shapePair.morph
-                        : undefined
-                }
-                morphOn="hover"
+                morphOn="none"
+                disabled={!morphEnabled}
                 width={32}
                 height={32}
                 className={shapePair.containerClass}
@@ -710,14 +704,8 @@ export const FileList: React.FC<FileListProps> = ({
                         >
                             <ExpressiveShape
                                 shape={isSelected ? shapePair.morph : shapePair.rest}
-                                morphTo={
-                                    enableMorph
-                                        ? isSelected
-                                            ? shapePair.rest
-                                            : shapePair.morph
-                                        : undefined
-                                }
-                                morphOn="hover"
+                                morphOn="none"
+                                disabled={!enableMorph}
                                 width={containerSize}
                                 height={containerSize}
                                 className={`${shapePair.containerClass} mb-2`}

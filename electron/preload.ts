@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
   startDrag: (path: string, iconPath?: string) => ipcRenderer.send('dnd:start', path, iconPath),
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
+  quitApp: () => ipcRenderer.invoke('app:quit'),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
   search: (dir: string, query: string, options?: unknown) => ipcRenderer.invoke('system:search', dir, query, options),

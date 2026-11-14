@@ -88,6 +88,53 @@ export function resolveAfterTabClose<T extends { id: string; path: string }>(
   };
 }
 
+export function togglePinTab<T extends { id: string; pinned?: boolean }>(
+  tabs: T[],
+  targetId: string
+): T[] {
+  const updated = tabs.map((t) => (t.id === targetId ? { ...t, pinned: !t.pinned } : t));
+  const pinned = updated.filter((t) => t.pinned);
+  const unpinned = updated.filter((t) => !t.pinned);
+  return [...pinned, ...unpinned];
+}
+
+export function closeOtherTabs<T extends { id: string; path: string; pinned?: boolean }>(
+  tabs: T[],
+  activeTabId: string,
+  keepId: string,
+  currentTerminalCwd: string | undefined
+): { tabs: T[]; activeTabId: string; terminalCwd: string | undefined } {
+  const newTabs = tabs.filter((t) => t.id === keepId || Boolean(t.pinned));
+  if (newTabs.some((t) => t.id === activeTabId)) {
+    return {
+      tabs: newTabs,
+      activeTabId,
+      terminalCwd: currentTerminalCwd,
+    };
+  }
+  const kept = newTabs.find((t) => t.id === keepId) ?? newTabs[0];
+  if (!kept) {
+    return {
+      tabs: newTabs,
+      activeTabId: '',
+      terminalCwd: undefined,
+    };
+  }
+  const nextCwd = kept.path && !kept.path.startsWith('app://') ? kept.path : undefined;
+  return {
+    tabs: newTabs,
+    activeTabId: kept.id,
+    terminalCwd: nextCwd,
+  };
+}
+
+export function hasClosableOtherTabs<T extends { id: string; pinned?: boolean }>(
+  tabs: T[],
+  targetId: string
+): boolean {
+  return tabs.some((t) => t.id !== targetId && !t.pinned);
+}
+
 export function normalizePath(pathStr: string): string {
   if (!pathStr || pathStr === '/') return pathStr;
   return pathStr.replace(/\/+$/, '');

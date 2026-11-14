@@ -63,6 +63,7 @@ export interface IApi {
     readTextPreview: (path: string) => Promise<TextPreview>;
     startDrag: (path: string, iconPath?: string) => void;
     getStartupPath: () => Promise<string | null>;
+    quitApp: () => Promise<void>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
     getDirectorySize: (path: string) => Promise<number>;
     setIcon: (iconType: string) => Promise<void>;

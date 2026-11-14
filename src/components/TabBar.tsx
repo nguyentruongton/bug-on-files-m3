@@ -7,6 +7,7 @@ export interface Tab {
     id: string;
     path: string;
     title: string;
+    pinned?: boolean;
 }
 
 interface TabBarProps {
@@ -15,6 +16,8 @@ interface TabBarProps {
     onTabClick: (id: string) => void;
     onTabClose: (id: string) => void;
     onNewTab: () => void;
+    onTabContextMenu?: (e: React.MouseEvent, tab: Tab) => void;
+    onTabBarContextMenu?: (e: React.MouseEvent) => void;
 }
 
 const getTabIconName = (path: string): string => {
@@ -31,6 +34,8 @@ export const TabBar: React.FC<TabBarProps> = ({
     onTabClick,
     onTabClose,
     onNewTab,
+    onTabContextMenu,
+    onTabBarContextMenu,
 }) => {
     const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -89,7 +94,13 @@ export const TabBar: React.FC<TabBarProps> = ({
     const canClose = tabs.length > 1;
 
     return (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-m3-surface-container select-none">
+        <div
+            onContextMenu={(e) => {
+                e.preventDefault();
+                onTabBarContextMenu?.(e);
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-m3-surface-container select-none"
+        >
             <div
                 role="tablist"
                 aria-label="Open tabs"
@@ -119,8 +130,13 @@ export const TabBar: React.FC<TabBarProps> = ({
                                 aria-label={tab.title}
                                 tabIndex={isActive ? 0 : -1}
                                 onClick={() => onTabClick(tab.id)}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onTabContextMenu?.(e, tab);
+                                }}
                                 onMouseDown={(e) => {
-                                    if (e.button === 1 && canClose) {
+                                    if (e.button === 1 && canClose && !tab.pinned) {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         onTabClose(tab.id);
@@ -143,7 +159,15 @@ export const TabBar: React.FC<TabBarProps> = ({
                                         />
                                         <span className="truncate">{tab.title}</span>
                                     </span>
-                                    {canClose && (
+                                    {tab.pinned ? (
+                                        <span
+                                            aria-label={`${tab.title} pinned`}
+                                            title="Pinned tab"
+                                            className="shrink-0 inline-flex items-center justify-center w-5 h-5 opacity-75"
+                                        >
+                                            <Icon name="keep" size={14} />
+                                        </span>
+                                    ) : canClose ? (
                                         <span
                                             role="button"
                                             tabIndex={-1}
@@ -160,7 +184,7 @@ export const TabBar: React.FC<TabBarProps> = ({
                                         >
                                             <Icon name="close" size={14} />
                                         </span>
-                                    )}
+                                    ) : null}
                                 </span>
                             </Button>
                         );

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { MD3ThemeProvider, useTheme, type ThemeMode } from '@bug-on/m3-expressive';
+import { MaterialSymbolsProvider, MD3ThemeProvider, useTheme, type ThemeMode } from '@bug-on/m3-expressive';
 import { api } from '../api';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { ThemeService } from '../services/ThemeService';
@@ -249,16 +249,18 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   return (
     <AppThemeContext.Provider value={value}>
-      <MD3ThemeProvider
-        sourceColor={effectiveSeedColor}
-        defaultMode={resolvedMode}
-        variant="expressive"
-        persistToLocalStorage={false}
-        enableSnackbar
-      >
-        <ThemeProviderSync effectiveSeedColor={effectiveSeedColor} themeMode={resolvedMode} />
-        {children}
-      </MD3ThemeProvider>
+      <MaterialSymbolsProvider source="local">
+        <MD3ThemeProvider
+          sourceColor={effectiveSeedColor}
+          defaultMode={resolvedMode}
+          variant="expressive"
+          persistToLocalStorage={false}
+          enableSnackbar
+        >
+          <ThemeProviderSync effectiveSeedColor={effectiveSeedColor} themeMode={resolvedMode} />
+          {children}
+        </MD3ThemeProvider>
+      </MaterialSymbolsProvider>
     </AppThemeContext.Provider>
   );
 };

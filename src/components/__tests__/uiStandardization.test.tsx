@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { IFile } from '../../types/files';
@@ -7,11 +9,13 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import type { SortField } from '../../utils/fileListUtils';
 import { resolveExtractProgressPercent } from '../../utils/explorerTabUtils';
 import { resolveSpaceQuickLookTarget } from '../../utils/quickLook';
-import { shouldEnableItemMorph } from '../../utils/shapeUtils';
+import { getFileGroupShapePair, shouldEnableItemMorph } from '../../utils/shapeUtils';
+import { AboutDialog } from '../AboutDialog';
 import { ContextMenu } from '../ContextMenu';
 import { Dashboard } from '../Dashboard';
 import { Dialog } from '../Dialog';
 import { ExplorerTab } from '../ExplorerTab';
+import { ExpressiveShape } from '../ExpressiveShape';
 import { FileList } from '../FileList';
 import { FileListSkeleton } from '../FileListSkeleton';
 import { Icon } from '../Icon';
@@ -129,6 +133,29 @@ describe('TabBar standardization', () => {
         expect(html).not.toContain('aria-label="Close Home"');
         expect(html).toContain('aria-label="New tab"');
     });
+
+    test('pinned tab keeps its title, hides close button, renders keep icon, and accepts context menu handlers', () => {
+        const pinnedTabs: Tab[] = [
+            { id: 't1', path: '/home/user', title: 'Home', pinned: true },
+            { id: 't2', path: '/home/user/Documents', title: 'Documents' },
+        ];
+        const html = renderToStaticMarkup(
+            <TabBar
+                tabs={pinnedTabs}
+                activeTabId="t1"
+                onTabClick={() => {}}
+                onTabClose={() => {}}
+                onNewTab={() => {}}
+                onTabContextMenu={() => {}}
+                onTabBarContextMenu={() => {}}
+            />
+        );
+
+        expect(html).toContain('Home');
+        expect(html).not.toContain('aria-label="Close Home"');
+        expect(html).toContain('aria-label="Close Documents"');
+        expect(html).toContain('data-icon="keep"');
+    });
 });
 
 describe('FileList standardization', () => {
@@ -212,6 +239,55 @@ describe('FileList standardization', () => {
         expect(shouldEnableItemMorph(25, false)).toBe(true);
         expect(shouldEnableItemMorph(500, false)).toBe(false);
         expect(shouldEnableItemMorph(500, true)).toBe(true);
+    });
+
+    test('renders FileList item shapes by selection state without hover morphing', () => {
+        const docs = makeFile('Documents', { isDirectory: true });
+        const downloads = makeFile('Downloads', { isDirectory: true });
+        const selected = new Set([docs.path]);
+
+        const folderPair = getFileGroupShapePair('Folders', true);
+        const expectedMorphHtml = renderToStaticMarkup(
+            <ExpressiveShape shape={folderPair.morph} width={80} height={80} />
+        );
+        const expectedRestHtml = renderToStaticMarkup(
+            <ExpressiveShape shape={folderPair.rest} width={80} height={80} />
+        );
+        const morphClip = expectedMorphHtml.match(/clip-path:(path\([^)]+\))/)?.[1];
+        const restClip = expectedRestHtml.match(/clip-path:(path\([^)]+\))/)?.[1];
+        expect(morphClip).toBeTruthy();
+        expect(restClip).toBeTruthy();
+        expect(morphClip).not.toBe(restClip);
+
+        const gridHtml = renderToStaticMarkup(
+            <FileList
+                files={[docs, downloads]}
+                selectedFiles={selected}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                sortBy="name"
+                sortOrder="asc"
+            />
+        );
+        expect(gridHtml).toContain(morphClip!);
+        expect(gridHtml).toContain(restClip!);
+
+        const fileListSource = readFileSync(
+            resolve(import.meta.dir, '../FileList.tsx'),
+            'utf8'
+        );
+        const rowMatch = fileListSource.match(/const leadingContent = \(\s*<ExpressiveShape[\s\S]*?<\/ExpressiveShape>/);
+        const gridMatch = fileListSource.match(/aria-pressed=\{isSelected\}[\s\S]*?<ExpressiveShape[\s\S]*?<\/ExpressiveShape>/);
+        expect(rowMatch?.[0]).toContain('morphOn="none"');
+        expect(rowMatch?.[0]).not.toContain('morphOn="hover"');
+        expect(rowMatch?.[0]).not.toContain('morphTo=');
+        expect(gridMatch?.[0]).toContain('morphOn="none"');
+        expect(gridMatch?.[0]).not.toContain('morphOn="hover"');
+        expect(gridMatch?.[0]).not.toContain('morphTo=');
     });
 
     test('uses content-start on grid container with min-h-full so few-item folders do not stretch rows', () => {
@@ -674,5 +750,61 @@ describe('Trash view in FileList and ExplorerTab', () => {
         );
         expect(html).toContain('Empty Trash');
         expect(html).not.toContain('aria-label="New Folder"');
+    });
+});
+
+describe('Self-hosted M3 fonts & Icon standardization', () => {
+    test('AppThemeProvider wraps tree in MaterialSymbolsProvider source="local" and suppresses Google Fonts CDN preinit', () => {
+        const html = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <AppThemeProvider>
+                    <Icon name="folder" filled />
+                </AppThemeProvider>
+            )
+        );
+
+        expect(html).not.toContain('fonts.googleapis.com');
+        expect(html).toContain('md-icon');
+        expect(html).toContain('data-icon="folder"');
+        expect(html).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+    });
+
+    test('Icon resolves fill vs filled precedence, opticalSize from size, and forwards className and style', () => {
+        const explicitZero = renderToStaticMarkup(<Icon name="folder" filled fill={0} size={16} />);
+        expect(explicitZero).toMatch(/(&#x27;|')FILL(&#x27;|')\s*0/);
+        expect(explicitZero).toMatch(/(&#x27;|')opsz(&#x27;|')\s*20/);
+        expect(explicitZero).toContain('font-size:16px');
+
+        const largeFilled = renderToStaticMarkup(
+            <Icon name="movie" filled size={48} className="text-m3-primary" style={{ opacity: 0.5 }} />
+        );
+        expect(largeFilled).toMatch(/(&#x27;|')FILL(&#x27;|')\s*1/);
+        expect(largeFilled).toMatch(/(&#x27;|')opsz(&#x27;|')\s*48/);
+        expect(largeFilled).toContain('md-icon');
+        expect(largeFilled).toContain('text-m3-primary');
+        expect(largeFilled).toContain('opacity:0.5');
+    });
+
+    test('index.html and src/index.css configure self-hosted @bug-on/m3-fonts and font-md3-expressive without legacy overrides', async () => {
+        const indexHtml = await Bun.file('index.html').text();
+        const indexCss = await Bun.file('src/index.css').text();
+
+        expect(indexHtml).toContain('font-md3-expressive');
+        expect(indexCss).toContain('@import "@bug-on/m3-fonts/typography.css";');
+        expect(indexCss).toContain('@import "@bug-on/m3-fonts/material-symbols.css";');
+        expect(indexCss).toContain('@import "@bug-on/m3-expressive/typography.css";');
+        expect(indexCss).not.toContain('@fontsource/material-symbols-rounded');
+        expect(indexCss).not.toContain('.material-symbols-rounded');
+        expect(indexCss).not.toContain("font-family: 'Roboto'");
+    });
+});
+
+describe('AboutDialog', () => {
+    test('renders app name, version, and Close action when open', () => {
+        const html = renderToStaticMarkup(<AboutDialog open={true} onClose={() => {}} />);
+        expect(html).toContain('About Materials');
+        expect(html).toContain('Materials');
+        expect(html).toContain('0.1.0');
+        expect(html).toContain('Close');
     });
 });
