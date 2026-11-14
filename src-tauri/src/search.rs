@@ -125,6 +125,8 @@ pub fn search(dir: &str, query: &str, opts: &SearchOptions) -> Vec<FileEntry> {
             size,
             mtime_ms,
             media_kind,
+            trash_id: None,
+            original_parent: None,
         });
 
         if results.len() >= 100 {

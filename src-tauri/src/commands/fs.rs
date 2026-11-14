@@ -37,6 +37,26 @@ pub fn trash_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub fn list_trash() -> Result<Vec<FileEntry>, String> {
+    fs_ops::list_trash()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn restore_trash_items(ids: Vec<String>) -> Result<bool, String> {
+    fs_ops::restore_trash_items(&ids)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn purge_trash_items(ids: Vec<String>) -> Result<bool, String> {
+    fs_ops::purge_trash_items(&ids)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn empty_trash() -> Result<bool, String> {
+    fs_ops::empty_trash()
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn rename_file(old_path: String, new_path: String) -> Result<bool, String> {
     fs_ops::rename_path(&old_path, &new_path).map(|_| true)
 }
@@ -170,5 +190,72 @@ mod tests {
 
         let err_preview = read_text_preview("/nonexistent/file/path".into());
         assert_eq!(err_preview, TextPreview::Error);
+    }
+
+    #[test]
+    fn test_trash_lifecycle_list_restore_with_collision_and_missing_parent_and_purge() {
+        let temp = tempfile::tempdir().unwrap();
+        let nested_parent = temp.path().join("deleted_parent");
+        let missing_parent = temp.path().join("removed_dir").join("deep");
+        std::fs::create_dir_all(&nested_parent).unwrap();
+        std::fs::create_dir_all(&missing_parent).unwrap();
+
+        let file_a = nested_parent.join("note.txt");
+        std::fs::write(&file_a, "first version").unwrap();
+
+        // If system trash is unavailable in this environment, skip gracefully
+        if trash_file(file_a.to_str().unwrap().into()).is_err() {
+            return;
+        }
+        assert!(!file_a.exists());
+
+        // Create a new file at the same path to force a collision on restore,
+        // trash a second file to test purge_trash_items, and trash a third file whose parent gets removed
+        std::fs::write(&file_a, "blocking version").unwrap();
+        let file_b = nested_parent.join("purge_me.txt");
+        std::fs::write(&file_b, "to be purged").unwrap();
+        trash_file(file_b.to_str().unwrap().into()).unwrap();
+
+        let file_c = missing_parent.join("recreate.txt");
+        std::fs::write(&file_c, "recreate parent").unwrap();
+        trash_file(file_c.to_str().unwrap().into()).unwrap();
+        std::fs::remove_dir_all(temp.path().join("removed_dir")).unwrap();
+        assert!(!missing_parent.exists());
+
+        let all_trashed = list_trash().unwrap();
+        let nested_parent_str = nested_parent.to_string_lossy().into_owned();
+        let missing_parent_str = missing_parent.to_string_lossy().into_owned();
+        let entry_a = all_trashed
+            .iter()
+            .find(|e| e.name == "note.txt" && e.original_parent.as_deref() == Some(nested_parent_str.as_str()))
+            .expect("trashed note.txt must appear in list_trash");
+        let entry_b = all_trashed
+            .iter()
+            .find(|e| e.name == "purge_me.txt" && e.original_parent.as_deref() == Some(nested_parent_str.as_str()))
+            .expect("trashed purge_me.txt must appear in list_trash");
+        let entry_c = all_trashed
+            .iter()
+            .find(|e| e.name == "recreate.txt" && e.original_parent.as_deref() == Some(missing_parent_str.as_str()))
+            .expect("trashed recreate.txt must appear in list_trash");
+
+        let id_a = entry_a.trash_id.clone().expect("must have trash_id");
+        let id_b = entry_b.trash_id.clone().expect("must have trash_id");
+        let id_c = entry_c.trash_id.clone().expect("must have trash_id");
+
+        // Restore entry_a while "note.txt" exists -> must create "note (restored).txt"
+        assert!(restore_trash_items(vec![id_a]).unwrap());
+        let restored_collision = nested_parent.join("note (restored).txt");
+        assert_eq!(std::fs::read_to_string(&restored_collision).unwrap(), "first version");
+        assert_eq!(std::fs::read_to_string(&file_a).unwrap(), "blocking version");
+
+        // Restore entry_c whose parent directory was deleted -> must recreate parent and restore file
+        assert!(restore_trash_items(vec![id_c]).unwrap());
+        assert_eq!(std::fs::read_to_string(&file_c).unwrap(), "recreate parent");
+
+        // Purge entry_b -> must remove it from trash without restoring
+        assert!(purge_trash_items(vec![id_b.clone()]).unwrap());
+        assert!(!nested_parent.join("purge_me.txt").exists());
+        let after_purge = list_trash().unwrap();
+        assert!(!after_purge.iter().any(|e| e.trash_id.as_deref() == Some(id_b.as_str())));
     }
 }

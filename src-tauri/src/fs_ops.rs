@@ -10,6 +10,10 @@ pub struct FileEntry {
     pub mtime_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trash_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_parent: Option<String>,
 }
 
 pub fn sniff_ts_media_kind(path: &std::path::Path) -> Option<String> {
@@ -91,6 +95,8 @@ pub fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
             size,
             mtime_ms,
             media_kind,
+            trash_id: None,
+            original_parent: None,
         });
     }
 
@@ -288,6 +294,195 @@ pub fn parent_of(path: &str) -> String {
 
 pub fn read_file_text(path: &str) -> Option<String> {
     std::fs::read_to_string(path).ok()
+}
+
+pub fn trash_payload_path_from_info(info_path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let trash_root = info_path.parent()?.parent()?;
+    let stem = info_path.file_stem()?;
+    Some(trash_root.join("files").join(stem))
+}
+
+pub fn resolve_non_colliding_restore_name(
+    parent: &std::path::Path,
+    original_name: &str,
+    is_dir: bool,
+) -> String {
+    if parent.join(original_name).symlink_metadata().is_err() {
+        return original_name.to_string();
+    }
+    let (stem, ext) = if is_dir {
+        (original_name, "")
+    } else {
+        match original_name.rfind('.') {
+            Some(idx) if idx > 0 && idx < original_name.len() - 1 => {
+                (&original_name[..idx], &original_name[idx..])
+            }
+            _ => (original_name, ""),
+        }
+    };
+    let first = format!("{} (restored){}", stem, ext);
+    if parent.join(&first).symlink_metadata().is_err() {
+        return first;
+    }
+    let mut counter = 2usize;
+    loop {
+        let candidate = format!("{} (restored {}){}", stem, counter, ext);
+        if parent.join(&candidate).symlink_metadata().is_err() {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+pub fn list_trash() -> Result<Vec<FileEntry>, String> {
+    let items = trash::os_limited::list().map_err(|e| format!("Failed to list trash: {}", e))?;
+    let mut result = Vec::with_capacity(items.len());
+
+    for item in items {
+        let trash_id = item.id.to_string_lossy().into_owned();
+        let info_path = std::path::PathBuf::from(&item.id);
+        let payload_path = trash_payload_path_from_info(&info_path);
+
+        let payload_meta = payload_path
+            .as_ref()
+            .and_then(|p| std::fs::symlink_metadata(p).ok());
+
+        let (is_directory, size) = match trash::os_limited::metadata(&item) {
+            Ok(meta) => match meta.size {
+                trash::TrashItemSize::Entries(_) => (true, 0),
+                trash::TrashItemSize::Bytes(b) => (false, b),
+            },
+            Err(_) => match payload_meta.as_ref() {
+                Some(m) => (m.is_dir(), if m.is_dir() { 0 } else { m.len() }),
+                None => continue,
+            },
+        };
+
+        let mtime_ms = if item.time_deleted > 0 {
+            (item.time_deleted as u64).saturating_mul(1000)
+        } else {
+            payload_meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+        };
+
+        let path_str = payload_path
+            .as_ref()
+            .filter(|_| payload_meta.is_some())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| trash_id.clone());
+
+        let media_kind = if is_directory {
+            None
+        } else {
+            payload_path.as_deref().and_then(sniff_ts_media_kind)
+        };
+
+        result.push(FileEntry {
+            name: item.name.to_string_lossy().into_owned(),
+            path: path_str,
+            is_directory,
+            size,
+            mtime_ms,
+            media_kind,
+            trash_id: Some(trash_id),
+            original_parent: Some(item.original_parent.to_string_lossy().into_owned()),
+        });
+    }
+
+    result.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms).then_with(|| a.name.cmp(&b.name)));
+    Ok(result)
+}
+
+pub fn restore_trash_items(ids: &[String]) -> Result<bool, String> {
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let id_set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let items = trash::os_limited::list().map_err(|e| format!("Failed to list trash: {}", e))?;
+
+    for item in items {
+        let item_id = item.id.to_string_lossy();
+        if !id_set.contains(item_id.as_ref()) {
+            continue;
+        }
+
+        let info_path = std::path::PathBuf::from(&item.id);
+        let payload_path = trash_payload_path_from_info(&info_path)
+            .ok_or_else(|| format!("Invalid trash info path: {}", item_id))?;
+
+        let meta = std::fs::symlink_metadata(&payload_path).map_err(|e| {
+            format!(
+                "Failed to inspect trashed item '{}': {}",
+                payload_path.display(),
+                e
+            )
+        })?;
+        let is_dir = meta.is_dir();
+
+        std::fs::create_dir_all(&item.original_parent).map_err(|e| {
+            format!(
+                "Failed to create original parent '{}': {}",
+                item.original_parent.display(),
+                e
+            )
+        })?;
+
+        let target_name = resolve_non_colliding_restore_name(
+            &item.original_parent,
+            &item.name.to_string_lossy(),
+            is_dir,
+        );
+        let dest_path = item.original_parent.join(&target_name);
+
+        let payload_str = payload_path.to_string_lossy().into_owned();
+        let dest_str = dest_path.to_string_lossy().into_owned();
+        move_path(&payload_str, &dest_str)?;
+
+        std::fs::remove_file(&info_path).map_err(|e| {
+            format!(
+                "Restored '{}' but failed to remove trash metadata '{}': {}",
+                dest_path.display(),
+                info_path.display(),
+                e
+            )
+        })?;
+    }
+
+    Ok(true)
+}
+
+pub fn purge_trash_items(ids: &[String]) -> Result<bool, String> {
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let id_set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let items = trash::os_limited::list().map_err(|e| format!("Failed to list trash: {}", e))?;
+    let matching: Vec<_> = items
+        .into_iter()
+        .filter(|item| id_set.contains(item.id.to_string_lossy().as_ref()))
+        .collect();
+
+    if matching.is_empty() {
+        return Ok(true);
+    }
+
+    trash::os_limited::purge_all(matching)
+        .map(|_| true)
+        .map_err(|e| format!("Failed to permanently delete trash items: {}", e))
+}
+
+pub fn empty_trash() -> Result<bool, String> {
+    let items = trash::os_limited::list().map_err(|e| format!("Failed to list trash: {}", e))?;
+    if items.is_empty() {
+        return Ok(true);
+    }
+    trash::os_limited::purge_all(items)
+        .map(|_| true)
+        .map_err(|e| format!("Failed to empty trash: {}", e))
 }
 
 #[cfg(test)]
@@ -622,6 +817,8 @@ mod tests {
             size: 10,
             mtime_ms: 100,
             media_kind: None,
+            trash_id: None,
+            original_parent: None,
         };
         let json_none = serde_json::to_string(&entry_none).unwrap();
         assert!(!json_none.contains("mediaKind"));
@@ -633,6 +830,8 @@ mod tests {
             size: 564,
             mtime_ms: 200,
             media_kind: Some("video".to_string()),
+            trash_id: None,
+            original_parent: None,
         };
         let json_video = serde_json::to_string(&entry_video).unwrap();
         assert!(json_video.contains(r#""mediaKind":"video""#));
@@ -670,5 +869,54 @@ mod tests {
 
         let dir_entry = entries.iter().find(|e| e.name == "folder.ts").unwrap();
         assert_eq!(dir_entry.media_kind, None);
+    }
+
+    #[test]
+    fn resolve_non_colliding_restore_name_handles_files_dirs_and_dotfiles() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path();
+
+        // No collision -> original name kept
+        assert_eq!(
+            resolve_non_colliding_restore_name(parent, "report.pdf", false),
+            "report.pdf"
+        );
+
+        // First collision -> "report (restored).pdf"
+        std::fs::write(parent.join("report.pdf"), "v1").unwrap();
+        assert_eq!(
+            resolve_non_colliding_restore_name(parent, "report.pdf", false),
+            "report (restored).pdf"
+        );
+
+        // Second collision -> "report (restored 2).pdf"
+        std::fs::write(parent.join("report (restored).pdf"), "v2").unwrap();
+        assert_eq!(
+            resolve_non_colliding_restore_name(parent, "report.pdf", false),
+            "report (restored 2).pdf"
+        );
+
+        // Directory with dot in name -> suffix at the end
+        std::fs::create_dir(parent.join("my.folder")).unwrap();
+        assert_eq!(
+            resolve_non_colliding_restore_name(parent, "my.folder", true),
+            "my.folder (restored)"
+        );
+
+        // Dotfile without secondary extension -> suffix at the end
+        std::fs::write(parent.join(".bashrc"), "rc").unwrap();
+        assert_eq!(
+            resolve_non_colliding_restore_name(parent, ".bashrc", false),
+            ".bashrc (restored)"
+        );
+    }
+
+    #[test]
+    fn trash_payload_path_from_info_resolves_files_sibling() {
+        let info = std::path::Path::new("/home/user/.local/share/Trash/info/doc.txt.trashinfo");
+        assert_eq!(
+            trash_payload_path_from_info(info),
+            Some(std::path::PathBuf::from("/home/user/.local/share/Trash/files/doc.txt"))
+        );
     }
 }
