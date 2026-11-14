@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { IFile } from '../../types/files';
@@ -7,11 +9,12 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import type { SortField } from '../../utils/fileListUtils';
 import { resolveExtractProgressPercent } from '../../utils/explorerTabUtils';
 import { resolveSpaceQuickLookTarget } from '../../utils/quickLook';
-import { shouldEnableItemMorph } from '../../utils/shapeUtils';
+import { getFileGroupShapePair, shouldEnableItemMorph } from '../../utils/shapeUtils';
 import { ContextMenu } from '../ContextMenu';
 import { Dashboard } from '../Dashboard';
 import { Dialog } from '../Dialog';
 import { ExplorerTab } from '../ExplorerTab';
+import { ExpressiveShape } from '../ExpressiveShape';
 import { FileList } from '../FileList';
 import { FileListSkeleton } from '../FileListSkeleton';
 import { Icon } from '../Icon';
@@ -212,6 +215,55 @@ describe('FileList standardization', () => {
         expect(shouldEnableItemMorph(25, false)).toBe(true);
         expect(shouldEnableItemMorph(500, false)).toBe(false);
         expect(shouldEnableItemMorph(500, true)).toBe(true);
+    });
+
+    test('renders FileList item shapes by selection state without hover morphing', () => {
+        const docs = makeFile('Documents', { isDirectory: true });
+        const downloads = makeFile('Downloads', { isDirectory: true });
+        const selected = new Set([docs.path]);
+
+        const folderPair = getFileGroupShapePair('Folders', true);
+        const expectedMorphHtml = renderToStaticMarkup(
+            <ExpressiveShape shape={folderPair.morph} width={80} height={80} />
+        );
+        const expectedRestHtml = renderToStaticMarkup(
+            <ExpressiveShape shape={folderPair.rest} width={80} height={80} />
+        );
+        const morphClip = expectedMorphHtml.match(/clip-path:(path\([^)]+\))/)?.[1];
+        const restClip = expectedRestHtml.match(/clip-path:(path\([^)]+\))/)?.[1];
+        expect(morphClip).toBeTruthy();
+        expect(restClip).toBeTruthy();
+        expect(morphClip).not.toBe(restClip);
+
+        const gridHtml = renderToStaticMarkup(
+            <FileList
+                files={[docs, downloads]}
+                selectedFiles={selected}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                sortBy="name"
+                sortOrder="asc"
+            />
+        );
+        expect(gridHtml).toContain(morphClip!);
+        expect(gridHtml).toContain(restClip!);
+
+        const fileListSource = readFileSync(
+            resolve(import.meta.dir, '../FileList.tsx'),
+            'utf8'
+        );
+        const rowMatch = fileListSource.match(/const leadingContent = \(\s*<ExpressiveShape[\s\S]*?<\/ExpressiveShape>/);
+        const gridMatch = fileListSource.match(/aria-pressed=\{isSelected\}[\s\S]*?<ExpressiveShape[\s\S]*?<\/ExpressiveShape>/);
+        expect(rowMatch?.[0]).toContain('morphOn="none"');
+        expect(rowMatch?.[0]).not.toContain('morphOn="hover"');
+        expect(rowMatch?.[0]).not.toContain('morphTo=');
+        expect(gridMatch?.[0]).toContain('morphOn="none"');
+        expect(gridMatch?.[0]).not.toContain('morphOn="hover"');
+        expect(gridMatch?.[0]).not.toContain('morphTo=');
     });
 
     test('uses content-start on grid container with min-h-full so few-item folders do not stretch rows', () => {
