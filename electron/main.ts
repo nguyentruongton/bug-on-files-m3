@@ -470,6 +470,10 @@ ipcMain.handle('fs:read-text-preview', async (_, filePath: string) => {
     return readTextPreview(filePath);
 });
 
+ipcMain.handle('app:quit', () => {
+    app.quit();
+});
+
 ipcMain.handle('app:get-startup-path', async () => {
     const args = process.argv;
     // In dev, args are [electron, ., path?]
