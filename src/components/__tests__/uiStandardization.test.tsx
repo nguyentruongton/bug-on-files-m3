@@ -10,6 +10,7 @@ import type { SortField } from '../../utils/fileListUtils';
 import { resolveExtractProgressPercent } from '../../utils/explorerTabUtils';
 import { resolveSpaceQuickLookTarget } from '../../utils/quickLook';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../../utils/shapeUtils';
+import { AboutDialog } from '../AboutDialog';
 import { ContextMenu } from '../ContextMenu';
 import { Dashboard } from '../Dashboard';
 import { Dialog } from '../Dialog';
@@ -772,5 +773,15 @@ describe('Self-hosted M3 fonts & Icon standardization', () => {
         expect(indexCss).not.toContain('@fontsource/material-symbols-rounded');
         expect(indexCss).not.toContain('.material-symbols-rounded');
         expect(indexCss).not.toContain("font-family: 'Roboto'");
+    });
+});
+
+describe('AboutDialog', () => {
+    test('renders app name, version, and Close action when open', () => {
+        const html = renderToStaticMarkup(<AboutDialog open={true} onClose={() => {}} />);
+        expect(html).toContain('About Materials');
+        expect(html).toContain('Materials');
+        expect(html).toContain('0.1.0');
+        expect(html).toContain('Close');
     });
 });
