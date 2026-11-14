@@ -77,12 +77,17 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
                 </div>
 
                 <div className="grid grid-cols-[96px_1fr] gap-y-3 gap-x-3 text-sm rounded-m3-lg bg-m3-surface-container p-4">
-                    <div className="text-m3-on-surface-variant font-medium">
-                        {file.originalParent ? 'Original Location' : 'Location'}
-                    </div>
-                    <div className="text-m3-on-surface break-all" style={{ userSelect: 'text' }}>
-                        {file.originalParent || file.path}
-                    </div>
+                    {file.originalParent ? (
+                        <>
+                            <div className="text-m3-on-surface-variant font-medium">Original Location</div>
+                            <div className="text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.originalParent}</div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="text-m3-on-surface-variant font-medium">Location</div>
+                            <div className="text-m3-on-surface break-all" style={{ userSelect: 'text' }}>{file.path}</div>
+                        </>
+                    )}
 
                     <div className="text-m3-on-surface-variant font-medium">Size</div>
                     <div className="flex items-center gap-2 text-m3-on-surface">
