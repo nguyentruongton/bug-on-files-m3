@@ -12,12 +12,13 @@ import { IconButton } from './components/IconButton';
 import { ContextMenu } from './components/ContextMenu';
 import type { ContextMenuItem } from './components/ContextMenu';
 import { SettingsDialog } from './components/SettingsDialog';
+import { AboutDialog } from './components/AboutDialog';
 import { TerminalPane } from './components/TerminalPane';
 import type { IFile } from './types/files';
 import { Dialog } from './components/Dialog';
 import { Button } from './components/Button';
 import { ExpressiveShape } from './components/ExpressiveShape';
-import { TabBar } from './components/TabBar';
+import { TabBar, type Tab } from './components/TabBar';
 import { ExplorerTab } from './components/ExplorerTab';
 import { OpenWithDialog } from './components/OpenWithDialog';
 import { PropertiesDialog } from './components/PropertiesDialog';
@@ -27,7 +28,14 @@ import {
   resolveTerminalTargetDir,
   resolveAfterTabClose,
   normalizePath,
+  togglePinTab,
+  closeOtherTabs,
+  hasClosableOtherTabs,
 } from './utils/navigationHistory';
+import {
+  buildTabContextMenuItems,
+  buildTabBarContextMenuItems,
+} from './utils/tabContextMenu';
 import { isArchiveFile, validateFileName } from './utils/fileUtils';
 import {
   executePurgeAction,
@@ -41,6 +49,7 @@ interface TabState {
   id: string;
   title: string;
   path: string;
+  pinned?: boolean;
   refreshTrigger?: number;
 }
 
@@ -60,12 +69,27 @@ function AppContent() {
   const [terminalCwd, setTerminalCwd] = useState<string | undefined>(undefined);
 
   // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    item: IFile | null;
-    selectedItems: IFile[];
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | {
+        kind: 'file';
+        x: number;
+        y: number;
+        item: IFile | null;
+        selectedItems: IFile[];
+      }
+    | {
+        kind: 'tab';
+        x: number;
+        y: number;
+        tabId: string;
+      }
+    | {
+        kind: 'tabbar';
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
 
   // Rename Dialog State
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -93,6 +117,7 @@ function AppContent() {
 
   // Settings & Layout State
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useLocalStorage<boolean>('settings.sidebarOpen', true);
   const [showHiddenFiles, setShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
   const [confirmTrash, setConfirmTrash] = useLocalStorage<boolean>('settings.confirmTrash', true);
@@ -151,6 +176,25 @@ function AppContent() {
     setTerminalCwd(next.terminalCwd);
   }, [tabs, activeTabId, terminalCwd]);
 
+  const handleTogglePinTab = useCallback((id: string) => {
+    setTabs((prev) => togglePinTab(prev, id));
+  }, []);
+
+  const handleCloseOtherTabs = useCallback((keepId: string) => {
+    const next = closeOtherTabs(tabs, activeTabId, keepId, terminalCwd);
+    setTabs(next.tabs);
+    setActiveTabId(next.activeTabId);
+    setTerminalCwd(next.terminalCwd);
+  }, [tabs, activeTabId, terminalCwd]);
+
+  const handleQuitApp = useCallback(() => {
+    if (api?.quitApp) {
+      void api.quitApp();
+    } else if (typeof window !== 'undefined') {
+      window.close();
+    }
+  }, []);
+
   const handleTabPathUpdate = useCallback((id: string, path: string) => {
     const folderName = resolveTabTitle(path);
     setTabs((prev) =>
@@ -201,7 +245,18 @@ function AppContent() {
   const handleContextMenu = useCallback((e: React.MouseEvent, file: IFile | null, selectedItems: IFile[]) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, item: file, selectedItems });
+    setContextMenu({ kind: 'file', x: e.clientX, y: e.clientY, item: file, selectedItems });
+  }, []);
+
+  const handleTabContextMenu = useCallback((e: React.MouseEvent, tab: Tab) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ kind: 'tab', x: e.clientX, y: e.clientY, tabId: tab.id });
+  }, []);
+
+  const handleTabBarContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ kind: 'tabbar', x: e.clientX, y: e.clientY });
   }, []);
 
   const handleCopy = (filesToCopy: IFile[]) => {
@@ -297,16 +352,35 @@ function AppContent() {
     });
   }, [purgeConfirmState, showToast, refreshActiveTab]);
 
-  const targetItems = contextMenu?.item
-    ? (contextMenu.selectedItems.length > 0 ? contextMenu.selectedItems : [contextMenu.item])
+  const fileContextMenu = contextMenu?.kind === 'file' ? contextMenu : null;
+  const targetItems = fileContextMenu?.item
+    ? (fileContextMenu.selectedItems.length > 0 ? fileContextMenu.selectedItems : [fileContextMenu.item])
     : [];
   const selectionSuffix = targetItems.length > 1 ? ` (${targetItems.length})` : '';
   const canExtractContextItem = Boolean(
-    contextMenu?.item && !contextMenu.item.isDirectory && isArchiveFile(contextMenu.item.name)
+    fileContextMenu?.item && !fileContextMenu.item.isDirectory && isArchiveFile(fileContextMenu.item.name)
   );
   const isTrashView = currentPath === 'app://trash';
 
-  const menuItems: ContextMenuItem[] = contextMenu?.item ? (
+  const contextTab = contextMenu?.kind === 'tab'
+    ? tabs.find((t) => t.id === contextMenu.tabId) ?? null
+    : null;
+
+  const menuItems: ContextMenuItem[] = contextMenu?.kind === 'tab' && contextTab ? (
+    buildTabContextMenuItems({
+      tab: contextTab,
+      canClose: tabs.length > 1,
+      hasClosableOthers: hasClosableOtherTabs(tabs, contextTab.id),
+      onTogglePin: () => handleTogglePinTab(contextTab.id),
+      onCloseTab: () => handleCloseTab(contextTab.id),
+      onCloseOthers: () => handleCloseOtherTabs(contextTab.id),
+    })
+  ) : contextMenu?.kind === 'tabbar' ? (
+    buildTabBarContextMenuItems({
+      onAbout: () => setAboutDialogOpen(true),
+      onQuit: handleQuitApp,
+    })
+  ) : fileContextMenu?.item ? (
     isTrashView ? [
       {
         label: `Restore${selectionSuffix}`,
@@ -331,7 +405,7 @@ function AppContent() {
         label: 'Properties',
         icon: 'info',
         action: () => {
-          setPropertiesFile(contextMenu.item);
+          setPropertiesFile(fileContextMenu.item);
           setPropertiesDialogOpen(true);
           setContextMenu(null);
         }
@@ -339,13 +413,13 @@ function AppContent() {
     ] : [
       {
         label: 'Open', icon: 'open_in_new', action: () => {
-          FileSystemService.open(contextMenu.item!.path);
+          FileSystemService.open(fileContextMenu.item!.path);
           setContextMenu(null);
         }
       },
       {
         label: 'Open in Terminal', icon: 'terminal', action: () => {
-          const targetDir = resolveTerminalTargetDir(contextMenu.item!.path, contextMenu.item!.isDirectory);
+          const targetDir = resolveTerminalTargetDir(fileContextMenu.item!.path, fileContextMenu.item!.isDirectory);
           if (targetDir) {
             setTerminalCwd(targetDir);
             setTerminalOpen(true);
@@ -368,7 +442,7 @@ function AppContent() {
             label: 'Extract Here',
             icon: 'unarchive',
             action: async () => {
-              const file = contextMenu.item!;
+              const file = fileContextMenu.item!;
               setContextMenu(null);
               try {
                 const ok = await api.extractFile(file.path);
@@ -386,8 +460,8 @@ function AppContent() {
         : []),
       {
         label: 'Rename', icon: 'edit', action: () => {
-          setRenameFile(contextMenu.item);
-          setNewName(contextMenu.item!.name);
+          setRenameFile(fileContextMenu.item);
+          setNewName(fileContextMenu.item!.name);
           setRenameDialogOpen(true);
           setContextMenu(null);
         }
@@ -395,13 +469,13 @@ function AppContent() {
       { divider: true, label: '', action: () => { } },
       {
         label: 'Open With...', icon: 'apps', action: () => {
-          setOpenWithFile(contextMenu.item);
+          setOpenWithFile(fileContextMenu.item);
           setContextMenu(null);
         }
       },
       {
         label: 'Properties', icon: 'info', action: () => {
-          setPropertiesFile(contextMenu.item);
+          setPropertiesFile(fileContextMenu.item);
           setPropertiesDialogOpen(true);
           setContextMenu(null);
         }
@@ -589,6 +663,8 @@ function AppContent() {
             onTabClick={handleSelectTab}
             onTabClose={handleCloseTab}
             onNewTab={() => handleAddTab()}
+            onTabContextMenu={handleTabContextMenu}
+            onTabBarContextMenu={handleTabBarContextMenu}
           />
         </header>
 
@@ -755,6 +831,11 @@ function AppContent() {
             }}
           />
         )}
+
+        <AboutDialog
+          open={aboutDialogOpen}
+          onClose={() => setAboutDialogOpen(false)}
+        />
 
         <SettingsDialog
           open={settingsDialogOpen}
