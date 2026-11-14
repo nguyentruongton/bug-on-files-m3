@@ -81,6 +81,64 @@ export function extractMatugenSeedColor(cssText: string | null | undefined): str
   return null;
 }
 
+function hexLuminance(hex: string): number {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+const MATUGEN_SURFACE_REGEX = /--md-sys-color-(?:surface|background)\s*:\s*(#[0-9a-fA-F]{3,6})\b/i;
+const GTK_BG_REGEX = /@define-color\s+(?:window_bg_color|view_bg_color)\s+(#[0-9a-fA-F]{3,6})\b/i;
+
+/**
+ * Infers the desktop theme polarity ('light' | 'dark') from Caelestia scheme.json,
+ * Matugen CSS variables, or GTK @define-color definitions. Returns null when unknown.
+ */
+export function extractSystemThemeMode(cssText: string | null | undefined): 'light' | 'dark' | null {
+  if (!cssText || !cssText.trim()) return null;
+  const trimmed = cssText.trim();
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        mode?: unknown;
+        surface?: unknown;
+        background?: unknown;
+        colours?: { surface?: unknown; background?: unknown };
+      };
+      if (parsed.mode === 'light' || parsed.mode === 'dark') {
+        return parsed.mode;
+      }
+      const rawSurface =
+        parsed.colours?.surface ??
+        parsed.colours?.background ??
+        parsed.surface ??
+        parsed.background;
+      if (typeof rawSurface === 'string') {
+        const prefixed = rawSurface.startsWith('#') ? rawSurface : `#${rawSurface}`;
+        const normalized = normalizeHexColor(prefixed);
+        if (normalized) {
+          return hexLuminance(normalized) > 0.5 ? 'light' : 'dark';
+        }
+      }
+    } catch {
+      // Fall through to CSS pattern matching if JSON is malformed
+    }
+  }
+
+  const cssMatch = trimmed.match(MATUGEN_SURFACE_REGEX) ?? trimmed.match(GTK_BG_REGEX);
+  if (cssMatch?.[1]) {
+    const normalized = normalizeHexColor(cssMatch[1]);
+    if (normalized) {
+      return hexLuminance(normalized) > 0.5 ? 'light' : 'dark';
+    }
+  }
+
+  return null;
+}
+
 export function resolveEffectiveSeedColor(options: {
   useMatugen: boolean;
   matugenSeed: string | null;

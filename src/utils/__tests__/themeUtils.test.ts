@@ -1,8 +1,9 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, it, spyOn, test } from 'bun:test';
 import {
   DEFAULT_SEED_COLOR,
   PRESET_SEED_COLORS,
   extractMatugenSeedColor,
+  extractSystemThemeMode,
   resetMatugenWarningState,
   resolveEffectiveSeedColor,
   isModalDialogOpen,
@@ -147,6 +148,34 @@ describe('themeUtils', () => {
       expect(isModalDialogOpen(fakeRoot)).toBe(true);
       expect(queried[0]).toContain('dialog[open]');
       expect(queried[0]).toContain('[role="dialog"][data-state="open"]');
+    });
+  });
+
+  describe('extractSystemThemeMode', () => {
+    it('returns light or dark from Caelestia scheme.json mode field', () => {
+      expect(extractSystemThemeMode('{"mode":"light","colours":{"primary":"8f4a4c"}}')).toBe('light');
+      expect(extractSystemThemeMode('{"mode":"dark","colours":{"primary":"ffb3b4"}}')).toBe('dark');
+    });
+
+    it('falls back to surface/background luminance in Caelestia JSON when mode is omitted', () => {
+      expect(extractSystemThemeMode('{"colours":{"surface":"fff8f7"}}')).toBe('light');
+      expect(extractSystemThemeMode('{"colours":{"surface":"1a1111"}}')).toBe('dark');
+    });
+
+    it('detects light or dark from Matugen CSS --md-sys-color-surface or --md-sys-color-background', () => {
+      expect(extractSystemThemeMode(':root { --md-sys-color-surface: #fff8f7; }')).toBe('light');
+      expect(extractSystemThemeMode(':root { --md-sys-color-background: #141218; }')).toBe('dark');
+    });
+
+    it('detects light or dark from GTK @define-color window_bg_color / view_bg_color', () => {
+      expect(extractSystemThemeMode('@define-color window_bg_color #fafafa;')).toBe('light');
+      expect(extractSystemThemeMode('@define-color view_bg_color #1e1e2e;')).toBe('dark');
+    });
+
+    it('returns null for empty or unrecognized input', () => {
+      expect(extractSystemThemeMode(null)).toBeNull();
+      expect(extractSystemThemeMode('')).toBeNull();
+      expect(extractSystemThemeMode('body { color: red; }')).toBeNull();
     });
   });
 });

@@ -6,6 +6,7 @@ import { ThemeService } from '../services/ThemeService';
 import {
   DEFAULT_SEED_COLOR,
   extractMatugenSeedColor,
+  extractSystemThemeMode,
   normalizeHexColor,
   resolveEffectiveSeedColor,
 } from '../utils/themeUtils';
@@ -87,6 +88,13 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [useMatugen, setUseMatugen] = useLocalStorage<boolean>('settings.useMatugen', true);
   const [customCssPath, setCustomCssPath] = useLocalStorage<string>('customCssPath', '');
   const [matugenSeedColor, setMatugenSeedColor] = useState<string | null>(null);
+  const [detectedSystemMode, setDetectedSystemMode] = useState<'light' | 'dark' | null>(null);
+  const [mediaQueryDark, setMediaQueryDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
   const sourceColor = useMemo(
     () => normalizeHexColor(rawSourceColor) ?? DEFAULT_SEED_COLOR,
@@ -106,7 +114,9 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const refreshMatugen = useCallback(async () => {
     const css = await ThemeService.getMatugenCss();
     const extracted = extractMatugenSeedColor(css);
+    const systemMode = extractSystemThemeMode(css);
     setMatugenSeedColor((prev) => (prev === extracted ? prev : extracted));
+    setDetectedSystemMode((prev) => (prev === systemMode ? prev : systemMode));
   }, []);
 
   const loadCustomCssFromPath = useCallback(async (path: string) => {
@@ -138,14 +148,27 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [setCustomCssPath]);
 
   useEffect(() => {
-    if (!useMatugen) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    setMediaQueryDark(mq.matches);
+    const onChange = (event: MediaQueryListEvent) => setMediaQueryDark(event.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!useMatugen && themeMode !== 'system') return;
     let cancelled = false;
 
     const syncNow = () => {
       ThemeService.getMatugenCss().then((css) => {
         if (cancelled) return;
-        const extracted = extractMatugenSeedColor(css);
-        setMatugenSeedColor((prev) => (prev === extracted ? prev : extracted));
+        const systemMode = extractSystemThemeMode(css);
+        setDetectedSystemMode((prev) => (prev === systemMode ? prev : systemMode));
+        if (useMatugen) {
+          const extracted = extractMatugenSeedColor(css);
+          setMatugenSeedColor((prev) => (prev === extracted ? prev : extracted));
+        }
       });
     };
 
@@ -162,7 +185,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (document.visibilityState === 'visible') {
         syncNow();
       }
-    }, 3000);
+    }, 2000);
 
     return () => {
       cancelled = true;
@@ -170,7 +193,7 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.clearInterval(timer);
     };
-  }, [useMatugen]);
+  }, [useMatugen, themeMode]);
 
   useEffect(() => {
     if (customCssPath) {
@@ -220,16 +243,21 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ]
   );
 
+  const resolvedMode: 'light' | 'dark' =
+    themeMode === 'system'
+      ? (detectedSystemMode ?? (mediaQueryDark ? 'dark' : 'light'))
+      : themeMode;
+
   return (
     <AppThemeContext.Provider value={value}>
       <MD3ThemeProvider
         sourceColor={effectiveSeedColor}
-        defaultMode={themeMode}
+        defaultMode={resolvedMode}
         variant="expressive"
         persistToLocalStorage={false}
         enableSnackbar
       >
-        <ThemeProviderSync effectiveSeedColor={effectiveSeedColor} themeMode={themeMode} />
+        <ThemeProviderSync effectiveSeedColor={effectiveSeedColor} themeMode={resolvedMode} />
         {children}
       </MD3ThemeProvider>
     </AppThemeContext.Provider>
