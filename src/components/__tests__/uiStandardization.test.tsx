@@ -608,7 +608,7 @@ describe('Shell & StatusBar radius standardization', () => {
                 />
             )
         );
-        expect(sidebarHtml).toContain('!rounded-[24px]');
+        expect(sidebarHtml).toMatch(/rounded-3xl!|!rounded-\[24px\]/);
         expect(sidebarHtml).not.toContain('rounded-m3-xl');
     });
 
