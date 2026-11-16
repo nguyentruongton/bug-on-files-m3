@@ -124,6 +124,15 @@ export const TabBar: React.FC<TabBarProps> = ({
                                 size="sm"
                                 selected={isActive}
                                 colorStyle="tonal"
+                                icon={
+                                    <Icon
+                                        name={getTabIconName(tab.path)}
+                                        size={16}
+                                        fill={isActive ? 1 : 0}
+                                        animateFill
+                                    />
+                                }
+                                iconPosition="leading"
                                 role="tab"
                                 data-tab-id={tab.id}
                                 aria-selected={isActive}
@@ -142,36 +151,25 @@ export const TabBar: React.FC<TabBarProps> = ({
                                         onTabClose(tab.id);
                                     }
                                 }}
-                                className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 !px-3 ${
-                                    isActive
-                                        ? '!bg-m3-secondary-container !text-m3-on-secondary-container font-medium'
-                                        : '!bg-m3-surface-container-high !text-m3-on-surface-variant hover:!bg-m3-surface-container-highest'
-                                }`}
+                                className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 pl-2! pr-1.5!`}
                             >
                                 <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">
-                                    <span className="flex items-center gap-1.5 min-w-0 flex-1 truncate text-left">
-                                        <Icon
-                                            name={getTabIconName(tab.path)}
-                                            size={16}
-                                            fill={isActive ? 1 : 0}
-                                            animateFill
-                                            className="shrink-0"
-                                        />
-                                        <span className="truncate">{tab.title}</span>
-                                    </span>
+                                    <span className="truncate flex-1 text-left">{tab.title}</span>
                                     {tab.pinned ? (
                                         <span
                                             aria-label={`${tab.title} pinned`}
                                             title="Pinned tab"
-                                            className="shrink-0 inline-flex items-center justify-center w-5 h-5 opacity-75"
+                                            className="shrink-0 inline-flex items-center justify-center w-5 h-5"
                                         >
-                                            <Icon name="keep" size={14} />
+                                            <Icon name="keep" size={16} />
                                         </span>
                                     ) : canClose ? (
-                                        <span
+                                        <IconButton
                                             role="button"
                                             tabIndex={-1}
+                                            colorStyle='tonal'
                                             aria-label={`Close ${tab.title}`}
+                                            size='xs'
                                             title="Close tab"
                                             onPointerDown={(e) => {
                                                 e.stopPropagation();
@@ -180,10 +178,10 @@ export const TabBar: React.FC<TabBarProps> = ({
                                                 e.stopPropagation();
                                                 onTabClose(tab.id);
                                             }}
-                                            className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-m3-full opacity-70 hover:opacity-100 hover:bg-m3-surface-container-highest cursor-pointer"
+                                            className={isActive ? "hover:bg-m3-surface-container-highest active:bg-m3-surface-container-highest" : "hover:bg-m3-surface-container"}
                                         >
-                                            <Icon name="close" size={14} />
-                                        </span>
+                                            <Icon name="close" size={16} />
+                                        </IconButton>
                                     ) : null}
                                 </span>
                             </Button>
@@ -193,7 +191,8 @@ export const TabBar: React.FC<TabBarProps> = ({
             </div>
 
             <IconButton
-                size="xs"
+                size="sm"
+                colorStyle='standard'
                 onClick={onNewTab}
                 aria-label="New tab"
                 title="New tab (Ctrl+T)"

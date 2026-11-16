@@ -35,3 +35,4 @@ When right-clicking the tab bar and selecting **Quit**, `handleQuitApp` in `src/
   - Update `quitApp` in `src/api/tauriAdapter.ts` to call `invoke(COMMAND_MAP.quitApp) as Promise<void>`.
 - **Verification:**
   - Unit tests for `tauriAdapter` (`quitApp` invokes `quit_app`) and `cargo test` in `src-tauri`.
+

@@ -107,3 +107,4 @@ Expected: `tauriAdapter.test.ts` passes (including `'every COMMAND_MAP key exist
 git add src/api/commandMap.ts src/api/tauriAdapter.ts src/api/__tests__/tauriAdapter.test.ts
 git commit -m "fix(api): invoke quit_app in tauriAdapter instead of window.close"
 ```
+
