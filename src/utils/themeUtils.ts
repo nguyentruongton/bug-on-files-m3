@@ -1,8 +1,10 @@
-export const DEFAULT_SEED_COLOR = '#6750A4';
+export const DEFAULT_SEED_COLOR = '#1F305E';
 
 export const PRESET_SEED_COLORS: readonly { name: string; hex: string }[] = [
-  { name: 'Royal Purple', hex: '#6750A4' },
+  { name: 'Logo Navy', hex: '#1F305E' },
+  { name: 'Sky Blue', hex: '#99C0FB' },
   { name: 'Ocean Blue', hex: '#00639B' },
+  { name: 'Royal Purple', hex: '#6750A4' },
   { name: 'Forest Green', hex: '#006E1C' },
   { name: 'Crimson Red', hex: '#BA1A1A' },
   { name: 'Plum Rose', hex: '#8E4585' },

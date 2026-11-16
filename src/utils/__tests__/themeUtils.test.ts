@@ -178,4 +178,12 @@ describe('themeUtils', () => {
       expect(extractSystemThemeMode('body { color: red; }')).toBeNull();
     });
   });
+
+  describe('default palette', () => {
+    test('uses logo Deep Navy #1F305E as DEFAULT_SEED_COLOR and includes logo presets first', () => {
+      expect(DEFAULT_SEED_COLOR).toBe('#1F305E');
+      expect(PRESET_SEED_COLORS[0]).toEqual({ name: 'Logo Navy', hex: '#1F305E' });
+      expect(PRESET_SEED_COLORS[1]).toEqual({ name: 'Sky Blue', hex: '#99C0FB' });
+    });
+  });
 });
