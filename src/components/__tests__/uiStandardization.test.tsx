@@ -611,6 +611,23 @@ describe('Shell & StatusBar radius standardization', () => {
         expect(sidebarHtml).toContain('!rounded-[24px]');
         expect(sidebarHtml).not.toContain('rounded-m3-xl');
     });
+
+    test('Sidebar aligns top/bottom with TabBar/StatusBar and collapses horizontal margins to 0', () => {
+        const expandedHtml = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <Sidebar currentPath="/tmp" onNavigate={() => {}} collapsed={false} />
+            )
+        );
+        expect(expandedHtml).toContain('pt-1.5 pb-2');
+        expect(expandedHtml).toMatch(/style="[^"]*width:244px[^"]*margin-left:8px[^"]*margin-right:8px/);
+
+        const collapsedHtml = withMockLocalStorage(() =>
+            renderToStaticMarkup(
+                <Sidebar currentPath="/tmp" onNavigate={() => {}} collapsed={true} />
+            )
+        );
+        expect(collapsedHtml).toMatch(/style="[^"]*width:0px[^"]*margin-left:0px[^"]*margin-right:0px/);
+    });
 });
 
 describe('Trash UI support in Sidebar, Omnibar, SettingsDialog, and PropertiesDialog', () => {

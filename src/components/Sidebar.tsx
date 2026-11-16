@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
+    Divider,
     FAST_SPATIAL_SPRING,
     NavigationDrawer,
     NavigationDrawerContent,
-    NavigationDrawerDivider,
     NavigationDrawerItem,
     NavigationDrawerSectionHeader,
     ScrollArea,
@@ -94,15 +94,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             animate={{
                 width: collapsed ? 0 : 244,
                 opacity: collapsed ? 0 : 1,
+                marginLeft: collapsed ? 0 : 8,
+                marginRight: collapsed ? 0 : 8,
             }}
             transition={FAST_SPATIAL_SPRING}
             aria-hidden={collapsed}
-            className="h-full shrink-0 overflow-hidden select-none"
+            className="box-border h-full shrink-0 pt-1.5 pb-2 overflow-hidden select-none"
         >
             <NavigationDrawer
                 variant="standard"
                 width={244}
-                className="shell-panel h-full bg-m3-surface-container-low !rounded-[24px] border-0"
+                className="shell-panel h-full bg-m3-surface-container-low rounded-3xl! border-0"
                 aria-label="Places and devices"
             >
                 <ScrollArea className="h-full" type="hover">
@@ -132,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onClick={() => onNavigate('app://trash')}
                         />
 
-                        <NavigationDrawerDivider className="my-2" />
+                        <Divider shape='wavy' className="my-2" />
 
                         <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
                             Devices

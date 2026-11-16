@@ -543,7 +543,7 @@ function AppContent() {
 
   return (
     <div
-      className="font-md3-expressive flex h-screen w-screen bg-m3-surface-container text-m3-on-surface p-2 gap-2 overflow-hidden"
+      className="font-md3-expressive flex h-screen w-screen bg-m3-surface-container text-m3-on-surface p-2 overflow-hidden"
       onClick={() => setContextMenu(null)}
     >
       <NavigationRail
