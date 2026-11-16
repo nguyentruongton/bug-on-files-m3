@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Mặt nạ cắt vát tạo khe cánh và phần phẳng tiếp giáp đầu bọ -->
+    <clipPath id="wing-clip">
+      <!-- Phần cánh bên trái -->
+      <path d="M -130 -113 H -4.8 V 130 H -130 Z" />
+      <!-- Phần cánh bên phải -->
+      <path d="M 4.8 -113 H 130 V 130 H 4.8 Z" />
+    </clipPath>
+  </defs>
+
+  <!-- 1. Lớp nắp thư mục phía sau (Sky Blue) -->
+  <path d="M 223.5 285.5
+       C 223.5 251.3 251.3 223.5 285.5 223.5
+       H 418.0
+       C 436.5 223.5 452.0 232.0 462.5 246.5
+       L 479.5 270.0
+       C 488.0 281.5 501.0 287.0 516.0 287.0
+       H 711.0
+       C 745.2 287.0 773.0 314.8 773.0 349.0
+       V 658.0
+       C 773.0 695.0 743.0 725.0 706.0 725.0
+       H 290.5
+       C 253.5 725.0 223.5 695.0 223.5 658.0
+       Z" fill="#99C0FB" />
+
+  <!-- 2. Lớp thân thư mục phía trước (Deep Navy) -->
+  <rect x="223.5" y="346.0" width="549.5" height="379.0" rx="67.0" ry="67.0" fill="#1F305E" />
+
+  <!-- 3. Cụm Bọ Cánh Cứng ở tâm thư mục (Xoay 36.05 độ theo đúng bố cục gốc) -->
+  <g transform="translate(501.0, 555.0) rotate(36.05)">
+    
+    <!-- Đôi cánh bọ (Sky Blue) được cắt khe giữa và vát đầu bằng clipPath -->
+    <circle cx="0" cy="0" r="125.5" fill="#99C0FB" clip-path="url(#wing-clip)" />
+
+    <!-- Hai chấm tròn trên cánh (Deep Navy) -->
+    <circle cx="-63.8" cy="-5.5" r="19.0" fill="#1F305E" />
+    <circle cx="63.8" cy="-5.5" r="19.0" fill="#1F305E" />
+
+    <!-- Đầu bọ (Light Ice Blue - làm sáng nổi bật trên nền Navy) -->
+    <path d="M -45.0 -120.8
+         C -46.0 -142.5 -25.0 -155.0 0.0 -155.0
+         C 25.0 -155.0 46.0 -142.5 45.0 -120.8
+         Z" fill="#B8D9FD" />
+
+    <!-- Râu trái (Light Ice Blue) -->
+    <path d="M -24.5 -148.0
+         L -34.0 -161.5" stroke="#B8D9FD" stroke-width="4.5" stroke-linecap="round" />
+    <ellipse cx="-39.5" cy="-167.5" rx="4.8" ry="8.5" transform="rotate(-38 -39.5 -167.5)" fill="#B8D9FD" />
+
+    <!-- Râu phải (Light Ice Blue) -->
+    <path d="M 24.5 -148.0
+         L 34.0 -161.5" stroke="#B8D9FD" stroke-width="4.5" stroke-linecap="round" />
+    <ellipse cx="39.5" cy="-167.5" rx="4.8" ry="8.5" transform="rotate(38 39.5 -167.5)" fill="#B8D9FD" />
+  </g>
+</svg>
