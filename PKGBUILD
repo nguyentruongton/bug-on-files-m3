@@ -1,6 +1,6 @@
 # Maintainer: Bhima <bhima.work@gmail.com>
 pkgname=bug-on-files-m3-bin
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Bug On Files M3 - Material 3 Expressive File Explorer"
 arch=('x86_64')

@@ -1,6 +1,6 @@
 [package]
 name = "materials"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bug On Files M3"
 authors = ["Bug On Files M3 Contributors"]
 edition = "2021"
