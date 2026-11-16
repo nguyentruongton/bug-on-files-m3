@@ -195,5 +195,7 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
                 listen(`terminal:exit:${pid}`, () => callback())
             );
         },
+        closeSplashscreen: () =>
+            invoke(COMMAND_MAP.closeSplashscreen) as Promise<void>,
     };
 }

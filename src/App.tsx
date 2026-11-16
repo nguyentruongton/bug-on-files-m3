@@ -128,6 +128,12 @@ function AppContent() {
 
   const currentPath = tabs.find((t) => t.id === activeTabId)?.path || '';
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      api.closeSplashscreen().catch(() => {});
+    }
+  }, []);
+
   // -- Handlers --
 
   // Tab Handlers

@@ -84,6 +84,9 @@ export interface IApi {
     ptyKill: (pid: number) => void;
     ptyOnData: (pid: number, callback: (data: string) => void) => () => void;
     ptyOnExit: (pid: number, callback: () => void) => () => void;
+
+    // Window lifecycle
+    closeSplashscreen: () => Promise<void>;
 }
 
 export type IElectronAPI = IApi;

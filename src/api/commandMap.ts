@@ -44,4 +44,5 @@ export const COMMAND_MAP: Record<CommandKey, string> = {
     ptyWrite: 'pty_write',
     ptyResize: 'pty_resize',
     ptyKill: 'pty_kill',
+    closeSplashscreen: 'close_splashscreen',
 };

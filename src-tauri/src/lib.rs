@@ -44,6 +44,17 @@ pub fn cleanup_resources(app: &tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn close_splashscreen(app: tauri::AppHandle) {
+    if let Some(splash) = app.get_webview_window("splashscreen") {
+        let _ = splash.close();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let media_semaphore = Arc::new(tokio::sync::Semaphore::new(4));
@@ -151,6 +162,7 @@ pub fn run() {
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_kill,
+            close_splashscreen,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

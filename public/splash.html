@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bug On Files M3</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        user-select: none;
+      }
+
+      .logo {
+        width: 180px;
+        height: 180px;
+        opacity: 0;
+        transform: scale(0.92);
+        animation: splash-in 260ms cubic-bezier(0.2, 0, 0, 1) forwards;
+      }
+
+      @keyframes splash-in {
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img class="logo" src="/bug-on-files-m3.svg" alt="Bug On Files M3" draggable="false" />
+  </body>
+</html>
