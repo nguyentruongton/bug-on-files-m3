@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Materials",
+  "productName": "Bug On Files M3",
   "version": "0.1.0",
-  "identifier": "com.material3.filemanager",
+  "identifier": "com.bugon.filesm3",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Materials",
+        "title": "Bug On Files M3",
         "width": 1100,
         "height": 720,
         "decorations": true

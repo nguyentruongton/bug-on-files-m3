@@ -1,20 +1,20 @@
 # Maintainer: Bhima <bhima.work@gmail.com>
-pkgname=material-3-file-manager-bin
+pkgname=bug-on-files-m3-bin
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="A modern Material Design 3 File Manager"
+pkgdesc="Bug On Files M3 - Material 3 Expressive File Explorer"
 arch=('x86_64')
-url="https://github.com/bhimio1/material-3-file-explorer"
+url="https://github.com/nguyentruongton/bug-on-files-m3"
 license=('MIT')
-depends=('fuse2' 'gtk3' 'zlib' 'nss')
-provides=('material-3-file-manager')
-conflicts=('material-3-file-manager')
+depends=('webkit2gtk-4.1' 'gtk3' 'openssl' 'librsvg')
+provides=('bug-on-files-m3')
+conflicts=('bug-on-files-m3')
 options=('!strip')
-_appimage="Materials-${pkgver}.AppImage"
+_appimage="Bug.On.Files.M3_${pkgver}_amd64.AppImage"
 
 # Using GitHub Release source
-source=("${_appimage}::https://github.com/bhimio1/material-3-file-explorer/releases/download/v${pkgver}/${_appimage}"
-        "https://raw.githubusercontent.com/bhimio1/material-3-file-explorer/v${pkgver}/assets/icon.png")
+source=("${_appimage}::https://github.com/nguyentruongton/bug-on-files-m3/releases/download/v${pkgver}/${_appimage}"
+        "https://raw.githubusercontent.com/nguyentruongton/bug-on-files-m3/v${pkgver}/assets/icon.png")
 sha256sums=('SKIP' 'SKIP')
 
 package() {
@@ -25,13 +25,13 @@ package() {
     mkdir -p "${pkgdir}/usr/share/applications"
     cat > "${pkgdir}/usr/share/applications/${pkgname}.desktop" << EOF
 [Desktop Entry]
-Name=Materials
+Name=Files M3
 Exec=/opt/${pkgname}/${pkgname}.AppImage
 Icon=${pkgname}
 Type=Application
 Categories=Utility;FileManager;
-Comment=A modern Material Design 3 File Manager
+Comment=Bug On Files M3 - Material 3 Expressive File Explorer
 Terminal=false
-StartupWMClass=Materials
+StartupWMClass=Bug On Files M3
 EOF
 }

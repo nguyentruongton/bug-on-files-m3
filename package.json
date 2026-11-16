@@ -1,5 +1,5 @@
 {
-  "name": "material-3-file-manager",
+  "name": "bug-on-files-m3",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -52,8 +52,8 @@
     "electron"
   ],
   "build": {
-    "appId": "com.material3.filemanager",
-    "productName": "Materials",
+    "appId": "com.bugon.filesm3",
+    "productName": "Bug On Files M3",
     "directories": {
       "output": "release"
     },

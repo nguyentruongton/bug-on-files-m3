@@ -2,11 +2,12 @@
 
 # Material 3 File Manager Installer
 
-APP_NAME="Materials"
-INSTALL_DIR="/opt/$APP_NAME"
+APP_NAME="Files M3"
+BINARY_ID="bug-on-files-m3"
+INSTALL_DIR="/opt/$BINARY_ID"
 ICON_DIR="/usr/share/icons/hicolor/512x512/apps"
-DESKTOP_FILE="/usr/share/applications/$APP_NAME.desktop"
-APP_IMAGE_SOURCE=$(ls -1 ./release/Materials-*.AppImage 2>/dev/null | head -n 1)
+DESKTOP_FILE="/usr/share/applications/$BINARY_ID.desktop"
+APP_IMAGE_SOURCE=$(ls -1 ./release/*Files*.AppImage ./src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n 1)
 ICON_SOURCE="./assets/icon.png"
 
 if [ "$EUID" -ne 0 ]; then
@@ -22,18 +23,18 @@ mkdir -p "$ICON_DIR"
 
 # Copy AppImage
 if [ -f "$APP_IMAGE_SOURCE" ]; then
-    cp "$APP_IMAGE_SOURCE" "$INSTALL_DIR/$APP_NAME.AppImage"
-    chmod +x "$INSTALL_DIR/$APP_NAME.AppImage"
-    echo "AppImage installed to $INSTALL_DIR/$APP_NAME.AppImage"
+    cp "$APP_IMAGE_SOURCE" "$INSTALL_DIR/$BINARY_ID.AppImage"
+    chmod +x "$INSTALL_DIR/$BINARY_ID.AppImage"
+    echo "AppImage installed to $INSTALL_DIR/$BINARY_ID.AppImage"
 else
-    echo "Error: AppImage not found at $APP_IMAGE_SOURCE. Please build the app first with 'npm run electron:build'."
+    echo "Error: AppImage not found at $APP_IMAGE_SOURCE. Please build the app first with 'bun run tauri:build'."
     exit 1
 fi
 
 # Copy Icon
 if [ -f "$ICON_SOURCE" ]; then
-    cp "$ICON_SOURCE" "$ICON_DIR/$APP_NAME.png"
-    echo "Icon installed to $ICON_DIR/$APP_NAME.png"
+    cp "$ICON_SOURCE" "$ICON_DIR/$BINARY_ID.png"
+    echo "Icon installed to $ICON_DIR/$BINARY_ID.png"
 else
     echo "Warning: Icon not found at $ICON_SOURCE"
 fi
@@ -42,13 +43,13 @@ fi
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
 Name=$APP_NAME
-Exec="$INSTALL_DIR/$APP_NAME.AppImage" %U
-Icon=$APP_NAME
+Exec="$INSTALL_DIR/$BINARY_ID.AppImage" %U
+Icon=$BINARY_ID
 Type=Application
 Categories=Utility;FileManager;
-Comment=A modern Material Design 3 File Manager
+Comment=Bug On Files M3 - Material 3 Expressive File Explorer
 Terminal=false
-StartupWMClass=Materials
+StartupWMClass=Bug On Files M3
 EOF
 
 echo "Desktop entry created at $DESKTOP_FILE"
