@@ -58,6 +58,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUSTC_WRAPPER: ""
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: ""
         with:
           tagName: v__VERSION__
           releaseName: 'Bug On Files M3 v__VERSION__'
