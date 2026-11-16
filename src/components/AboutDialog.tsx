@@ -3,6 +3,7 @@ import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import logoSvg from '../assets/bug-on-files-m3.svg';
+import { version as appVersion } from '../../package.json';
 
 interface AboutDialogProps {
   open: boolean;
@@ -27,7 +28,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ open, onClose }) => {
         <img src={logoSvg} alt="Bug On Files M3 logo" className="w-16 h-16 shrink-0" />
         <div className="flex flex-col gap-1">
           <p className="text-base font-medium text-m3-on-surface">Bug On Files M3</p>
-          <p>Version 0.1.0</p>
+          <p>Version {appVersion}</p>
           <p>Material 3 Expressive File Explorer</p>
         </div>
       </div>

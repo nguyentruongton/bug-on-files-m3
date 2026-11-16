@@ -823,11 +823,12 @@ describe('Self-hosted M3 fonts & Icon standardization', () => {
 });
 
 describe('AboutDialog', () => {
-    test('renders Bug On Files M3 branding, logo, version, and Close action when open', () => {
+    test('renders Bug On Files M3 branding, logo, version, and Close action when open', async () => {
+        const { version: appVersion } = await import('../../../package.json');
         const html = renderToStaticMarkup(<AboutDialog open={true} onClose={() => {}} />);
         expect(html).toContain('About Bug On Files M3');
         expect(html).toContain('Bug On Files M3');
-        expect(html).toContain('0.1.0');
+        expect(html).toContain(`Version ${appVersion}`);
         expect(html).toContain('<img');
         expect(html).toContain('Close');
     });

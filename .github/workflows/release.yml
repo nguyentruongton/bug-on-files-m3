@@ -41,6 +41,19 @@ jobs:
       - name: Install frontend dependencies
         run: bun install
 
+      - name: Verify version sync across package.json, Cargo.toml, and PKGBUILD
+        run: |
+          PKG_VER=$(node -p "require('./package.json').version")
+          CARGO_VER=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
+          PKGBUILD_VER=$(grep -m1 '^pkgver=' PKGBUILD | cut -d'=' -f2)
+          echo "package.json=$PKG_VER Cargo.toml=$CARGO_VER PKGBUILD=$PKGBUILD_VER"
+          test "$PKG_VER" = "$CARGO_VER"
+          test "$PKG_VER" = "$PKGBUILD_VER"
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG_VER="${GITHUB_REF#refs/tags/v}"
+            test "$PKG_VER" = "$TAG_VER"
+          fi
+
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v0
         env:
