@@ -822,7 +822,7 @@ export function ExplorerTab({
                             </IconButton>
                         </div>
 
-                        <Divider orientation="vertical" className="h-6 mx-0.5" />
+                        <Divider orientation="vertical" className="h-6 mx-0.5 self-center" />
 
                         <div className="flex items-center gap-1 shrink-0">
                             <IconButton
@@ -902,7 +902,7 @@ export function ExplorerTab({
 
                         {onViewModeChange && (
                             <>
-                                <Divider orientation="vertical" className="h-6 mx-0.5" />
+                                <Divider orientation="vertical" className="h-6 mx-0.5 self-center" />
                                 <IconButton
                                     variant="tonal"
                                     size="sm"

@@ -352,6 +352,12 @@ describe('ExplorerTab standardization', () => {
         expect(html).toContain('aria-label="Sort by Type"');
         expect(html).toContain('>category<');
         expect(html).toContain('aria-orientation="vertical"');
+        const verticalDividers = html.match(/<div[^>]*aria-orientation="vertical"[^>]*>/g) ?? [];
+        expect(verticalDividers.length).toBe(2);
+        for (const divider of verticalDividers) {
+            expect(divider).toContain('self-center');
+            expect(divider).not.toContain('self-stretch');
+        }
         expect(html.match(/<fieldset\b/g)?.length ?? 0).toBe(0);
         expect(html).toContain('rounded-[24px] overflow-hidden bg-m3-surface-container-low');
         expect(html).not.toContain('[scrollbar-gutter:stable]');
