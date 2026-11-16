@@ -46,8 +46,8 @@ describe('Tauri Command Parity', () => {
         expect(registeredCommands.length).toBe(registeredSet.size);
     });
 
-    test('generate_handler registers exactly 37 commands matching COMMAND_MAP', () => {
-        expect(registeredCommands.length).toBe(37);
+    test('generate_handler registers exactly 38 commands matching COMMAND_MAP', () => {
+        expect(registeredCommands.length).toBe(38);
         expect(registeredSet.size).toBe(commandMapSet.size);
     });
 

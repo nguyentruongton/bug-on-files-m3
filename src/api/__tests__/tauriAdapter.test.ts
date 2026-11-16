@@ -293,4 +293,16 @@ describe('tauriAdapter', () => {
         registeredCb!(sample);
         expect(received).toEqual(sample);
     });
+
+    test('quitApp calls quit_app', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+        };
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        await adapter.quitApp();
+        expect(calls).toEqual([{ cmd: 'quit_app', args: undefined }]);
+    });
 });
