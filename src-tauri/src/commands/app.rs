@@ -149,6 +149,12 @@ pub fn set_icon(
     Ok(())
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub fn quit_app(app: tauri::AppHandle) {
+    crate::cleanup_resources(&app);
+    app.exit(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

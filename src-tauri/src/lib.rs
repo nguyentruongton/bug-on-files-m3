@@ -35,6 +35,15 @@ pub fn resolve_target_url(
     }
 }
 
+pub fn cleanup_resources(app: &tauri::AppHandle) {
+    if let Some(pty) = app.try_state::<PtySessions>() {
+        pty.kill_all();
+    }
+    if let Some(watchers) = app.try_state::<Watchers>() {
+        watchers.stop_all();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let media_semaphore = Arc::new(tokio::sync::Semaphore::new(4));
@@ -129,6 +138,7 @@ pub fn run() {
             commands::app::get_startup_path,
             commands::app::get_theme_css,
             commands::app::set_icon,
+            commands::app::quit_app,
             commands::apps::get_apps,
             commands::apps::get_recommended_apps,
             commands::apps::open_with,
@@ -167,13 +177,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let app = window.app_handle();
-                if let Some(pty) = app.try_state::<PtySessions>() {
-                    pty.kill_all();
-                }
-                if let Some(watchers) = app.try_state::<Watchers>() {
-                    watchers.stop_all();
-                }
+                cleanup_resources(window.app_handle());
             }
         })
         .run(tauri::generate_context!())
