@@ -32,3 +32,4 @@ Fix three visual alignment issues in the main shell and explorer toolbar:
 ## Verification
 - Run existing unit/component tests (`npm test` / `bun test` — verify via `package.json`).
 - Inspect the rendered classes / test assertions in `uiStandardization.test.tsx` if applicable.
+
