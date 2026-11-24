@@ -4,6 +4,7 @@ import {
     getArchiveStem,
     isPasswordArchiveError,
     parseMissingToolError,
+    resolveNonCollidingArchivePath,
 } from '../archiveUtils';
 
 describe('archiveUtils', () => {
@@ -113,6 +114,55 @@ describe('archiveUtils', () => {
                     ''
                 )
             ).toBe('archive');
+        });
+    });
+
+    describe('resolveNonCollidingArchivePath', () => {
+        test('returns initial path when no collision exists', async () => {
+            const existing = new Set<string>();
+            const res = await resolveNonCollidingArchivePath(
+                '/home/user',
+                'foo.zip',
+                'zip',
+                async (p) => existing.has(p)
+            );
+            expect(res).toBe('/home/user/foo.zip');
+        });
+
+        test('increments .zip collision to foo (2).zip', async () => {
+            const existing = new Set(['/home/user/foo.zip']);
+            const res = await resolveNonCollidingArchivePath(
+                '/home/user',
+                'foo.zip',
+                'zip',
+                async (p) => existing.has(p)
+            );
+            expect(res).toBe('/home/user/foo (2).zip');
+        });
+
+        test('increments .tar.gz collision to foo (2).tar.gz preserving compound extension', async () => {
+            const existing = new Set(['/home/user/foo.tar.gz']);
+            const res = await resolveNonCollidingArchivePath(
+                '/home/user',
+                'foo.tar.gz',
+                'tar.gz',
+                async (p) => existing.has(p)
+            );
+            expect(res).toBe('/home/user/foo (2).tar.gz');
+        });
+
+        test('skips taken (2) and resolves to (3)', async () => {
+            const existing = new Set([
+                '/home/user/foo.zip',
+                '/home/user/foo (2).zip',
+            ]);
+            const res = await resolveNonCollidingArchivePath(
+                '/home/user/',
+                'foo.zip',
+                'zip',
+                async (p) => existing.has(p)
+            );
+            expect(res).toBe('/home/user/foo (3).zip');
         });
     });
 });

@@ -13,6 +13,7 @@ import {
     parseExtractedEntryLine,
     isPasswordError,
     getCompressCommand,
+    resolveCommonParentAndRelPaths,
     parseCompressedEntryLine,
     formatMissingToolError,
     parseDesktopEntry,
@@ -405,11 +406,11 @@ ipcMain.handle('fs:compress', async (_, paths: string[], destArchivePath: string
         throw new Error('No items specified for compression');
     }
 
-    const cwd = path.dirname(paths[0]);
-    const relItems = paths.map((p) => path.basename(p));
-    if (relItems.some((item) => !item)) {
+    const resolvedPaths = resolveCommonParentAndRelPaths(paths);
+    if (!resolvedPaths) {
         throw new Error('Invalid path for compression');
     }
+    const { cwd, relItems } = resolvedPaths;
 
     const resolvedDest = path.resolve(destArchivePath);
     const compressCmd = getCompressCommand(resolvedDest, relItems, format);

@@ -91,7 +91,10 @@ pub fn list_entries_command(file: &str) -> Option<(String, Vec<String>)> {
         "tar" | "gz" | "xz" | "tgz" => {
             Some(("tar".to_string(), vec!["-tf".to_string(), file.to_string()]))
         }
-        "rar" => Some(("unrar".to_string(), vec!["lb".to_string(), file.to_string()])),
+        "rar" => Some((
+            "unrar".to_string(),
+            vec!["lb".to_string(), "-p-".to_string(), file.to_string()],
+        )),
         _ => None,
     }
 }
@@ -336,9 +339,44 @@ mod tests {
             list_entries_command("/tmp/a.rar"),
             Some((
                 "unrar".to_string(),
-                vec!["lb".to_string(), "/tmp/a.rar".to_string()]
+                vec!["lb".to_string(), "-p-".to_string(), "/tmp/a.rar".to_string()]
             ))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_extract_with_command_returns_err_on_password_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("create tempdir");
+        let script = dir.path().join("fake_unrar.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho \"The specified password is incorrect.\" >&2\nexit 11\n",
+        )
+        .expect("write fake unrar script");
+        let mut perms = std::fs::metadata(&script).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod +x");
+
+        let mut events = Vec::new();
+        let res = extract_with_command(
+            "/tmp/secret.rar",
+            script.to_str().unwrap(),
+            &[],
+            1,
+            |ev| events.push(ev),
+        );
+        let err_msg = res.expect_err("password-protected archive should return Err");
+        assert!(
+            err_msg.contains("ARCHIVE_PASSWORD_REQUIRED"),
+            "expected ARCHIVE_PASSWORD_REQUIRED, got: {}",
+            err_msg
+        );
+        let last = events.last().expect("done event on password error");
+        assert!(last.done);
+        assert_eq!(last.error.as_deref(), Some(err_msg.as_str()));
     }
 
     #[test]

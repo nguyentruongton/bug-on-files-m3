@@ -123,12 +123,55 @@ export function getCompressCommand(
 
   const normalized = (format as string).toLowerCase();
   if (normalized === 'zip') {
-    return { cmd: 'zip', args: ['-r', destArchive, ...relItems] };
+    return { cmd: 'zip', args: ['-r', destArchive, '--', ...relItems] };
   }
   if (normalized === 'tar.gz') {
-    return { cmd: 'tar', args: ['-czvf', destArchive, ...relItems] };
+    return { cmd: 'tar', args: ['-czvf', destArchive, '--', ...relItems] };
   }
   return null;
+}
+
+export function resolveCommonParentAndRelPaths(
+  paths: string[]
+): { cwd: string; relItems: string[] } | null {
+  if (!paths || paths.length === 0) return null;
+
+  const normalizedPaths = paths.map((p) => {
+    const trimmed = p.length > 1 ? p.replace(/\/+$/, '') : p;
+    return path.normalize(trimmed);
+  });
+
+  if (normalizedPaths.some((p) => !p || p === '/' || !path.basename(p))) {
+    return null;
+  }
+
+  const parentDirs = normalizedPaths.map((p) => path.dirname(p));
+  const isAbsolute = path.isAbsolute(parentDirs[0]);
+  const splitSegments = (dir: string) =>
+    dir.split(path.sep).filter((seg) => seg.length > 0);
+
+  let commonSegments = splitSegments(parentDirs[0]);
+  for (let i = 1; i < parentDirs.length; i++) {
+    const segs = splitSegments(parentDirs[i]);
+    let k = 0;
+    while (k < commonSegments.length && k < segs.length && commonSegments[k] === segs[k]) {
+      k++;
+    }
+    commonSegments = commonSegments.slice(0, k);
+  }
+
+  const cwd = isAbsolute
+    ? `${path.sep}${commonSegments.join(path.sep)}`
+    : commonSegments.length > 0
+      ? commonSegments.join(path.sep)
+      : '.';
+
+  const relItems = normalizedPaths.map((p) => path.relative(cwd, p));
+  if (relItems.some((item) => !item || item.startsWith('..'))) {
+    return null;
+  }
+
+  return { cwd, relItems };
 }
 
 function stripZipRatioSuffix(entry: string): string {

@@ -44,6 +44,7 @@ import {
   getArchiveStem,
   isPasswordArchiveError,
   parseMissingToolError,
+  resolveNonCollidingArchivePath,
   type MissingToolInfo,
 } from './utils/archiveUtils';
 import {
@@ -496,7 +497,13 @@ function AppContent() {
         return;
       }
 
-      const destArchivePath = joinPath(currentPath, filename);
+      const destArchivePath = await resolveNonCollidingArchivePath(
+        currentPath,
+        filename,
+        format,
+        (p) => api.exists(p)
+      );
+      const finalFilename = destArchivePath.split('/').pop() || filename;
       const paths = items.map((item) => item.path);
 
       try {
@@ -504,7 +511,7 @@ function AppContent() {
         if (!ok) {
           throw new Error('Compress command returned false');
         }
-        showToast(`Created "${filename}"`, 'success');
+        showToast(`Created "${finalFilename}"`, 'success');
         refreshActiveTab();
       } catch (err) {
         const msg = getErrorMessage(err);
@@ -513,7 +520,7 @@ function AppContent() {
           setMissingToolInfo(missing);
         } else {
           console.error('Compress failed', err);
-          showToast(`Failed to create "${filename}"`, 'error');
+          showToast(`Failed to create "${finalFilename}"`, 'error');
         }
       }
     },

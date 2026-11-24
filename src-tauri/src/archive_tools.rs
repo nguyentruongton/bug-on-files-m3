@@ -150,16 +150,18 @@ pub fn compress_command(
 
     match format.to_ascii_lowercase().as_str() {
         "zip" => {
-            let mut args = Vec::with_capacity(rel_items.len() + 2);
+            let mut args = Vec::with_capacity(rel_items.len() + 3);
             args.push("-r".to_string());
             args.push(dest_archive.to_string());
+            args.push("--".to_string());
             args.extend(rel_items.iter().cloned());
             Ok(("zip".to_string(), args))
         }
         "tar.gz" => {
-            let mut args = Vec::with_capacity(rel_items.len() + 2);
+            let mut args = Vec::with_capacity(rel_items.len() + 3);
             args.push("-czvf".to_string());
             args.push(dest_archive.to_string());
+            args.push("--".to_string());
             args.extend(rel_items.iter().cloned());
             Ok(("tar".to_string(), args))
         }
@@ -361,6 +363,7 @@ where
         Ok(true)
     } else {
         let err_msg = format_failure(&status.to_string(), &stderr_text, stdout_flag);
+        let is_password_err = err_msg.starts_with("ARCHIVE_PASSWORD_REQUIRED");
         on_progress(ExtractProgressPayload {
             path: path.to_string(),
             archive_name,
@@ -369,9 +372,13 @@ where
             total_count,
             percent: compute_percent(processed_count, total_count),
             done: true,
-            error: Some(err_msg),
+            error: Some(err_msg.clone()),
         });
-        Ok(false)
+        if is_password_err {
+            Err(err_msg)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -397,6 +404,60 @@ fn format_compress_failure_message(status_display: &str, stderr_text: &str, _: b
     }
 }
 
+pub fn resolve_common_parent_and_rel_paths(
+    paths: &[String],
+) -> Result<(PathBuf, Vec<String>), String> {
+    if paths.is_empty() {
+        return Err("No items specified for compression".to_string());
+    }
+
+    let mut common_components: Option<Vec<std::path::Component<'_>>> = None;
+    for p in paths {
+        let path = Path::new(p);
+        if path.file_name().is_none() {
+            return Err(format!("Invalid path for compression: {}", p));
+        }
+        let parent = path
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let comps: Vec<_> = parent.components().collect();
+        common_components = Some(match common_components {
+            None => comps,
+            Some(prev) => prev
+                .into_iter()
+                .zip(comps)
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a)
+                .collect(),
+        });
+    }
+
+    let common_dir: PathBuf = match common_components {
+        Some(comps) if !comps.is_empty() => comps.into_iter().collect(),
+        _ => PathBuf::from("."),
+    };
+
+    let mut rel_items = Vec::with_capacity(paths.len());
+    for p in paths {
+        let path = Path::new(p);
+        let rel = if common_dir == Path::new(".") {
+            path.to_path_buf()
+        } else {
+            path.strip_prefix(&common_dir)
+                .map(|r| r.to_path_buf())
+                .map_err(|_| format!("Invalid path for compression: {}", p))?
+        };
+        let rel_str = rel
+            .to_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("Invalid path for compression: {}", p))?;
+        rel_items.push(rel_str.to_string());
+    }
+
+    Ok((common_dir, rel_items))
+}
+
 pub fn compress_files_with_progress<F>(
     paths: &[String],
     dest_archive: &str,
@@ -406,30 +467,7 @@ pub fn compress_files_with_progress<F>(
 where
     F: FnMut(ExtractProgressPayload),
 {
-    if paths.is_empty() {
-        return Err("No items specified for compression".to_string());
-    }
-
-    let first_parent = Path::new(&paths[0])
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty());
-    let dest_parent = Path::new(dest_archive)
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty());
-    let cwd: PathBuf = first_parent
-        .or(dest_parent)
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-
-    let mut rel_items = Vec::with_capacity(paths.len());
-    for p in paths {
-        let name = Path::new(p)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| format!("Invalid path for compression: {}", p))?;
-        rel_items.push(name.to_string());
-    }
+    let (cwd, rel_items) = resolve_common_parent_and_rel_paths(paths)?;
 
     let resolved_dest = if Path::new(dest_archive).is_relative() {
         std::env::current_dir()
@@ -553,16 +591,102 @@ mod tests {
         let (zip_cmd, zip_args) =
             compress_command("/tmp/out.zip", &items, "zip").expect("zip command");
         assert_eq!(zip_cmd, "zip");
-        assert_eq!(zip_args, vec!["-r", "/tmp/out.zip", "a.txt", "dir"]);
+        assert_eq!(zip_args, vec!["-r", "/tmp/out.zip", "--", "a.txt", "dir"]);
 
         let (tar_cmd, tar_args) =
             compress_command("/tmp/out.tar.gz", &items, "tar.gz").expect("tar.gz command");
         assert_eq!(tar_cmd, "tar");
-        assert_eq!(tar_args, vec!["-czvf", "/tmp/out.tar.gz", "a.txt", "dir"]);
+        assert_eq!(
+            tar_args,
+            vec!["-czvf", "/tmp/out.tar.gz", "--", "a.txt", "dir"]
+        );
+
+        let dash_items = vec![
+            "--checkpoint-action=exec=id".to_string(),
+            "-weird.txt".to_string(),
+        ];
+        let (_, dash_zip_args) =
+            compress_command("/tmp/out.zip", &dash_items, "zip").expect("dash zip command");
+        assert_eq!(
+            dash_zip_args,
+            vec![
+                "-r",
+                "/tmp/out.zip",
+                "--",
+                "--checkpoint-action=exec=id",
+                "-weird.txt"
+            ]
+        );
+        let (_, dash_tar_args) =
+            compress_command("/tmp/out.tar.gz", &dash_items, "tar.gz").expect("dash tar command");
+        assert_eq!(
+            dash_tar_args,
+            vec![
+                "-czvf",
+                "/tmp/out.tar.gz",
+                "--",
+                "--checkpoint-action=exec=id",
+                "-weird.txt"
+            ]
+        );
 
         assert!(compress_command("/tmp/out.rar", &items, "rar").is_err());
         assert!(compress_command("/tmp/out.7z", &items, "7z").is_err());
         assert!(compress_command("/tmp/out.zip", &[], "zip").is_err());
+    }
+
+    #[test]
+    fn test_resolve_common_parent_and_rel_paths() {
+        let same_dir = vec!["/a/b/x.txt".to_string(), "/a/b/y.txt".to_string()];
+        let (cwd, rel) =
+            resolve_common_parent_and_rel_paths(&same_dir).expect("same dir selection");
+        assert_eq!(cwd, PathBuf::from("/a/b"));
+        assert_eq!(rel, vec!["x.txt", "y.txt"]);
+
+        let cross_dir = vec!["/a/b/x.txt".to_string(), "/a/c/y.txt".to_string()];
+        let (cwd2, rel2) =
+            resolve_common_parent_and_rel_paths(&cross_dir).expect("cross dir selection");
+        assert_eq!(cwd2, PathBuf::from("/a"));
+        assert_eq!(rel2, vec!["b/x.txt", "c/y.txt"]);
+
+        let nested = vec!["/a/b/x.txt".to_string(), "/a/b/sub/y.txt".to_string()];
+        let (cwd3, rel3) =
+            resolve_common_parent_and_rel_paths(&nested).expect("nested dir selection");
+        assert_eq!(cwd3, PathBuf::from("/a/b"));
+        assert_eq!(rel3, vec!["x.txt", "sub/y.txt"]);
+
+        let root_common = vec!["/a/x.txt".to_string(), "/b/y.txt".to_string()];
+        let (cwd4, rel4) =
+            resolve_common_parent_and_rel_paths(&root_common).expect("root common ancestor");
+        assert_eq!(cwd4, PathBuf::from("/"));
+        assert_eq!(rel4, vec!["a/x.txt", "b/y.txt"]);
+
+        assert!(resolve_common_parent_and_rel_paths(&[]).is_err());
+    }
+
+    #[test]
+    fn test_run_progress_command_password_error_returns_err() {
+        let mut events = Vec::new();
+        let res = run_progress_command(
+            "/tmp/secret.rar",
+            "false",
+            &[],
+            None,
+            1,
+            |_| None,
+            |_| false,
+            |_, _, _| "ARCHIVE_PASSWORD_REQUIRED: This archive is password-protected.".to_string(),
+            |ev| events.push(ev),
+        );
+        let err_msg = res.expect_err("password error should return Err");
+        assert!(
+            err_msg.starts_with("ARCHIVE_PASSWORD_REQUIRED"),
+            "expected ARCHIVE_PASSWORD_REQUIRED prefix, got: {}",
+            err_msg
+        );
+        let last = events.last().expect("done event on password error");
+        assert!(last.done);
+        assert_eq!(last.error.as_deref(), Some(err_msg.as_str()));
     }
 
     #[test]

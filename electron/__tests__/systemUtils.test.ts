@@ -6,6 +6,7 @@ import {
   parseExtractedEntryLine,
   isPasswordError,
   getCompressCommand,
+  resolveCommonParentAndRelPaths,
   parseCompressedEntryLine,
   parseOsReleaseAndCommand,
   formatMissingToolError,
@@ -97,17 +98,45 @@ describe('parseExtractedEntryLine & isPasswordError', () => {
 });
 
 describe('getCompressCommand & parseCompressedEntryLine', () => {
-  test('builds zip and tar.gz compression commands', () => {
+  test('builds zip and tar.gz compression commands with -- option terminator', () => {
     expect(getCompressCommand('/tmp/out.zip', ['a.txt', 'b'], 'zip')).toEqual({
       cmd: 'zip',
-      args: ['-r', '/tmp/out.zip', 'a.txt', 'b'],
+      args: ['-r', '/tmp/out.zip', '--', 'a.txt', 'b'],
     });
     expect(getCompressCommand('/tmp/out.tar.gz', ['a.txt', 'b'], 'tar.gz')).toEqual({
       cmd: 'tar',
-      args: ['-czvf', '/tmp/out.tar.gz', 'a.txt', 'b'],
+      args: ['-czvf', '/tmp/out.tar.gz', '--', 'a.txt', 'b'],
+    });
+    expect(getCompressCommand('/tmp/out.zip', ['--checkpoint-action=exec=id', '-weird.txt'], 'zip')).toEqual({
+      cmd: 'zip',
+      args: ['-r', '/tmp/out.zip', '--', '--checkpoint-action=exec=id', '-weird.txt'],
+    });
+    expect(getCompressCommand('/tmp/out.tar.gz', ['--checkpoint-action=exec=id', '-weird.txt'], 'tar.gz')).toEqual({
+      cmd: 'tar',
+      args: ['-czvf', '/tmp/out.tar.gz', '--', '--checkpoint-action=exec=id', '-weird.txt'],
     });
     expect(getCompressCommand('/tmp/out.zip', [], 'zip')).toBeNull();
     expect(getCompressCommand('/tmp/out.rar', ['a.txt'], 'rar' as 'zip')).toBeNull();
+  });
+
+  test('resolves common ancestor directory and relative paths for same-dir and cross-dir selections', () => {
+    expect(resolveCommonParentAndRelPaths(['/a/b/x.txt', '/a/b/y.txt'])).toEqual({
+      cwd: '/a/b',
+      relItems: ['x.txt', 'y.txt'],
+    });
+    expect(resolveCommonParentAndRelPaths(['/a/b/x.txt', '/a/c/y.txt'])).toEqual({
+      cwd: '/a',
+      relItems: ['b/x.txt', 'c/y.txt'],
+    });
+    expect(resolveCommonParentAndRelPaths(['/a/b/x.txt', '/a/b/sub/y.txt'])).toEqual({
+      cwd: '/a/b',
+      relItems: ['x.txt', 'sub/y.txt'],
+    });
+    expect(resolveCommonParentAndRelPaths(['/a/x.txt', '/b/y.txt'])).toEqual({
+      cwd: '/',
+      relItems: ['a/x.txt', 'b/y.txt'],
+    });
+    expect(resolveCommonParentAndRelPaths([])).toBeNull();
   });
 
   test('parses compressed entry lines for zip and tar', () => {

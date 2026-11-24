@@ -103,3 +103,42 @@ export function resolveCompressFilename(rawName: string, format: 'zip' | 'tar.gz
     }
     return `${trimmed}${suffix}`;
 }
+
+/**
+ * Resolve a non-colliding destination path for a new archive in `dir`.
+ * If `<dir>/<filename>` already exists, increments `<stem> (2).<ext>`, `<stem> (3).<ext>`, etc.,
+ * preserving `.tar.gz` as a single extension.
+ */
+export async function resolveNonCollidingArchivePath(
+    dir: string,
+    filename: string,
+    format: 'zip' | 'tar.gz',
+    exists: (p: string) => Promise<boolean>
+): Promise<string> {
+    const resolvedName = resolveCompressFilename(filename, format);
+    const join = (name: string): string => {
+        if (!dir) return name;
+        if (dir === '/') return `/${name}`;
+        return `${dir.replace(/\/+$/, '')}/${name}`;
+    };
+
+    const initialPath = join(resolvedName);
+    if (!(await exists(initialPath))) {
+        return initialPath;
+    }
+
+    const suffix = `.${format}`;
+    const hasSuffix =
+        resolvedName.toLowerCase().endsWith(suffix) && resolvedName.length > suffix.length;
+    const stem = hasSuffix ? resolvedName.slice(0, resolvedName.length - suffix.length) : resolvedName;
+    const ext = hasSuffix ? resolvedName.slice(resolvedName.length - suffix.length) : suffix;
+
+    for (let counter = 2; counter < 10_000; counter++) {
+        const candidate = join(`${stem} (${counter})${ext}`);
+        if (!(await exists(candidate))) {
+            return candidate;
+        }
+    }
+
+    return join(`${stem} (${Date.now()})${ext}`);
+}
