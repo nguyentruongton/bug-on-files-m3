@@ -35,6 +35,11 @@ import {
     resolveExtractProgressPercent,
 } from '../utils/explorerTabUtils';
 import { filterTrashFiles, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
+import {
+    isPasswordArchiveError,
+    parseMissingToolError,
+    type MissingToolInfo,
+} from '../utils/archiveUtils';
 import { compareFiles, normalizeSortField, type SortField } from '../utils/fileListUtils';
 import {
     resolveQuickLookFallback,
@@ -71,6 +76,9 @@ interface ExplorerTabProps {
     onRestoreRequest?: (items: IFile[]) => void;
     onPurgeRequest?: (items: IFile[]) => void;
     onEmptyTrashRequest?: () => void;
+    archiveBatchLabel?: string | null;
+    onExtractRequest?: (items: IFile[]) => void;
+    onMissingToolError?: (info: MissingToolInfo) => void;
 }
 
 export function ExplorerTab({
@@ -96,6 +104,9 @@ export function ExplorerTab({
     onRestoreRequest,
     onPurgeRequest,
     onEmptyTrashRequest,
+    archiveBatchLabel,
+    onExtractRequest,
+    onMissingToolError,
 }: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
     const isTrash = currentPath === 'app://trash';
@@ -118,20 +129,31 @@ export function ExplorerTab({
 
     // Quick Look State
     const [quickLookPath, setQuickLookPath] = useState<string | null>(null);
-    const [extractProgress, setExtractProgress] = useState<ExtractProgressEvent | null>(null);
+    const [archiveProgress, setArchiveProgress] = useState<{
+        mode: 'extract' | 'compress';
+        event: ExtractProgressEvent;
+    } | null>(null);
 
     useEffect(() => {
-        if (!isActive || !api?.onExtractProgress) return;
-        const unsubscribe = api.onExtractProgress((event) => {
+        if (!isActive) return;
+        const unsubscribeExtract = api?.onExtractProgress?.((event) => {
             if (event.done) {
-                setExtractProgress(null);
+                setArchiveProgress(null);
             } else {
-                setExtractProgress(event);
+                setArchiveProgress({ mode: 'extract', event });
+            }
+        });
+        const unsubscribeCompress = api?.onCompressProgress?.((event) => {
+            if (event.done) {
+                setArchiveProgress(null);
+            } else {
+                setArchiveProgress({ mode: 'compress', event });
             }
         });
         return () => {
-            unsubscribe?.();
-            setExtractProgress(null);
+            unsubscribeExtract?.();
+            unsubscribeCompress?.();
+            setArchiveProgress(null);
         };
     }, [isActive]);
 
@@ -1131,16 +1153,31 @@ export function ExplorerTab({
                                                             title="Extract Here"
                                                             onClick={async () => {
                                                                 const archiveFile = selectedItems[0];
+                                                                if (onExtractRequest) {
+                                                                    onExtractRequest([archiveFile]);
+                                                                    return;
+                                                                }
                                                                 try {
                                                                     const ok = await api.extractFile(archiveFile.path);
                                                                     if (!ok) throw new Error('Extract returned false');
                                                                     showToast(`Extracted "${archiveFile.name}"`, 'success');
                                                                     loadPath(currentPath, false);
                                                                 } catch (err) {
-                                                                    console.error('Extract failed', err);
-                                                                    showToast(`Failed to extract "${archiveFile.name}"`, 'error');
+                                                                    const msg = err instanceof Error ? err.message : String(err ?? '');
+                                                                    const missing = parseMissingToolError(msg);
+                                                                    if (missing) {
+                                                                        onMissingToolError?.(missing);
+                                                                    } else if (isPasswordArchiveError(msg)) {
+                                                                        showToast(
+                                                                            `"${archiveFile.name}" is password-protected and cannot be extracted`,
+                                                                            'error'
+                                                                        );
+                                                                    } else {
+                                                                        console.error('Extract failed', err);
+                                                                        showToast(`Failed to extract "${archiveFile.name}"`, 'error');
+                                                                    }
                                                                 } finally {
-                                                                    setExtractProgress(null);
+                                                                    setArchiveProgress(null);
                                                                 }
                                                             }}
                                                         >
@@ -1235,8 +1272,15 @@ export function ExplorerTab({
                 />
             )}
 
-            {extractProgress && !extractProgress.done && (() => {
-                const displayPercent = resolveExtractProgressPercent(extractProgress.percent);
+            {archiveProgress && !archiveProgress.event.done && (() => {
+                const { mode, event } = archiveProgress;
+                const displayPercent = resolveExtractProgressPercent(event.percent);
+                const actionLabel =
+                    mode === 'compress'
+                        ? `Compressing ${event.archiveName}`
+                        : archiveBatchLabel
+                            ? `Extracting ${archiveBatchLabel}: ${event.archiveName}`
+                            : `Extracting ${event.archiveName}`;
                 return (
                     <div
                         role="status"
@@ -1247,7 +1291,7 @@ export function ExplorerTab({
                             <div className="flex items-center gap-2 min-w-0">
                                 <Icon name="folder_zip" size={20} className="text-m3-primary shrink-0" />
                                 <span className="text-sm font-medium truncate">
-                                    Extracting {extractProgress.archiveName}
+                                    {actionLabel}
                                 </span>
                             </div>
                             {displayPercent !== undefined && (
@@ -1256,14 +1300,17 @@ export function ExplorerTab({
                                 </span>
                             )}
                         </div>
-                        {(extractProgress.currentFile || extractProgress.totalCount > 0) && (
+                        {(event.currentFile || event.totalCount > 0) && (
                             <div className="flex items-center justify-between gap-2 text-xs text-m3-on-surface-variant min-w-0">
                                 <span className="truncate flex-1">
-                                    {extractProgress.currentFile || 'Preparing extraction...'}
+                                    {event.currentFile ||
+                                        (mode === 'compress'
+                                            ? 'Preparing compression...'
+                                            : 'Preparing extraction...')}
                                 </span>
-                                {extractProgress.totalCount > 0 && (
+                                {event.totalCount > 0 && (
                                     <span className="shrink-0 tabular-nums">
-                                        {extractProgress.extractedCount} / {extractProgress.totalCount}
+                                        {event.extractedCount} / {event.totalCount}
                                     </span>
                                 )}
                             </div>
@@ -1272,7 +1319,7 @@ export function ExplorerTab({
                             variant="linear"
                             shape="wavy"
                             value={displayPercent}
-                            aria-label={`Extracting ${extractProgress.archiveName}`}
+                            aria-label={actionLabel}
                             color="var(--md-sys-color-primary)"
                             trackColor="var(--md-sys-color-secondary-container)"
                         />

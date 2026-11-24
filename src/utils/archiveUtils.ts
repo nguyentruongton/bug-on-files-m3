@@ -93,3 +93,13 @@ export function buildDefaultArchiveName(
 
     return parentDirName || 'archive';
 }
+
+/** Append the selected archive extension unless the user already typed it. */
+export function resolveCompressFilename(rawName: string, format: 'zip' | 'tar.gz'): string {
+    const trimmed = rawName.trim();
+    const suffix = `.${format}`;
+    if (trimmed.toLowerCase().endsWith(suffix)) {
+        return trimmed;
+    }
+    return `${trimmed}${suffix}`;
+}

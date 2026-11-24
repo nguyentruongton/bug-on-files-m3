@@ -39,6 +39,8 @@ describe('fileUtils', () => {
 
   test('isArchiveFile detects supported archive extensions', () => {
     expect(isArchiveFile('backup.zip')).toBe(true);
+    expect(isArchiveFile('backup.rar')).toBe(true);
+    expect(isArchiveFile('BACKUP.RAR')).toBe(true);
     expect(isArchiveFile('source.tar.gz')).toBe(true);
     expect(isArchiveFile('data.tgz')).toBe(true);
     expect(isArchiveFile('kernel.tar.xz')).toBe(true);

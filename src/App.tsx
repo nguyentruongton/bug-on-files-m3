@@ -22,6 +22,8 @@ import { TabBar, type Tab } from './components/TabBar';
 import { ExplorerTab } from './components/ExplorerTab';
 import { OpenWithDialog } from './components/OpenWithDialog';
 import { PropertiesDialog } from './components/PropertiesDialog';
+import { CompressDialog } from './components/CompressDialog';
+import { MissingToolDialog } from './components/MissingToolDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePaste } from './hooks/usePaste';
 import {
@@ -37,6 +39,13 @@ import {
   buildTabBarContextMenuItems,
 } from './utils/tabContextMenu';
 import { isArchiveFile, validateFileName } from './utils/fileUtils';
+import {
+  buildDefaultArchiveName,
+  getArchiveStem,
+  isPasswordArchiveError,
+  parseMissingToolError,
+  type MissingToolInfo,
+} from './utils/archiveUtils';
 import {
   executePurgeAction,
   executeRestoreBatch,
@@ -57,6 +66,21 @@ function resolveTabTitle(path: string): string {
   if (path === 'app://dashboard') return 'Dashboard';
   if (path === 'app://trash') return 'Trash';
   return path.split('/').pop() || path;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return String(err ?? '');
+}
+
+function joinPath(dir: string, name: string): string {
+  return dir === '/' ? `/${name}` : `${dir.replace(/\/+$/, '')}/${name}`;
+}
+
+function getParentDir(filePath: string): string {
+  const lastSlash = filePath.lastIndexOf('/');
+  return lastSlash > 0 ? filePath.slice(0, lastSlash) : '/';
 }
 
 function AppContent() {
@@ -110,6 +134,11 @@ function AppContent() {
   // Trash & Purge Confirmation Dialog State
   const [trashConfirmItems, setTrashConfirmItems] = useState<IFile[] | null>(null);
   const [purgeConfirmState, setPurgeConfirmState] = useState<PurgeTarget | null>(null);
+
+  // Archive Compression & Missing Tool Dialog State
+  const [compressDialogItems, setCompressDialogItems] = useState<IFile[] | null>(null);
+  const [missingToolInfo, setMissingToolInfo] = useState<MissingToolInfo | null>(null);
+  const [archiveBatchLabel, setArchiveBatchLabel] = useState<string | null>(null);
 
   // Clipboard & Toast State
   const { clipboard, copy, cut } = useClipboard();
@@ -358,14 +387,147 @@ function AppContent() {
     });
   }, [purgeConfirmState, showToast, refreshActiveTab]);
 
+  const handleExtractBatch = useCallback(
+    async (items: IFile[], mode: 'here' | 'own-folder' | 'choose-dir') => {
+      if (items.length === 0) return;
+
+      let chosenDestDir: string | undefined;
+      if (mode === 'choose-dir') {
+        const picked = await api.openDirectoryDialog();
+        if (!picked) return;
+        chosenDestDir = picked;
+      }
+
+      let succeeded = 0;
+      const failed: Array<{ name: string; reason: 'password' | 'error' }> = [];
+      let abortedForMissingTool = false;
+
+      try {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          setArchiveBatchLabel(items.length > 1 ? `(${i + 1}/${items.length})` : null);
+
+          let destDir: string | undefined;
+          if (mode === 'own-folder') {
+            destDir = joinPath(getParentDir(item.path), getArchiveStem(item.name));
+          } else if (mode === 'choose-dir') {
+            destDir = chosenDestDir;
+          }
+
+          try {
+            const ok = await api.extractFile(item.path, destDir);
+            if (!ok) {
+              throw new Error('Extract command returned false');
+            }
+            succeeded++;
+          } catch (err) {
+            const msg = getErrorMessage(err);
+            const missing = parseMissingToolError(msg);
+            if (missing) {
+              abortedForMissingTool = true;
+              setMissingToolInfo(missing);
+              break;
+            }
+            if (isPasswordArchiveError(msg)) {
+              failed.push({ name: item.name, reason: 'password' });
+            } else {
+              console.error('Extract failed', err);
+              failed.push({ name: item.name, reason: 'error' });
+            }
+          }
+        }
+      } finally {
+        setArchiveBatchLabel(null);
+      }
+
+      if (succeeded > 0) {
+        refreshActiveTab();
+      }
+
+      if (abortedForMissingTool) {
+        return;
+      }
+
+      if (failed.length === 0) {
+        if (items.length === 1) {
+          showToast(`Extracted "${items[0].name}"`, 'success');
+        } else {
+          showToast(`Extracted ${succeeded} archives`, 'success');
+        }
+        return;
+      }
+
+      const passwordCount = failed.filter((f) => f.reason === 'password').length;
+      if (succeeded === 0) {
+        if (items.length === 1) {
+          if (failed[0].reason === 'password') {
+            showToast(
+              `"${failed[0].name}" is password-protected and cannot be extracted`,
+              'error'
+            );
+          } else {
+            showToast(`Failed to extract "${failed[0].name}"`, 'error');
+          }
+        } else {
+          showToast(
+            passwordCount > 0
+              ? `Failed to extract ${failed.length} archives (${passwordCount} password-protected)`
+              : `Failed to extract ${failed.length} archives`,
+            'error'
+          );
+        }
+      } else {
+        showToast(
+          passwordCount > 0
+            ? `Extracted ${succeeded} of ${items.length} archives (${failed.length} failed, ${passwordCount} password-protected)`
+            : `Extracted ${succeeded} of ${items.length} archives (${failed.length} failed)`,
+          'info'
+        );
+      }
+    },
+    [refreshActiveTab, showToast]
+  );
+
+  const handleCompressConfirm = useCallback(
+    async (filename: string, format: 'zip' | 'tar.gz') => {
+      const items = compressDialogItems;
+      setCompressDialogItems(null);
+      if (!items || items.length === 0 || !currentPath || currentPath.startsWith('app://')) {
+        return;
+      }
+
+      const destArchivePath = joinPath(currentPath, filename);
+      const paths = items.map((item) => item.path);
+
+      try {
+        const ok = await api.compressFiles(paths, destArchivePath, format);
+        if (!ok) {
+          throw new Error('Compress command returned false');
+        }
+        showToast(`Created "${filename}"`, 'success');
+        refreshActiveTab();
+      } catch (err) {
+        const msg = getErrorMessage(err);
+        const missing = parseMissingToolError(msg);
+        if (missing) {
+          setMissingToolInfo(missing);
+        } else {
+          console.error('Compress failed', err);
+          showToast(`Failed to create "${filename}"`, 'error');
+        }
+      }
+    },
+    [compressDialogItems, currentPath, refreshActiveTab, showToast]
+  );
+
   const fileContextMenu = contextMenu?.kind === 'file' ? contextMenu : null;
   const targetItems = fileContextMenu?.item
     ? (fileContextMenu.selectedItems.length > 0 ? fileContextMenu.selectedItems : [fileContextMenu.item])
     : [];
   const selectionSuffix = targetItems.length > 1 ? ` (${targetItems.length})` : '';
-  const canExtractContextItem = Boolean(
-    fileContextMenu?.item && !fileContextMenu.item.isDirectory && isArchiveFile(fileContextMenu.item.name)
-  );
+  const allSelectedAreArchives =
+    targetItems.length > 0 &&
+    targetItems.every((item) => !item.isDirectory && isArchiveFile(item.name));
   const isTrashView = currentPath === 'app://trash';
 
   const contextTab = contextMenu?.kind === 'tab'
@@ -443,26 +605,52 @@ function AppContent() {
           handleTrashRequest(itemsToTrash);
         }
       },
-      ...(canExtractContextItem
-        ? [{
-            label: 'Extract Here',
-            icon: 'unarchive',
-            action: async () => {
-              const file = fileContextMenu.item!;
-              setContextMenu(null);
-              try {
-                const ok = await api.extractFile(file.path);
-                if (!ok) {
-                  throw new Error('Extract command returned false');
-                }
-                showToast(`Extracted "${file.name}"`, 'success');
-                refreshActiveTab();
-              } catch (err) {
-                console.error('Extract failed', err);
-                showToast(`Failed to extract "${file.name}"`, 'error');
-              }
-            }
-          }]
+      ...(allSelectedAreArchives
+        ? [
+            {
+              label: `Extract Here${selectionSuffix}`,
+              icon: 'unarchive',
+              action: () => {
+                const items = targetItems;
+                setContextMenu(null);
+                void handleExtractBatch(items, 'here');
+              },
+            },
+            {
+              label:
+                targetItems.length === 1
+                  ? `Extract to "${getArchiveStem(targetItems[0].name)}/"`
+                  : `Extract Each to Own Folder (${targetItems.length})`,
+              icon: 'drive_file_move',
+              action: () => {
+                const items = targetItems;
+                setContextMenu(null);
+                void handleExtractBatch(items, 'own-folder');
+              },
+            },
+            {
+              label: 'Extract to...',
+              icon: 'folder_open',
+              action: () => {
+                const items = targetItems;
+                setContextMenu(null);
+                void handleExtractBatch(items, 'choose-dir');
+              },
+            },
+          ]
+        : []),
+      ...(targetItems.length > 0
+        ? [
+            {
+              label: `Compress${selectionSuffix}...`,
+              icon: 'folder_zip',
+              action: () => {
+                const items = targetItems;
+                setContextMenu(null);
+                setCompressDialogItems(items);
+              },
+            },
+          ]
         : []),
       {
         label: 'Rename', icon: 'edit', action: () => {
@@ -708,6 +896,9 @@ function AppContent() {
                 onRestoreRequest={handleRestoreRequest}
                 onPurgeRequest={handlePurgeRequest}
                 onEmptyTrashRequest={handleEmptyTrashRequest}
+                archiveBatchLabel={tab.id === activeTabId ? archiveBatchLabel : null}
+                onExtractRequest={(items) => void handleExtractBatch(items, 'here')}
+                onMissingToolError={setMissingToolInfo}
               />
             </div>
           ))}
@@ -914,6 +1105,29 @@ function AppContent() {
                 : `Permanently delete ${purgeConfirmState?.items.length ?? 0} selected items? This action cannot be undone.`}
           </p>
         </Dialog>
+
+        <CompressDialog
+          open={Boolean(compressDialogItems && compressDialogItems.length > 0)}
+          defaultName={
+            compressDialogItems
+              ? buildDefaultArchiveName(
+                  compressDialogItems,
+                  currentPath && !currentPath.startsWith('app://')
+                    ? currentPath.split('/').pop() || 'archive'
+                    : 'archive'
+                )
+              : 'archive'
+          }
+          onClose={() => setCompressDialogItems(null)}
+          onConfirm={(filename, format) => {
+            void handleCompressConfirm(filename, format);
+          }}
+        />
+
+        <MissingToolDialog
+          info={missingToolInfo}
+          onClose={() => setMissingToolInfo(null)}
+        />
 
         {conflictDialog}
       </main>

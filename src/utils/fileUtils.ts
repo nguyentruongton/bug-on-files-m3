@@ -42,7 +42,7 @@ const TEXT_EXTENSIONS = new Set([
     'json'
 ]);
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'gz', 'xz', 'tgz', '7z', 'rar', 'iso']);
-const EXTRACTABLE_EXTENSIONS = ['.zip', '.tar', '.gz', '.xz', '.tgz'];
+const EXTRACTABLE_EXTENSIONS = ['.zip', '.rar', '.tar', '.gz', '.xz', '.tgz'];
 const EXEC_EXTENSIONS = new Set(['exe', 'appimage', 'deb', 'rpm', 'apk']);
 
 export function getFileExtension(filename: string): string {
