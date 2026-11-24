@@ -13,7 +13,9 @@ contextBridge.exposeInMainWorld('electron', {
   renameFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
   createDirectory: (path: string) => ipcRenderer.invoke('fs:mkdir', path),
   openPath: (path: string) => ipcRenderer.invoke('fs:open', path),
-  extractFile: (path: string) => ipcRenderer.invoke('fs:extract', path),
+  extractFile: (path: string, destDir?: string) => ipcRenderer.invoke('fs:extract', path, destDir),
+  compressFiles: (paths: string[], destArchivePath: string, format: 'zip' | 'tar.gz') =>
+    ipcRenderer.invoke('fs:compress', paths, destArchivePath, format),
   getApps: () => ipcRenderer.invoke('system:get-apps'),
   openWith: (exec: string, path: string) => ipcRenderer.invoke('system:open-with', exec, path),
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
@@ -41,6 +43,11 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (_event: unknown, e: unknown) => cb(e);
     ipcRenderer.on('fs:extract-progress', handler);
     return () => ipcRenderer.removeListener('fs:extract-progress', handler);
+  },
+  onCompressProgress: (cb: (e: unknown) => void) => {
+    const handler = (_event: unknown, e: unknown) => cb(e);
+    ipcRenderer.on('fs:compress-progress', handler);
+    return () => ipcRenderer.removeListener('fs:compress-progress', handler);
   },
 
   // PTY

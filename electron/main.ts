@@ -11,6 +11,10 @@ import {
     getListEntriesCommand,
     getVerboseExtractCommand,
     parseExtractedEntryLine,
+    isPasswordError,
+    getCompressCommand,
+    parseCompressedEntryLine,
+    formatMissingToolError,
     parseDesktopEntry,
     matchesMimeType,
     resolvePlaces,
@@ -154,130 +158,278 @@ ipcMain.handle('fs:open', async (_, filePath: string) => {
     return error; // returns error string or empty if success
 });
 
-ipcMain.handle('fs:extract', async (_, filePath: string) => {
-    const sendProgress = (payload: {
-        path: string;
-        archiveName: string;
-        currentFile: string;
-        extractedCount: number;
-        totalCount: number;
-        percent?: number;
-        done: boolean;
-        error?: string;
-    }) => {
+interface ArchiveProgressPayload {
+    path: string;
+    archiveName: string;
+    currentFile: string;
+    extractedCount: number;
+    totalCount: number;
+    percent?: number;
+    done: boolean;
+    error?: string;
+}
+
+async function readOsReleaseSafe(): Promise<string> {
+    try {
+        return await fs.readFile('/etc/os-release', 'utf-8');
+    } catch {
+        return '';
+    }
+}
+
+async function countPathEntries(targetPath: string): Promise<number> {
+    try {
+        const stat = await fs.lstat(targetPath);
+        if (!stat.isDirectory()) return 1;
+        const entries = await fs.readdir(targetPath);
+        let count = 1;
+        for (const entry of entries) {
+            count += await countPathEntries(path.join(targetPath, entry));
+        }
+        return count;
+    } catch {
+        return 1;
+    }
+}
+
+async function countItemsForCompression(paths: string[]): Promise<number> {
+    const counts = await Promise.all(paths.map((p) => countPathEntries(p)));
+    return counts.reduce((sum, n) => sum + n, 0);
+}
+
+function runArchiveProgressCommand(options: {
+    channel: 'fs:extract-progress' | 'fs:compress-progress';
+    targetPath: string;
+    cmd: string;
+    args: string[];
+    totalCount: number;
+    parseLine: (line: string) => string | null;
+    cwd?: string;
+    detectPasswordError?: boolean;
+    failurePrefix: string;
+}): Promise<boolean> {
+    const { channel, targetPath, cmd, args, totalCount, parseLine, cwd, detectPasswordError, failurePrefix } = options;
+    const archiveName = path.basename(targetPath);
+
+    const sendProgress = (payload: ArchiveProgressPayload) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('fs:extract-progress', payload);
+            mainWindow.webContents.send(channel, payload);
         }
     };
 
-    try {
-        const extractCmd = getVerboseExtractCommand(filePath) ?? getExtractCommand(filePath);
-        if (!extractCmd) return false;
+    const computePercent = (processed: number) =>
+        totalCount > 0 ? Math.min(100, (processed / totalCount) * 100) : undefined;
 
-        const archiveName = path.basename(filePath);
-        let totalCount = 0;
-        const listCmd = getListEntriesCommand(filePath);
-        if (listCmd) {
-            try {
-                const { stdout } = await execFileAsync(listCmd.cmd, listCmd.args, { maxBuffer: 64 * 1024 * 1024 });
-                totalCount = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
-            } catch {
-                totalCount = 0;
+    sendProgress({
+        path: targetPath,
+        archiveName,
+        currentFile: '',
+        extractedCount: 0,
+        totalCount,
+        percent: computePercent(0),
+        done: false,
+    });
+
+    return new Promise<boolean>((resolve, reject) => {
+        const child = spawn(cmd, args, {
+            ...(cwd ? { cwd } : {}),
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        let settled = false;
+        let processedCount = 0;
+        let lastEntry = '';
+        let lastEmitMs = 0;
+        let stdoutBuffer = '';
+        let stderrBuffer = '';
+        let sawPasswordError = false;
+
+        child.stdout.on('data', (chunk: Buffer) => {
+            stdoutBuffer += chunk.toString('utf8');
+            const lines = stdoutBuffer.split(/\r?\n/);
+            stdoutBuffer = lines.pop() ?? '';
+            for (const line of lines) {
+                if (detectPasswordError && isPasswordError(line)) {
+                    sawPasswordError = true;
+                }
+                const entry = parseLine(line);
+                if (entry) {
+                    processedCount += 1;
+                    lastEntry = entry;
+                    const now = Date.now();
+                    const isBoundary = processedCount === 1 || (totalCount > 0 && processedCount === totalCount);
+                    if (isBoundary || now - lastEmitMs >= 40) {
+                        sendProgress({
+                            path: targetPath,
+                            archiveName,
+                            currentFile: entry,
+                            extractedCount: processedCount,
+                            totalCount,
+                            percent: computePercent(processedCount),
+                            done: false,
+                        });
+                        lastEmitMs = now;
+                    }
+                }
             }
-        }
-
-        const computePercent = (extracted: number) =>
-            totalCount > 0 ? Math.min(100, (extracted / totalCount) * 100) : undefined;
-
-        sendProgress({
-            path: filePath,
-            archiveName,
-            currentFile: '',
-            extractedCount: 0,
-            totalCount,
-            percent: computePercent(0),
-            done: false,
         });
 
-        return await new Promise<boolean>((resolve) => {
-            const child = spawn(extractCmd.cmd, extractCmd.args);
-            let extractedCount = 0;
-            let lastEntry = '';
-            let lastEmitMs = 0;
-            let stdoutBuffer = '';
-            let stderrBuffer = '';
-
-            child.stdout.on('data', (chunk: Buffer) => {
-                stdoutBuffer += chunk.toString('utf8');
-                const lines = stdoutBuffer.split(/\r?\n/);
-                stdoutBuffer = lines.pop() ?? '';
-                for (const line of lines) {
-                    const entry = parseExtractedEntryLine(extractCmd.cmd, line);
-                    if (entry) {
-                        extractedCount += 1;
-                        lastEntry = entry;
-                        const now = Date.now();
-                        const isBoundary = extractedCount === 1 || (totalCount > 0 && extractedCount === totalCount);
-                        if (isBoundary || now - lastEmitMs >= 40) {
-                            sendProgress({
-                                path: filePath,
-                                archiveName,
-                                currentFile: entry,
-                                extractedCount,
-                                totalCount,
-                                percent: computePercent(extractedCount),
-                                done: false,
-                            });
-                            lastEmitMs = now;
-                        }
-                    }
-                }
-            });
-
-            child.stderr.on('data', (chunk: Buffer) => {
-                stderrBuffer += chunk.toString('utf8');
-            });
-
-            child.on('error', (err) => {
-                sendProgress({
-                    path: filePath,
-                    archiveName,
-                    currentFile: lastEntry,
-                    extractedCount,
-                    totalCount,
-                    percent: computePercent(extractedCount),
-                    done: true,
-                    error: err.message,
-                });
-                resolve(false);
-            });
-
-            child.on('close', (code) => {
-                if (stdoutBuffer.trim()) {
-                    const entry = parseExtractedEntryLine(extractCmd.cmd, stdoutBuffer);
-                    if (entry) {
-                        extractedCount += 1;
-                        lastEntry = entry;
-                    }
-                }
-                const success = code === 0;
-                sendProgress({
-                    path: filePath,
-                    archiveName,
-                    currentFile: lastEntry,
-                    extractedCount,
-                    totalCount,
-                    percent: success ? 100 : computePercent(extractedCount),
-                    done: true,
-                    ...(success ? {} : { error: stderrBuffer.trim() || `Extraction exited with status ${code}` }),
-                });
-                resolve(success);
-            });
+        child.stderr.on('data', (chunk: Buffer) => {
+            stderrBuffer += chunk.toString('utf8');
         });
-    } catch (e) {
-        console.error('Extract failed', e);
-        return false;
+
+        child.on('error', async (err: NodeJS.ErrnoException) => {
+            if (settled) return;
+            settled = true;
+
+            if (err.code === 'ENOENT') {
+                const osRelease = await readOsReleaseSafe();
+                const missingMsg = formatMissingToolError(osRelease, cmd);
+                sendProgress({
+                    path: targetPath,
+                    archiveName,
+                    currentFile: lastEntry,
+                    extractedCount: processedCount,
+                    totalCount,
+                    percent: computePercent(processedCount),
+                    done: true,
+                    error: missingMsg,
+                });
+                reject(new Error(missingMsg));
+                return;
+            }
+
+            sendProgress({
+                path: targetPath,
+                archiveName,
+                currentFile: lastEntry,
+                extractedCount: processedCount,
+                totalCount,
+                percent: computePercent(processedCount),
+                done: true,
+                error: err.message,
+            });
+            resolve(false);
+        });
+
+        child.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+
+            if (stdoutBuffer.trim()) {
+                if (detectPasswordError && isPasswordError(stdoutBuffer)) {
+                    sawPasswordError = true;
+                }
+                const entry = parseLine(stdoutBuffer);
+                if (entry) {
+                    processedCount += 1;
+                    lastEntry = entry;
+                }
+            }
+
+            const success = code === 0;
+            if (!success && detectPasswordError && (sawPasswordError || isPasswordError(stderrBuffer))) {
+                const pwErr = 'ARCHIVE_PASSWORD_REQUIRED: This archive is password-protected.';
+                sendProgress({
+                    path: targetPath,
+                    archiveName,
+                    currentFile: lastEntry,
+                    extractedCount: processedCount,
+                    totalCount,
+                    percent: computePercent(processedCount),
+                    done: true,
+                    error: pwErr,
+                });
+                reject(new Error(pwErr));
+                return;
+            }
+
+            sendProgress({
+                path: targetPath,
+                archiveName,
+                currentFile: lastEntry,
+                extractedCount: processedCount,
+                totalCount,
+                percent: success ? 100 : computePercent(processedCount),
+                done: true,
+                ...(success ? {} : { error: stderrBuffer.trim() || `${failurePrefix} exited with status ${code}` }),
+            });
+            resolve(success);
+        });
+    });
+}
+
+ipcMain.handle('fs:extract', async (_, filePath: string, destDir?: string) => {
+    const trimmedDest = destDir?.trim() ? destDir : undefined;
+    const extractCmd = getVerboseExtractCommand(filePath, trimmedDest) ?? getExtractCommand(filePath, trimmedDest);
+    if (!extractCmd) return false;
+
+    if (trimmedDest) {
+        await fs.mkdir(trimmedDest, { recursive: true });
     }
+
+    let totalCount = 0;
+    const listCmd = getListEntriesCommand(filePath);
+    if (listCmd) {
+        totalCount = await new Promise<number>((resolve) => {
+            const child = spawn(listCmd.cmd, listCmd.args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            let stdout = '';
+            child.stdout.on('data', (chunk: Buffer) => {
+                stdout += chunk.toString('utf8');
+            });
+            child.on('error', () => resolve(0));
+            child.on('close', (code) => {
+                if (code !== 0) {
+                    resolve(0);
+                    return;
+                }
+                resolve(stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).length);
+            });
+        });
+    }
+
+    return runArchiveProgressCommand({
+        channel: 'fs:extract-progress',
+        targetPath: filePath,
+        cmd: extractCmd.cmd,
+        args: extractCmd.args,
+        totalCount,
+        parseLine: (line) => parseExtractedEntryLine(extractCmd.cmd, line),
+        detectPasswordError: true,
+        failurePrefix: 'Extraction',
+    });
+});
+
+ipcMain.handle('fs:compress', async (_, paths: string[], destArchivePath: string, format: 'zip' | 'tar.gz') => {
+    if (!paths || paths.length === 0) {
+        throw new Error('No items specified for compression');
+    }
+
+    const cwd = path.dirname(paths[0]);
+    const relItems = paths.map((p) => path.basename(p));
+    if (relItems.some((item) => !item)) {
+        throw new Error('Invalid path for compression');
+    }
+
+    const resolvedDest = path.resolve(destArchivePath);
+    const compressCmd = getCompressCommand(resolvedDest, relItems, format);
+    if (!compressCmd) {
+        throw new Error(`Unsupported compression format: ${format}`);
+    }
+
+    await fs.mkdir(path.dirname(resolvedDest), { recursive: true });
+    const totalCount = await countItemsForCompression(paths);
+
+    return runArchiveProgressCommand({
+        channel: 'fs:compress-progress',
+        targetPath: resolvedDest,
+        cmd: compressCmd.cmd,
+        args: compressCmd.args,
+        totalCount,
+        parseLine: (line) => parseCompressedEntryLine(compressCmd.cmd, line),
+        cwd,
+        failurePrefix: 'Compression',
+    });
 });
 
 ipcMain.handle('fs:watch-start', (_, dir: string) => {
