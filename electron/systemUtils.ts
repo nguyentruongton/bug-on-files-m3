@@ -58,7 +58,7 @@ export function getListEntriesCommand(filePath: string): ExtractCommand | null {
     return { cmd: 'tar', args: ['-tf', filePath] };
   }
   if (ext === '.rar') {
-    return { cmd: 'unrar', args: ['lb', filePath] };
+    return { cmd: 'unrar', args: ['lb', '-p-', filePath] };
   }
   return null;
 }

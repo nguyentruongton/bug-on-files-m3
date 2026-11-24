@@ -73,7 +73,7 @@ describe('getListEntriesCommand', () => {
   test('builds list command for zip, tar, and rar', () => {
     expect(getListEntriesCommand('/tmp/a.zip')).toEqual({ cmd: 'unzip', args: ['-Z1', '/tmp/a.zip'] });
     expect(getListEntriesCommand('/tmp/a.tar.gz')).toEqual({ cmd: 'tar', args: ['-tf', '/tmp/a.tar.gz'] });
-    expect(getListEntriesCommand('/tmp/a.rar')).toEqual({ cmd: 'unrar', args: ['lb', '/tmp/a.rar'] });
+    expect(getListEntriesCommand('/tmp/a.rar')).toEqual({ cmd: 'unrar', args: ['lb', '-p-', '/tmp/a.rar'] });
     expect(getListEntriesCommand('/tmp/a.txt')).toBeNull();
   });
 });
