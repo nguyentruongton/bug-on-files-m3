@@ -59,9 +59,13 @@ pub fn resolve_icon_path(app_res_dir: Option<&Path>, icon_type: &str) -> Option<
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn extract_file(app: tauri::AppHandle, path: String) -> Result<bool, String> {
+pub async fn extract_file(
+    app: tauri::AppHandle,
+    path: String,
+    dest_dir: Option<String>,
+) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        crate::extract::extract_file_with_progress(&path, |payload| {
+        crate::extract::extract_file_with_progress_to(&path, dest_dir.as_deref(), |payload| {
             let _ = app.emit("fs:extract-progress", payload);
         })
     })

@@ -33,20 +33,56 @@ fn resolve_dir_and_ext(file: &str) -> Option<(String, String)> {
     Some((dir, ext))
 }
 
-pub fn extract_command(file: &str) -> Option<(String, Vec<String>)> {
-    let (dir, ext) = resolve_dir_and_ext(file)?;
+fn build_extract_command(
+    file: &str,
+    dest_dir: Option<&str>,
+    verbose: bool,
+) -> Option<(String, Vec<String>)> {
+    let (parent_dir, ext) = resolve_dir_and_ext(file)?;
+    let dir = dest_dir
+        .filter(|d| !d.trim().is_empty())
+        .map(|d| d.to_string())
+        .unwrap_or(parent_dir);
 
     match ext.as_str() {
         "zip" => Some((
             "unzip".to_string(),
             vec!["-o".to_string(), file.to_string(), "-d".to_string(), dir],
         )),
-        "tar" | "gz" | "xz" | "tgz" => Some((
-            "tar".to_string(),
-            vec!["-xf".to_string(), file.to_string(), "-C".to_string(), dir],
-        )),
+        "tar" | "gz" | "xz" | "tgz" => {
+            let flag = if verbose { "-xvf" } else { "-xf" };
+            Some((
+                "tar".to_string(),
+                vec![flag.to_string(), file.to_string(), "-C".to_string(), dir],
+            ))
+        }
+        "rar" => {
+            let rar_dir = if dir.ends_with('/') {
+                dir
+            } else {
+                format!("{}/", dir)
+            };
+            Some((
+                "unrar".to_string(),
+                vec![
+                    "x".to_string(),
+                    "-o+".to_string(),
+                    "-p-".to_string(),
+                    file.to_string(),
+                    rar_dir,
+                ],
+            ))
+        }
         _ => None,
     }
+}
+
+pub fn extract_command_to(file: &str, dest_dir: Option<&str>) -> Option<(String, Vec<String>)> {
+    build_extract_command(file, dest_dir, false)
+}
+
+pub fn extract_command(file: &str) -> Option<(String, Vec<String>)> {
+    extract_command_to(file, None)
 }
 
 pub fn list_entries_command(file: &str) -> Option<(String, Vec<String>)> {
@@ -57,23 +93,44 @@ pub fn list_entries_command(file: &str) -> Option<(String, Vec<String>)> {
         "tar" | "gz" | "xz" | "tgz" => {
             Some(("tar".to_string(), vec!["-tf".to_string(), file.to_string()]))
         }
+        "rar" => Some(("unrar".to_string(), vec!["lb".to_string(), file.to_string()])),
         _ => None,
     }
 }
 
-pub fn extract_verbose_command(file: &str) -> Option<(String, Vec<String>)> {
-    let (dir, ext) = resolve_dir_and_ext(file)?;
+pub fn extract_verbose_command_to(
+    file: &str,
+    dest_dir: Option<&str>,
+) -> Option<(String, Vec<String>)> {
+    build_extract_command(file, dest_dir, true)
+}
 
-    match ext.as_str() {
-        "zip" => Some((
-            "unzip".to_string(),
-            vec!["-o".to_string(), file.to_string(), "-d".to_string(), dir],
-        )),
-        "tar" | "gz" | "xz" | "tgz" => Some((
-            "tar".to_string(),
-            vec!["-xvf".to_string(), file.to_string(), "-C".to_string(), dir],
-        )),
-        _ => None,
+pub fn extract_verbose_command(file: &str) -> Option<(String, Vec<String>)> {
+    extract_verbose_command_to(file, None)
+}
+
+pub fn is_password_error(output: &str) -> bool {
+    let lower = output.to_ascii_lowercase();
+    lower.contains("specified password is incorrect")
+        || lower.contains("enter password (will not be echoed)")
+        || lower.contains("incorrect password")
+        || lower.contains("wrong password")
+        || lower.contains("password is required")
+}
+
+fn format_extract_failure_message(
+    status_display: &str,
+    stderr_text: &str,
+    stdout_had_password_error: bool,
+) -> String {
+    if stdout_had_password_error || is_password_error(stderr_text) {
+        return "ARCHIVE_PASSWORD_REQUIRED: This archive is password-protected.".to_string();
+    }
+    let trimmed_err = stderr_text.trim();
+    if trimmed_err.is_empty() {
+        format!("Extraction exited with status {}", status_display)
+    } else {
+        trimmed_err.to_string()
     }
 }
 
@@ -98,6 +155,21 @@ pub fn parse_extracted_entry_line(cmd: &str, line: &str) -> Option<String> {
             None
         }
         "tar" => Some(trimmed.to_string()),
+        "unrar" => {
+            for prefix in ["Extracting ", "Creating "] {
+                if let Some(rest) = trimmed.strip_prefix(prefix) {
+                    if let Some(before_ok) = rest.strip_suffix("OK") {
+                        if before_ok.chars().last().is_some_and(|c| c.is_whitespace()) {
+                            let entry = before_ok.trim();
+                            if !entry.is_empty() {
+                                return Some(entry.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -114,7 +186,11 @@ fn count_archive_entries(file: &str) -> usize {
     let Some((list_cmd, list_args)) = list_entries_command(file) else {
         return 0;
     };
-    let Ok(output) = Command::new(&list_cmd).args(&list_args).output() else {
+    let Ok(output) = Command::new(&list_cmd)
+        .args(&list_args)
+        .stdin(Stdio::null())
+        .output()
+    else {
         return 0;
     };
     if !output.status.success() {
@@ -126,16 +202,31 @@ fn count_archive_entries(file: &str) -> usize {
         .count()
 }
 
+pub fn extract_file_with_progress_to<F>(
+    file: &str,
+    dest_dir: Option<&str>,
+    on_progress: F,
+) -> Result<bool, String>
+where
+    F: FnMut(ExtractProgressPayload),
+{
+    let Some((cmd, args)) = extract_verbose_command_to(file, dest_dir) else {
+        return Ok(false);
+    };
+
+    if let Some(dir) = dest_dir.filter(|d| !d.trim().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
+    }
+
+    let total_count = count_archive_entries(file);
+    extract_with_command(file, &cmd, &args, total_count, on_progress)
+}
+
 pub fn extract_file_with_progress<F>(file: &str, on_progress: F) -> Result<bool, String>
 where
     F: FnMut(ExtractProgressPayload),
 {
-    let Some((cmd, args)) = extract_verbose_command(file) else {
-        return Ok(false);
-    };
-
-    let total_count = count_archive_entries(file);
-    extract_with_command(file, &cmd, &args, total_count, on_progress)
+    extract_file_with_progress_to(file, None, on_progress)
 }
 
 pub fn extract_with_command<F>(
@@ -167,6 +258,7 @@ where
 
     let mut child = match Command::new(cmd)
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -199,6 +291,7 @@ where
     let mut extracted_count: usize = 0;
     let mut last_entry = String::new();
     let mut last_emit = Instant::now();
+    let mut stdout_had_password_error = false;
 
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
@@ -206,6 +299,9 @@ where
             let Ok(line) = line_res else {
                 continue;
             };
+            if is_password_error(&line) {
+                stdout_had_password_error = true;
+            }
             if let Some(entry) = parse_extracted_entry_line(cmd, &line) {
                 extracted_count += 1;
                 last_entry = entry.clone();
@@ -262,12 +358,11 @@ where
         });
         Ok(true)
     } else {
-        let trimmed_err = stderr_text.trim().to_string();
-        let err_msg = if trimmed_err.is_empty() {
-            format!("Extraction exited with status {}", status)
-        } else {
-            trimmed_err
-        };
+        let err_msg = format_extract_failure_message(
+            &status.to_string(),
+            &stderr_text,
+            stdout_had_password_error,
+        );
         on_progress(ExtractProgressPayload {
             path: file.to_string(),
             archive_name,
@@ -309,8 +404,138 @@ mod tests {
     #[test]
     fn test_extract_command_unsupported_extensions() {
         assert_eq!(extract_command("/home/user/notes.txt"), None);
-        assert_eq!(extract_command("/home/user/archive.rar"), None);
         assert_eq!(extract_command("/home/user/no_extension"), None);
+    }
+
+    #[test]
+    fn test_extract_command_rar_with_shell_characters() {
+        let file = "/tmp/my \"archive\" $(whoami).rar";
+        let (cmd, args) =
+            extract_command_to(file, None).expect("should return extract command for rar");
+        assert_eq!(cmd, "unrar");
+        assert_eq!(args, vec!["x", "-o+", "-p-", file, "/tmp/"]);
+    }
+
+    #[test]
+    fn test_extract_command_custom_dest_dir() {
+        let (zip_cmd, zip_args) =
+            extract_command_to("/tmp/a.zip", Some("/tmp/out")).expect("zip with dest_dir");
+        assert_eq!(zip_cmd, "unzip");
+        assert_eq!(zip_args, vec!["-o", "/tmp/a.zip", "-d", "/tmp/out"]);
+
+        let (rar_cmd, rar_args) =
+            extract_command_to("/tmp/a.rar", Some("/tmp/out")).expect("rar with dest_dir");
+        assert_eq!(rar_cmd, "unrar");
+        assert_eq!(
+            rar_args,
+            vec!["x", "-o+", "-p-", "/tmp/a.rar", "/tmp/out/"]
+        );
+
+        let (rar_slash_cmd, rar_slash_args) =
+            extract_command_to("/tmp/a.RAR", Some("/tmp/out/")).expect("RAR with trailing slash");
+        assert_eq!(rar_slash_cmd, "unrar");
+        assert_eq!(
+            rar_slash_args,
+            vec!["x", "-o+", "-p-", "/tmp/a.RAR", "/tmp/out/"]
+        );
+
+        let (tar_cmd, tar_args) =
+            extract_verbose_command_to("/tmp/a.tar", Some("/tmp/out")).expect("tar verbose dest");
+        assert_eq!(tar_cmd, "tar");
+        assert_eq!(tar_args, vec!["-xvf", "/tmp/a.tar", "-C", "/tmp/out"]);
+    }
+
+    #[test]
+    fn test_format_extract_failure_message_password_required() {
+        assert_eq!(
+            format_extract_failure_message("exit status: 11", "The specified password is incorrect.\n", false),
+            "ARCHIVE_PASSWORD_REQUIRED: This archive is password-protected."
+        );
+        assert_eq!(
+            format_extract_failure_message("exit status: 11", "", true),
+            "ARCHIVE_PASSWORD_REQUIRED: This archive is password-protected."
+        );
+        assert_eq!(
+            format_extract_failure_message("exit status: 2", "CRC failed", false),
+            "CRC failed"
+        );
+        assert_eq!(
+            format_extract_failure_message("exit status: 2", "   ", false),
+            "Extraction exited with status exit status: 2"
+        );
+    }
+
+    #[test]
+    fn test_list_entries_command_rar() {
+        assert_eq!(
+            list_entries_command("/tmp/a.rar"),
+            Some((
+                "unrar".to_string(),
+                vec!["lb".to_string(), "/tmp/a.rar".to_string()]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_extracted_entry_line_unrar() {
+        assert_eq!(
+            parse_extracted_entry_line("unrar", "Extracting  folder/file.txt     OK"),
+            Some("folder/file.txt".to_string())
+        );
+        assert_eq!(
+            parse_extracted_entry_line("unrar", "Creating    folder                    OK"),
+            Some("folder".to_string())
+        );
+        assert_eq!(
+            parse_extracted_entry_line("unrar", "UNRAR 7.00 freeware"),
+            None
+        );
+        assert_eq!(
+            parse_extracted_entry_line("unrar", "Extracting from /tmp/a.rar"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_is_password_error_detects_encrypted_rar() {
+        assert!(is_password_error("The specified password is incorrect."));
+        assert!(is_password_error("Enter password (will not be echoed)"));
+        assert!(!is_password_error("Extracting  folder/file.txt     OK"));
+    }
+
+    #[test]
+    fn test_extract_file_with_progress_to_creates_dest_dir() {
+        let dir = tempdir().expect("create tempdir");
+        let src_file = dir.path().join("hello.txt");
+        std::fs::write(&src_file, "hello dest").expect("write test file");
+
+        let tar_file = dir.path().join("archive.tar");
+        let status = std::process::Command::new("tar")
+            .arg("-cf")
+            .arg(&tar_file)
+            .arg("-C")
+            .arg(dir.path())
+            .arg("hello.txt")
+            .status()
+            .expect("tar create");
+        assert!(status.success());
+
+        let nested_dest = dir.path().join("sub").join("out");
+        assert!(!nested_dest.exists());
+
+        let mut events = Vec::new();
+        let ok = extract_file_with_progress_to(
+            tar_file.to_str().unwrap(),
+            Some(nested_dest.to_str().unwrap()),
+            |ev| events.push(ev),
+        )
+        .expect("extract to custom dest_dir");
+        assert!(ok);
+        assert!(nested_dest.join("hello.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(nested_dest.join("hello.txt")).unwrap(),
+            "hello dest"
+        );
     }
 
     #[test]
