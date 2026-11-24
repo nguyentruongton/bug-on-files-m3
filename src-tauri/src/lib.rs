@@ -1,3 +1,4 @@
+pub mod archive_tools;
 pub mod commands;
 pub mod desktop_entry;
 pub mod extract;
@@ -143,6 +144,7 @@ pub fn run() {
             commands::fs::watch_start,
             commands::fs::watch_stop,
             commands::app::extract_file,
+            commands::app::compress_files,
             commands::app::open_path,
             commands::app::open_file_dialog,
             commands::app::open_directory_dialog,

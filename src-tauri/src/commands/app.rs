@@ -74,6 +74,27 @@ pub async fn extract_file(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn compress_files(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+    dest_archive_path: String,
+    format: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::archive_tools::compress_files_with_progress(
+            &paths,
+            &dest_archive_path,
+            &format,
+            |payload| {
+                let _ = app.emit("fs:compress-progress", payload);
+            },
+        )
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn open_path(app: tauri::AppHandle, path: String) -> String {
     match app.opener().open_path(path, None::<&str>) {
         Ok(_) => String::new(),

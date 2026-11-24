@@ -1,7 +1,5 @@
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -174,14 +172,6 @@ pub fn parse_extracted_entry_line(cmd: &str, line: &str) -> Option<String> {
     }
 }
 
-fn compute_percent(extracted: usize, total: usize) -> Option<f64> {
-    if total > 0 {
-        Some(((extracted as f64 / total as f64) * 100.0).min(100.0))
-    } else {
-        None
-    }
-}
-
 fn count_archive_entries(file: &str) -> usize {
     let Some((list_cmd, list_args)) = list_entries_command(file) else {
         return 0;
@@ -234,147 +224,22 @@ pub fn extract_with_command<F>(
     cmd: &str,
     args: &[String],
     total_count: usize,
-    mut on_progress: F,
+    on_progress: F,
 ) -> Result<bool, String>
 where
     F: FnMut(ExtractProgressPayload),
 {
-    let archive_name = Path::new(file)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(file)
-        .to_string();
-
-    on_progress(ExtractProgressPayload {
-        path: file.to_string(),
-        archive_name: archive_name.clone(),
-        current_file: String::new(),
-        extracted_count: 0,
+    crate::archive_tools::run_progress_command(
+        file,
+        cmd,
+        args,
+        None,
         total_count,
-        percent: compute_percent(0, total_count),
-        done: false,
-        error: None,
-    });
-
-    let mut child = match Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => {
-            let err_msg = err.to_string();
-            on_progress(ExtractProgressPayload {
-                path: file.to_string(),
-                archive_name,
-                current_file: String::new(),
-                extracted_count: 0,
-                total_count,
-                percent: compute_percent(0, total_count),
-                done: true,
-                error: Some(err_msg.clone()),
-            });
-            return Err(err_msg);
-        }
-    };
-
-    let stderr_handle = child.stderr.take().map(|mut stderr| {
-        std::thread::spawn(move || {
-            let mut buf = String::new();
-            let _ = stderr.read_to_string(&mut buf);
-            buf
-        })
-    });
-
-    let mut extracted_count: usize = 0;
-    let mut last_entry = String::new();
-    let mut last_emit = Instant::now();
-    let mut stdout_had_password_error = false;
-
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line_res in reader.lines() {
-            let Ok(line) = line_res else {
-                continue;
-            };
-            if is_password_error(&line) {
-                stdout_had_password_error = true;
-            }
-            if let Some(entry) = parse_extracted_entry_line(cmd, &line) {
-                extracted_count += 1;
-                last_entry = entry.clone();
-                let is_boundary = extracted_count == 1
-                    || (total_count > 0 && extracted_count == total_count);
-                if is_boundary || last_emit.elapsed() >= Duration::from_millis(40) {
-                    on_progress(ExtractProgressPayload {
-                        path: file.to_string(),
-                        archive_name: archive_name.clone(),
-                        current_file: entry,
-                        extracted_count,
-                        total_count,
-                        percent: compute_percent(extracted_count, total_count),
-                        done: false,
-                        error: None,
-                    });
-                    last_emit = Instant::now();
-                }
-            }
-        }
-    }
-
-    let status = match child.wait() {
-        Ok(status) => status,
-        Err(err) => {
-            let err_msg = err.to_string();
-            on_progress(ExtractProgressPayload {
-                path: file.to_string(),
-                archive_name,
-                current_file: last_entry,
-                extracted_count,
-                total_count,
-                percent: compute_percent(extracted_count, total_count),
-                done: true,
-                error: Some(err_msg.clone()),
-            });
-            return Err(err_msg);
-        }
-    };
-    let stderr_text = stderr_handle
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
-
-    if status.success() {
-        on_progress(ExtractProgressPayload {
-            path: file.to_string(),
-            archive_name,
-            current_file: last_entry,
-            extracted_count,
-            total_count,
-            percent: Some(100.0),
-            done: true,
-            error: None,
-        });
-        Ok(true)
-    } else {
-        let err_msg = format_extract_failure_message(
-            &status.to_string(),
-            &stderr_text,
-            stdout_had_password_error,
-        );
-        on_progress(ExtractProgressPayload {
-            path: file.to_string(),
-            archive_name,
-            current_file: last_entry,
-            extracted_count,
-            total_count,
-            percent: compute_percent(extracted_count, total_count),
-            done: true,
-            error: Some(err_msg),
-        });
-        Ok(false)
-    }
+        |line| parse_extracted_entry_line(cmd, line),
+        is_password_error,
+        format_extract_failure_message,
+        on_progress,
+    )
 }
 
 #[cfg(test)]
@@ -630,9 +495,21 @@ mod tests {
             3,
             |ev| events.push(ev),
         );
-        assert!(res.is_err());
+        let err_msg = res.expect_err("nonexistent binary should error");
+        assert!(
+            err_msg.starts_with("MISSING_TOOL:"),
+            "expected MISSING_TOOL: prefix, got: {}",
+            err_msg
+        );
+        let payload: serde_json::Value =
+            serde_json::from_str(err_msg.strip_prefix("MISSING_TOOL:").unwrap())
+                .expect("valid MISSING_TOOL JSON");
+        assert_eq!(payload["tool"], "__definitely_nonexistent_extract_binary_xyz__");
+        assert!(payload.get("distroName").is_some());
+        assert!(payload.get("installCommand").is_some());
+
         let last = events.last().expect("done event on spawn failure");
         assert!(last.done);
-        assert!(last.error.is_some());
+        assert_eq!(last.error.as_deref(), Some(err_msg.as_str()));
     }
 }
