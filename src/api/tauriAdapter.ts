@@ -108,8 +108,13 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
             invoke(COMMAND_MAP.createDirectory, { path }) as Promise<boolean>,
         openPath: (path: string) =>
             invoke(COMMAND_MAP.openPath, { path }) as Promise<string>,
-        extractFile: (path: string) =>
-            invoke(COMMAND_MAP.extractFile, { path }) as Promise<boolean>,
+        extractFile: (path: string, destDir?: string) =>
+            invoke(
+                COMMAND_MAP.extractFile,
+                destDir !== undefined ? { path, destDir } : { path }
+            ) as Promise<boolean>,
+        compressFiles: (paths: string[], destArchivePath: string, format: 'zip' | 'tar.gz') =>
+            invoke(COMMAND_MAP.compressFiles, { paths, destArchivePath, format }) as Promise<boolean>,
         getApps: () =>
             invoke(COMMAND_MAP.getApps) as Promise<
                 { name: string; icon: string; exec: string }[]
@@ -170,6 +175,11 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
         onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => {
             return wrapListener(
                 listen('fs:extract-progress', (payload) => cb(payload as ExtractProgressEvent))
+            );
+        },
+        onCompressProgress: (cb: (e: ExtractProgressEvent) => void) => {
+            return wrapListener(
+                listen('fs:compress-progress', (payload) => cb(payload as ExtractProgressEvent))
             );
         },
         getVideoMetadata: (path: string) =>

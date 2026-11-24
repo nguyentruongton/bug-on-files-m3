@@ -14,6 +14,8 @@ describe('tauriAdapter', () => {
         }
         expect(typeof adapter.startDrag).toBe('function');
         expect(typeof adapter.onWatchEvent).toBe('function');
+        expect(typeof adapter.onExtractProgress).toBe('function');
+        expect(typeof adapter.onCompressProgress).toBe('function');
         expect(typeof adapter.ptyOnData).toBe('function');
         expect(typeof adapter.ptyOnExit).toBe('function');
     });
@@ -304,5 +306,74 @@ describe('tauriAdapter', () => {
 
         await adapter.quitApp();
         expect(calls).toEqual([{ cmd: 'quit_app', args: undefined }]);
+    });
+
+    test('extractFile calls extract_file with { path, destDir } when destDir is provided and { path } otherwise', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+            return true;
+        };
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        const okWithDest = await adapter.extractFile('/a.rar', '/out');
+        const okWithoutDest = await adapter.extractFile('/b.zip');
+
+        expect(okWithDest).toBe(true);
+        expect(okWithoutDest).toBe(true);
+        expect(calls).toEqual([
+            { cmd: 'extract_file', args: { path: '/a.rar', destDir: '/out' } },
+            { cmd: 'extract_file', args: { path: '/b.zip' } },
+        ]);
+    });
+
+    test('compressFiles calls compress_files with { paths, destArchivePath, format }', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+            return true;
+        };
+        const listen = async () => () => {};
+        const adapter = createTauriAdapter(invoke, listen);
+
+        const ok = await adapter.compressFiles(['/a', '/b'], '/out.zip', 'zip');
+        expect(ok).toBe(true);
+        expect(calls).toEqual([
+            {
+                cmd: 'compress_files',
+                args: { paths: ['/a', '/b'], destArchivePath: '/out.zip', format: 'zip' },
+            },
+        ]);
+    });
+
+    test('onCompressProgress subscribes to fs:compress-progress and forwards payload', async () => {
+        let subscribedEvent = '';
+        let received: unknown = null;
+        let registeredCb: ((payload: unknown) => void) | null = null;
+
+        const listen = async (event: string, cb: (payload: unknown) => void) => {
+            subscribedEvent = event;
+            registeredCb = cb;
+            return () => {};
+        };
+        const adapter = createTauriAdapter(async () => {}, listen);
+
+        adapter.onCompressProgress((e) => {
+            received = e;
+        });
+
+        expect(subscribedEvent).toBe('fs:compress-progress');
+        const sample = {
+            path: '/out.zip',
+            archiveName: 'out.zip',
+            currentFile: 'a.txt',
+            extractedCount: 1,
+            totalCount: 2,
+            percent: 50,
+            done: false,
+        };
+        registeredCb!(sample);
+        expect(received).toEqual(sample);
     });
 });

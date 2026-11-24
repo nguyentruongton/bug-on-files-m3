@@ -54,7 +54,8 @@ export interface IApi {
     renameFile: (oldPath: string, newPath: string) => Promise<boolean>;
     createDirectory: (path: string) => Promise<boolean>;
     openPath: (path: string) => Promise<string>;
-    extractFile: (path: string) => Promise<boolean>;
+    extractFile: (path: string, destDir?: string) => Promise<boolean>;
+    compressFiles: (paths: string[], destArchivePath: string, format: 'zip' | 'tar.gz') => Promise<boolean>;
     getApps: () => Promise<{ name: string; icon: string; exec: string; }[]>;
     openWith: (exec: string, path: string) => Promise<boolean>;
     openFileDialog: () => Promise<string | null>;
@@ -75,6 +76,7 @@ export interface IApi {
     watchStop: (id: number) => Promise<void>;
     onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
     onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
+    onCompressProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     getVideoMetadata: (path: string) => Promise<VideoMetadata | null>;
 
     // PTY
