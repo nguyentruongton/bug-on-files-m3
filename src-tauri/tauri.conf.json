@@ -17,20 +17,10 @@
         "title": "Bug On Files M3",
         "width": 1100,
         "height": 720,
+        "minWidth": 720,
+        "minHeight": 500,
         "decorations": true,
-        "visible": false
-      },
-      {
-        "label": "splashscreen",
-        "url": "/splash.html",
-        "width": 260,
-        "height": 260,
-        "decorations": false,
-        "transparent": true,
-        "resizable": false,
-        "center": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true
+        "visible": true
       }
     ],
     "security": {

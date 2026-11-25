@@ -159,6 +159,11 @@ function AppContent() {
   const currentPath = tabs.find((t) => t.id === activeTabId)?.path || '';
 
   useEffect(() => {
+    const splashEl = document.getElementById('app-splash');
+    if (splashEl) {
+      splashEl.classList.add('is-hidden');
+      window.setTimeout(() => splashEl.remove(), 220);
+    }
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       api.closeSplashscreen().catch(() => {});
     }

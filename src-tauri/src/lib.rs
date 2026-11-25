@@ -225,6 +225,31 @@ mod tests {
     }
 
     #[test]
+    fn test_tauri_conf_main_window_geometry_and_no_tiny_splash_toplevel() {
+        let raw = include_str!("../tauri.conf.json");
+        let cfg: serde_json::Value = serde_json::from_str(raw).expect("valid tauri.conf.json");
+        let windows = cfg["app"]["windows"]
+            .as_array()
+            .expect("app.windows must be an array");
+
+        assert!(
+            !windows.iter().any(|w| w["label"].as_str() == Some("splashscreen")),
+            "separate splashscreen toplevel window must not be configured (poisons per-class WM geometry on Wayland/Hyprland)"
+        );
+
+        let main = windows
+            .iter()
+            .find(|w| w["label"].as_str() == Some("main"))
+            .expect("main window must exist");
+
+        assert_ne!(main["visible"].as_bool(), Some(false), "main window should start visible");
+        assert!(main["width"].as_u64().unwrap_or(0) >= 1000);
+        assert!(main["height"].as_u64().unwrap_or(0) >= 640);
+        assert!(main["minWidth"].as_u64().unwrap_or(0) >= 640);
+        assert!(main["minHeight"].as_u64().unwrap_or(0) >= 480);
+    }
+
+    #[test]
     fn test_tauri_conf_main_binary_name_matches_desktop_entry() {
         let raw = include_str!("../tauri.conf.json");
         let cfg: serde_json::Value = serde_json::from_str(raw).expect("valid tauri.conf.json");

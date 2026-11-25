@@ -5,8 +5,37 @@
     <link rel="icon" type="image/svg+xml" href="/bug-on-files-m3.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bug On Files M3</title>
+    <style>
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: grid;
+        place-items: center;
+        background: #f8f9fc;
+        transition: opacity 180ms ease-out;
+        pointer-events: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        #app-splash {
+          background: #111318;
+        }
+      }
+      #app-splash.is-hidden {
+        opacity: 0;
+      }
+      #app-splash img {
+        width: 144px;
+        height: 144px;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="app-splash" aria-hidden="true">
+      <img src="/bug-on-files-m3.svg" alt="" draggable="false" />
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
