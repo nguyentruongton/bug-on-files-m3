@@ -77,6 +77,18 @@ jobs:
       - name: Run Rust unit tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Build native ELF and audit shared-library linkage before publish
+        run: |
+          bun run tauri:build:bin
+          LDD_OUT=$(ldd ./src-tauri/target/release/bug-on-files-m3)
+          echo "$LDD_OUT"
+          if echo "$LDD_OUT" | grep -q "not found"; then
+            echo "ERROR: Missing shared library in release ELF binary"
+            exit 1
+          fi
+          echo "$LDD_OUT" | grep -q "libwebkit2gtk-4.1"
+          echo "$LDD_OUT" | grep -q "libgtk-3"
+
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -87,6 +99,3 @@ jobs:
           releaseBody: 'Pre-built Linux packages (`.AppImage`, `.deb`) for **Bug On Files M3** (*Bất Ổn Files M3*).'
           releaseDraft: false
           prerelease: false
-
-      - name: Audit dynamically linked libraries of release ELF binary
-        run: ldd ./src-tauri/target/release/bug-on-files-m3

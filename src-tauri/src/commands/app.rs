@@ -39,6 +39,10 @@ pub fn resolve_startup_path(args: &[String], exe: Option<&str>) -> Option<String
             p.to_path_buf()
         };
 
+        if candidate.to_str().is_none_or(|s| s.contains('\0')) {
+            continue;
+        }
+
         if let Ok(meta) = std::fs::metadata(&candidate) {
             if meta.is_dir() {
                 return candidate.to_str().map(|s| s.to_string());
@@ -320,12 +324,18 @@ mod tests {
         ];
         assert_eq!(resolve_startup_path(&args_remote, None), None);
 
-        // NUL byte must be rejected
+        // NUL byte (raw and percent-encoded %00 in file:// URI) must be rejected
         let args_nul = vec![
             "bug-on-files-m3".to_string(),
             format!("{}\0evil", dir.path().to_str().unwrap()),
         ];
         assert_eq!(resolve_startup_path(&args_nul, None), None);
+
+        let args_encoded_nul = vec![
+            "bug-on-files-m3".to_string(),
+            format!("file://{}/bad%00evil", dir.path().to_str().unwrap()),
+        ];
+        assert_eq!(resolve_startup_path(&args_encoded_nul, None), None);
 
         // Trailing flag is skipped while preceding valid path is accepted
         let args_with_flag = vec![

@@ -185,7 +185,7 @@ describe('calculateVirtualRange', () => {
 
     test('parameterizes gapPx for Grid View (12px gap) and reconstructs totalHeight cleanly', () => {
         const gapPx = 12;
-        const rowHeightWithGap = 156 + gapPx; // 64 + 92 + 12 = 168
+        const rowHeightWithGap = 158 + gapPx; // 64 + 94 + 12 = 170
         const heights = Array.from({ length: 100 }, () => rowHeightWithGap);
         const offsets = new Array<number>(heights.length + 1);
         offsets[0] = 0;
@@ -233,8 +233,8 @@ describe('Grid View virtualization helpers', () => {
 
         const flat = buildVirtualGridEntries(files, false, 3, 64, 12);
         expect(flat.entries.length).toBe(2);
-        expect(flat.entries[0]).toMatchObject({ kind: 'grid-row', startIndex: 0, height: 64 + 92 + 12 });
-        expect(flat.entries[1]).toMatchObject({ kind: 'grid-row', startIndex: 3, height: 64 + 92 + 12 });
+        expect(flat.entries[0]).toMatchObject({ kind: 'grid-row', startIndex: 0, height: 64 + 94 + 12 });
+        expect(flat.entries[1]).toMatchObject({ kind: 'grid-row', startIndex: 3, height: 64 + 94 + 12 });
         expect(flat.fileIndexToRowIndex).toEqual([0, 0, 0, 1, 1]);
 
         const grouped = buildVirtualGridEntries(files, true, 3, 64, 12);

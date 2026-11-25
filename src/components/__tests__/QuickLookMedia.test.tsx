@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { IFile } from '../../types/files';
 import type { VideoMetadata } from '../../api/types';
+import { QuickLook } from '../QuickLook';
 import {
-    QuickLook,
     getInitialImageStage,
     getNextImageStage,
     resolveEffectiveImageStage,
     formatVideoMetadataSummary,
     resolveEffectiveVideoMetadata,
-} from '../QuickLook';
+} from '../../utils/quickLook';
 
 function makeFile(name: string, overrides: Partial<IFile> = {}): IFile {
     return {

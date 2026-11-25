@@ -64,6 +64,7 @@ Comment=Bug On Files M3 - Material 3 Expressive File Explorer
 Terminal=false
 StartupWMClass=bug-on-files-m3
 EOF
+chmod 644 /usr/local/share/applications/bug-on-files-m3.desktop
 echo "Desktop entry created at /usr/local/share/applications/bug-on-files-m3.desktop"
 
 # Clean up legacy /opt AppImage installation if present and not a symlink

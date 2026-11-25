@@ -853,4 +853,41 @@ mod tests {
         assert!(f2.exists());
         assert!(f3.exists());
     }
+
+    #[test]
+    fn decode_raster_image_pure_rejects_dimensions_above_8192() {
+        fn crc32_ieee(bytes: &[u8]) -> u32 {
+            let mut crc: u32 = 0xFFFF_FFFF;
+            for &b in bytes {
+                crc ^= u32::from(b);
+                for _ in 0..8 {
+                    let mask = (crc & 1).wrapping_neg();
+                    crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+                }
+            }
+            !crc
+        }
+
+        // Minimal PNG signature + IHDR chunk declaring 9000x1 RGBA image (> 8192px limit)
+        let mut png = vec![137, 80, 78, 71, 13, 10, 26, 10];
+        let mut ihdr = Vec::with_capacity(17);
+        ihdr.extend_from_slice(b"IHDR");
+        ihdr.extend_from_slice(&9000u32.to_be_bytes()); // width = 9000
+        ihdr.extend_from_slice(&1u32.to_be_bytes()); // height = 1
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA
+        png.extend_from_slice(&13u32.to_be_bytes());
+        png.extend_from_slice(&ihdr);
+        png.extend_from_slice(&crc32_ieee(&ihdr).to_be_bytes());
+
+        let dir = tempfile::tempdir().unwrap();
+        let oversized = dir.path().join("oversized.png");
+        std::fs::write(&oversized, &png).unwrap();
+
+        let err = decode_raster_image_pure(&oversized).unwrap_err();
+        assert!(
+            matches!(err, ThumbnailError::Decode(_)),
+            "expected Decode error for >8192px image, got {:?}",
+            err
+        );
+    }
 }

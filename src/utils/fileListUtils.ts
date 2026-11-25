@@ -87,7 +87,7 @@ export const GRID_HEADER_HEIGHT = 28;
 export const GRID_GAP_PX = 12;
 
 export function getGridCardHeight(iconSize: number): number {
-    return iconSize + 92;
+    return iconSize + 94;
 }
 
 export function computeGridColumns(

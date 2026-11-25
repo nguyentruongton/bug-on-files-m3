@@ -6,14 +6,18 @@ import type { IFile } from '../types/files';
 import type { TextPreview, VideoMetadata } from '../api/types';
 import { api } from '../api';
 import {
-    formatVideoDuration,
+    formatVideoMetadataSummary,
     getArrowStepDelta,
+    getInitialImageStage,
+    getNextImageStage,
     getPreviewKind,
-    shouldPreferPreviewUrl,
+    resolveEffectiveImageStage,
+    resolveEffectiveVideoMetadata,
     stepIndex,
     toMediaUrl,
     toPreviewUrl,
     toThumbnailUrl,
+    type ImageStage,
     type PreviewKind,
 } from '../utils/quickLook';
 import { formatFileDate, formatFileSize, getFileIconInfo } from '../utils/fileUtils';
@@ -22,61 +26,6 @@ import { FileSystemService } from '../services/FileSystemService';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { Button } from './Button';
-
-export type ImageStage = 'raw' | 'preview' | 'error';
-
-export function getInitialImageStage(filename: string): 'raw' | 'preview' {
-    return shouldPreferPreviewUrl(filename) ? 'preview' : 'raw';
-}
-
-export function getNextImageStage(stage: ImageStage): ImageStage {
-    if (stage === 'raw') return 'preview';
-    return 'error';
-}
-
-export function resolveEffectiveImageStage(
-    imageStageState: { path: string; stage: ImageStage } | null,
-    file: Pick<IFile, 'path' | 'name'>
-): ImageStage {
-    if (imageStageState?.path === file.path) {
-        return imageStageState.stage;
-    }
-    return getInitialImageStage(file.name);
-}
-
-export interface VideoMetadataSummary {
-    resolution: string | null;
-    duration: string | null;
-    codec: string | null;
-    size: string | null;
-    pills: string[];
-}
-
-export function formatVideoMetadataSummary(
-    meta: VideoMetadata | null | undefined,
-    fileSize?: number | null
-): VideoMetadataSummary {
-    const resolution =
-        meta?.width && meta?.height ? `${meta.width}×${meta.height}` : null;
-    const duration = formatVideoDuration(meta?.durationSeconds);
-    const codec = meta?.codec ? meta.codec.toUpperCase() : null;
-    const size = fileSize !== undefined && fileSize !== null ? formatFileSize(fileSize) : null;
-
-    const pills: string[] = [];
-    if (resolution) pills.push(resolution);
-    if (duration) pills.push(duration);
-    if (codec) pills.push(codec);
-    if (size) pills.push(size);
-
-    return { resolution, duration, codec, size, pills };
-}
-
-export function resolveEffectiveVideoMetadata(
-    videoMeta: { path: string; data: VideoMetadata | null } | null,
-    currentPath: string
-): VideoMetadata | null {
-    return videoMeta?.path === currentPath ? videoMeta.data : null;
-}
 
 export interface QuickLookProps {
     file: IFile;
@@ -102,7 +51,6 @@ export const QuickLook: React.FC<QuickLookProps> = ({
     onClose,
     onNavigate,
     onOpen,
-    onSelectFile: _onSelectFile,
     onOpenExternal,
     initialImageStageState = null,
     initialVideoErrorPath = null,
