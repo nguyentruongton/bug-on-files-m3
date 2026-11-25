@@ -236,6 +236,10 @@ mod tests {
 
         let install_sh = include_str!("../../install.sh");
         assert!(
+            install_sh.contains("BINARY_ID=\"bug-on-files-m3\""),
+            "install.sh must set BINARY_ID=\"bug-on-files-m3\""
+        );
+        assert!(
             install_sh.contains("StartupWMClass=bug-on-files-m3"),
             "install.sh must set StartupWMClass=bug-on-files-m3"
         );
@@ -244,6 +248,28 @@ mod tests {
         assert!(
             pkgbuild.contains("StartupWMClass=bug-on-files-m3"),
             "PKGBUILD must set StartupWMClass=bug-on-files-m3"
+        );
+        assert!(
+            pkgbuild.contains("usr/share/applications/bug-on-files-m3.desktop"),
+            "PKGBUILD must install bug-on-files-m3.desktop for direct Wayland app_id matching"
+        );
+        assert!(
+            pkgbuild.contains("Icon=bug-on-files-m3"),
+            "PKGBUILD desktop entry must reference Icon=bug-on-files-m3"
+        );
+    }
+
+    #[test]
+    fn test_app_icon_assets_are_in_sync() {
+        assert_eq!(
+            include_str!("../../public/bug-on-files-m3.svg"),
+            include_str!("../../src/assets/bug-on-files-m3.svg"),
+            "public and src/assets SVG icons must stay identical"
+        );
+        assert_eq!(
+            include_bytes!("../../icon.png").as_slice(),
+            include_bytes!("../../assets/icon.png").as_slice(),
+            "root icon.png and assets/icon.png must stay identical"
         );
     }
 }

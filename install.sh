@@ -7,7 +7,10 @@ BINARY_ID="bug-on-files-m3"
 INSTALL_DIR="/opt/$BINARY_ID"
 ICON_DIR="/usr/share/icons/hicolor/512x512/apps"
 DESKTOP_FILE="/usr/share/applications/$BINARY_ID.desktop"
-APP_IMAGE_SOURCE=$(ls -1 ./release/*Files*.AppImage ./src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n 1)
+APP_IMAGE_SOURCE=$(ls -1 ./src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n 1)
+if [ -z "$APP_IMAGE_SOURCE" ]; then
+    APP_IMAGE_SOURCE=$(ls -1 ./release/*Files*.AppImage 2>/dev/null | head -n 1)
+fi
 ICON_SOURCE="./assets/icon.png"
 
 if [ "$EUID" -ne 0 ]; then
@@ -35,6 +38,9 @@ fi
 if [ -f "$ICON_SOURCE" ]; then
     cp "$ICON_SOURCE" "$ICON_DIR/$BINARY_ID.png"
     echo "Icon installed to $ICON_DIR/$BINARY_ID.png"
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
+    fi
 else
     echo "Warning: Icon not found at $ICON_SOURCE"
 fi

@@ -19,15 +19,15 @@ sha256sums=('SKIP' 'SKIP')
 
 package() {
     install -Dm755 "${srcdir}/${_appimage}" "${pkgdir}/opt/${pkgname}/${pkgname}.AppImage"
-    install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/${pkgname}.png"
+    install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/bug-on-files-m3.png"
 
     # Create desktop entry
     mkdir -p "${pkgdir}/usr/share/applications"
-    cat > "${pkgdir}/usr/share/applications/${pkgname}.desktop" << EOF
+    cat > "${pkgdir}/usr/share/applications/bug-on-files-m3.desktop" << EOF
 [Desktop Entry]
 Name=Files M3
 Exec=/opt/${pkgname}/${pkgname}.AppImage
-Icon=${pkgname}
+Icon=bug-on-files-m3
 Type=Application
 Categories=Utility;FileManager;
 Comment=Bug On Files M3 - Material 3 Expressive File Explorer
