@@ -63,13 +63,7 @@ fn detect_distro_family(id: &str, id_like: &str) -> Option<DistroFamily> {
 }
 
 fn package_for_tool(tool: &str) -> &str {
-    match tool {
-        "unrar" => "unrar",
-        "unzip" => "unzip",
-        "zip" => "zip",
-        "tar" => "tar",
-        other => other,
-    }
+    tool
 }
 
 pub fn parse_os_release_and_command(os_release_content: &str, tool: &str) -> MissingToolInfo {
@@ -217,6 +211,7 @@ pub fn compute_percent(processed: usize, total: usize) -> Option<f64> {
 /// Runs a CLI archive tool (`unzip`, `tar`, `unrar`, `zip`), streaming stdout
 /// progress into `ExtractProgressPayload` events and converting `ErrorKind::NotFound`
 /// spawn failures into `MISSING_TOOL:<json>` payloads.
+#[allow(clippy::too_many_arguments)]
 pub fn run_progress_command<P, L, E, F>(
     path: &str,
     cmd: &str,

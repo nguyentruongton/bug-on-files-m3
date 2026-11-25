@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn pty_spawn(
+pub async fn pty_spawn(
     app: tauri::AppHandle,
     state: tauri::State<'_, PtySessions>,
     cwd: String,
@@ -21,7 +21,10 @@ pub fn pty_spawn(
         let _ = app_handle_exit.emit(&event_name, ());
     });
 
-    state.spawn(&cwd, on_data, on_exit)
+    let sessions = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || sessions.spawn(&cwd, on_data, on_exit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -35,6 +38,8 @@ pub fn pty_resize(state: tauri::State<'_, PtySessions>, pid: u32, cols: u16, row
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn pty_kill(state: tauri::State<'_, PtySessions>, pid: u32) {
-    state.kill(pid);
+pub async fn pty_kill(state: tauri::State<'_, PtySessions>, pid: u32) -> Result<(), String> {
+    let sessions = state.inner().clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || sessions.kill(pid)).await;
+    Ok(())
 }

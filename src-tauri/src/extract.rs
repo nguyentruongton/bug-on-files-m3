@@ -503,7 +503,7 @@ mod tests {
         assert!(!events.is_empty());
         assert_eq!(events[0].total_count, 0);
         assert_eq!(events[0].percent, None);
-        assert_eq!(events.last().unwrap().done, true);
+        assert!(events.last().unwrap().done);
     }
 
     #[test]

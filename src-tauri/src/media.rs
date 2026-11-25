@@ -139,7 +139,8 @@ pub fn guess_mime_for_path(path: &Path) -> &'static str {
         .to_ascii_lowercase();
 
     if ext == "ts" {
-        if crate::fs_ops::sniff_ts_media_kind(path).as_deref() == Some("video") {
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if crate::fs_ops::classify_ts_media_kind(path, size).as_deref() == Some("video") {
             return "video/mp2t";
         }
         return "text/javascript";
@@ -280,6 +281,27 @@ pub fn media_bytes_response(media: crate::thumbnails::GeneratedMedia) -> Respons
         .unwrap_or_else(|_| internal_error_response())
 }
 
+pub fn thumbnail_error_response(err: &crate::thumbnails::ThumbnailError) -> Response<Vec<u8>> {
+    use crate::thumbnails::ThumbnailError;
+    let (status, reason) = match err {
+        ThumbnailError::NotFound => (StatusCode::NOT_FOUND, "not-found"),
+        ThumbnailError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too-large"),
+        ThumbnailError::Unsupported(_) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported"),
+        ThumbnailError::Decode(_) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "decode-error"),
+        ThumbnailError::Timeout => (StatusCode::GATEWAY_TIMEOUT, "timeout"),
+        ThumbnailError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "io-error"),
+        ThumbnailError::Process(_) => (StatusCode::INTERNAL_SERVER_ERROR, "process-error"),
+    };
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header("X-Media-Error-Reason", reason)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::ACCESS_CONTROL_EXPOSE_HEADERS, "X-Media-Error-Reason")
+        .body(reason.as_bytes().to_vec())
+        .unwrap_or_else(|_| internal_error_response())
+}
+
 pub fn handle_routed_media_request(
     req: &Request<Vec<u8>>,
     route: MediaRoute,
@@ -288,11 +310,11 @@ pub fn handle_routed_media_request(
     match route {
         MediaRoute::Thumbnail(size) => match crate::thumbnails::get_or_generate_thumbnail(path, size) {
             Ok(media) => media_bytes_response(media),
-            Err(_) => not_found_response(),
+            Err(err) => thumbnail_error_response(&err),
         },
         MediaRoute::Preview => match crate::thumbnails::get_or_generate_preview(path) {
             Ok(media) => media_bytes_response(media),
-            Err(_) => not_found_response(),
+            Err(err) => thumbnail_error_response(&err),
         },
         MediaRoute::Raw => handle_raw_media_request(req, path),
     }
@@ -783,6 +805,13 @@ mod tests {
             .unwrap();
         let resp_404_thumb = handle_media_request(&req_404_thumb);
         assert_eq!(resp_404_thumb.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp_404_thumb
+                .headers()
+                .get("X-Media-Error-Reason")
+                .and_then(|v| v.to_str().ok()),
+            Some("not-found")
+        );
 
         let req_404_preview = Request::builder()
             .uri("media://preview/nonexistent/image.png")
@@ -790,5 +819,54 @@ mod tests {
             .unwrap();
         let resp_404_preview = handle_media_request(&req_404_preview);
         assert_eq!(resp_404_preview.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp_404_preview
+                .headers()
+                .get("X-Media-Error-Reason")
+                .and_then(|v| v.to_str().ok()),
+            Some("not-found")
+        );
+    }
+
+    #[test]
+    fn thumbnail_error_response_maps_all_variants_to_status_and_reason_header() {
+        use crate::thumbnails::ThumbnailError;
+
+        let cases: Vec<(ThumbnailError, StatusCode, &str)> = vec![
+            (ThumbnailError::NotFound, StatusCode::NOT_FOUND, "not-found"),
+            (ThumbnailError::TooLarge, StatusCode::PAYLOAD_TOO_LARGE, "too-large"),
+            (
+                ThumbnailError::Unsupported("dir".into()),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported",
+            ),
+            (
+                ThumbnailError::Decode("bad".into()),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "decode-error",
+            ),
+            (ThumbnailError::Timeout, StatusCode::GATEWAY_TIMEOUT, "timeout"),
+            (
+                ThumbnailError::Io(std::io::Error::other("io")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "io-error",
+            ),
+            (
+                ThumbnailError::Process("proc".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "process-error",
+            ),
+        ];
+
+        for (err, expected_status, expected_reason) in cases {
+            let resp = thumbnail_error_response(&err);
+            assert_eq!(resp.status(), expected_status);
+            assert_eq!(
+                resp.headers()
+                    .get("X-Media-Error-Reason")
+                    .and_then(|v| v.to_str().ok()),
+                Some(expected_reason)
+            );
+        }
     }
 }

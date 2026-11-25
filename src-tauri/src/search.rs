@@ -52,7 +52,16 @@ pub fn parse_find_size(s: &str) -> Option<u64> {
 }
 
 pub fn search(dir: &str, query: &str, opts: &SearchOptions) -> Vec<FileEntry> {
-    if dir.trim().is_empty() {
+    search_cancellable(dir, query, opts, &|| false)
+}
+
+pub fn search_cancellable(
+    dir: &str,
+    query: &str,
+    opts: &SearchOptions,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Vec<FileEntry> {
+    if dir.trim().is_empty() || is_cancelled() {
         return Vec::new();
     }
 
@@ -61,9 +70,18 @@ pub fn search(dir: &str, query: &str, opts: &SearchOptions) -> Vec<FileEntry> {
     let query_lower = query.to_lowercase();
 
     let mut results = Vec::new();
-    let walker = walkdir::WalkDir::new(dir).min_depth(1);
+    let mut visited: usize = 0;
+    let walker = walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|e| !crate::scan_cancel::is_pseudo_fs_path(e.path()));
 
     for entry_res in walker {
+        visited += 1;
+        if visited.is_multiple_of(256) && is_cancelled() {
+            break;
+        }
+
         let entry = match entry_res {
             Ok(e) => e,
             Err(_) => continue,
@@ -115,7 +133,7 @@ pub fn search(dir: &str, query: &str, opts: &SearchOptions) -> Vec<FileEntry> {
         let media_kind = if is_dir {
             None
         } else {
-            crate::fs_ops::sniff_ts_media_kind(full_path)
+            crate::fs_ops::classify_ts_media_kind(full_path, size)
         };
 
         results.push(FileEntry {
@@ -294,5 +312,19 @@ mod tests {
 
         let code_res = results.iter().find(|e| e.name == "clip.code.ts").unwrap();
         assert_eq!(code_res.media_kind, None);
+    }
+
+    #[test]
+    fn search_cancellable_aborts_immediately_when_cancelled() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("match.txt"), b"hello").unwrap();
+
+        let results = search_cancellable(
+            temp.path().to_str().unwrap(),
+            "match",
+            &SearchOptions::default(),
+            &|| true,
+        );
+        assert!(results.is_empty());
     }
 }

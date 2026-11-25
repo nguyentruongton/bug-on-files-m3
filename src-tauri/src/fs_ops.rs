@@ -16,6 +16,35 @@ pub struct FileEntry {
     pub original_parent: Option<String>,
 }
 
+pub const READ_FILE_MAX_BYTES: u64 = 1_048_576;
+
+pub fn classify_ts_media_kind_with<F>(
+    path: &std::path::Path,
+    size: u64,
+    mut sniffer: F,
+) -> Option<String>
+where
+    F: FnMut(&std::path::Path) -> Option<String>,
+{
+    let file_name = path.file_name().and_then(|n| n.to_str())?;
+    let bytes = file_name.as_bytes();
+    if bytes.len() >= 5 && bytes[bytes.len() - 5..].eq_ignore_ascii_case(b".d.ts") {
+        return None;
+    }
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    if !ext.eq_ignore_ascii_case("ts") {
+        return None;
+    }
+    if size < 377 || (!size.is_multiple_of(188) && !size.is_multiple_of(192)) {
+        return None;
+    }
+    sniffer(path)
+}
+
+pub fn classify_ts_media_kind(path: &std::path::Path, size: u64) -> Option<String> {
+    classify_ts_media_kind_with(path, size, sniff_ts_media_kind)
+}
+
 pub fn sniff_ts_media_kind(path: &std::path::Path) -> Option<String> {
     let ext = path.extension().and_then(|e| e.to_str())?;
     if !ext.eq_ignore_ascii_case("ts") {
@@ -85,7 +114,7 @@ pub fn list_dir(path: &str) -> Result<Vec<FileEntry>, String> {
         let media_kind = if is_directory {
             None
         } else {
-            sniff_ts_media_kind(&full_path)
+            classify_ts_media_kind(&full_path, size)
         };
 
         result.push(FileEntry {
@@ -293,7 +322,20 @@ pub fn parent_of(path: &str) -> String {
 }
 
 pub fn read_file_text(path: &str) -> Option<String> {
-    std::fs::read_to_string(path).ok()
+    use std::io::Read;
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > READ_FILE_MAX_BYTES {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    let mut buf = Vec::new();
+    file.take(READ_FILE_MAX_BYTES + 1)
+        .read_to_end(&mut buf)
+        .ok()?;
+    if buf.len() as u64 > READ_FILE_MAX_BYTES {
+        return None;
+    }
+    String::from_utf8(buf).ok()
 }
 
 pub fn trash_payload_path_from_info(info_path: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -378,7 +420,9 @@ pub fn list_trash() -> Result<Vec<FileEntry>, String> {
         let media_kind = if is_directory {
             None
         } else {
-            payload_path.as_deref().and_then(sniff_ts_media_kind)
+            payload_path
+                .as_deref()
+                .and_then(|p| classify_ts_media_kind(p, size))
         };
 
         result.push(FileEntry {
@@ -744,6 +788,17 @@ mod tests {
         let bin_file = temp.path().join("invalid.bin");
         std::fs::write(&bin_file, [0xff, 0xfe, 0xfd]).unwrap();
         assert_eq!(read_file_text(bin_file.to_str().unwrap()), None);
+
+        let exact_limit = temp.path().join("exact_1mib.txt");
+        std::fs::write(&exact_limit, vec![b'a'; 1_048_576]).unwrap();
+        assert_eq!(
+            read_file_text(exact_limit.to_str().unwrap()).map(|s| s.len()),
+            Some(1_048_576)
+        );
+
+        let over_limit = temp.path().join("over_1mib.txt");
+        std::fs::write(&over_limit, vec![b'a'; 1_048_577]).unwrap();
+        assert_eq!(read_file_text(over_limit.to_str().unwrap()), None);
     }
 
     #[test]
@@ -806,6 +861,74 @@ mod tests {
         bdav_bytes[388] = 0x47;
         std::fs::write(&bdav_video, &bdav_bytes).unwrap();
         assert_eq!(sniff_ts_media_kind(&bdav_video), Some("video".to_string()));
+    }
+
+    #[test]
+    fn classify_ts_media_kind_skips_open_on_dts_and_unaligned_ts_and_sniffs_packet_aligned() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // .d.ts with packet-aligned size must never invoke sniffer
+        let dts_path = dir.path().join("types.d.ts");
+        std::fs::write(&dts_path, vec![b' '; 564]).unwrap();
+        let mut calls = 0usize;
+        let res_dts = classify_ts_media_kind_with(&dts_path, 564, |p| {
+            calls += 1;
+            sniff_ts_media_kind(p)
+        });
+        assert_eq!(res_dts, None);
+        assert_eq!(calls, 0);
+
+        // Unaligned .ts file must never invoke sniffer
+        let unaligned_ts = dir.path().join("app.ts");
+        std::fs::write(&unaligned_ts, vec![b'x'; 500]).unwrap();
+        let mut calls_unaligned = 0usize;
+        let res_unaligned = classify_ts_media_kind_with(&unaligned_ts, 500, |p| {
+            calls_unaligned += 1;
+            sniff_ts_media_kind(p)
+        });
+        assert_eq!(res_unaligned, None);
+        assert_eq!(calls_unaligned, 0);
+
+        // Short .ts file (< 377) even if divisible by 188 (188 bytes) must skip sniffer
+        let short_aligned = dir.path().join("short188.ts");
+        std::fs::write(&short_aligned, vec![0x47; 188]).unwrap();
+        let mut calls_short = 0usize;
+        let res_short = classify_ts_media_kind_with(&short_aligned, 188, |p| {
+            calls_short += 1;
+            sniff_ts_media_kind(p)
+        });
+        assert_eq!(res_short, None);
+        assert_eq!(calls_short, 0);
+
+        // 564-byte (3 * 188) MPEG-TS fixture invokes sniffer once and returns Some("video")
+        let mut ts_188 = vec![0u8; 564];
+        ts_188[0] = 0x47;
+        ts_188[188] = 0x47;
+        ts_188[376] = 0x47;
+        let p188 = dir.path().join("mpeg188.ts");
+        std::fs::write(&p188, &ts_188).unwrap();
+        let mut calls_188 = 0usize;
+        let res_188 = classify_ts_media_kind_with(&p188, 564, |p| {
+            calls_188 += 1;
+            sniff_ts_media_kind(p)
+        });
+        assert_eq!(res_188, Some("video".to_string()));
+        assert_eq!(calls_188, 1);
+
+        // 576-byte (3 * 192) BDAV MPEG-TS fixture invokes sniffer once and returns Some("video")
+        let mut ts_192 = vec![0u8; 576];
+        ts_192[4] = 0x47;
+        ts_192[196] = 0x47;
+        ts_192[388] = 0x47;
+        let p192 = dir.path().join("bdav192.ts");
+        std::fs::write(&p192, &ts_192).unwrap();
+        let mut calls_192 = 0usize;
+        let res_192 = classify_ts_media_kind_with(&p192, 576, |p| {
+            calls_192 += 1;
+            sniff_ts_media_kind(p)
+        });
+        assert_eq!(res_192, Some("video".to_string()));
+        assert_eq!(calls_192, 1);
     }
 
     #[test]

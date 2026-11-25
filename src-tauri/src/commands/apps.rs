@@ -114,10 +114,12 @@ pub fn scan_recommended_apps_in_dirs(dirs: &[PathBuf], mime: &str) -> Vec<Recomm
 }
 
 pub fn query_mime_type(path: &str) -> Option<String> {
-    let output = std::process::Command::new("xdg-mime")
-        .args(["query", "filetype", path])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("xdg-mime");
+    cmd.args(["query", "filetype", path])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let output =
+        crate::proc_exec::run_command_with_timeout(cmd, std::time::Duration::from_secs(3)).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -157,42 +159,52 @@ pub fn spawn_open_with(exec: &str, path: &str) -> bool {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn get_apps() -> Vec<AppEntry> {
-    APPS_CACHE
-        .get_or_init(|| {
-            let mut dirs = vec![
-                PathBuf::from("/usr/share/applications"),
-                PathBuf::from("/usr/local/share/applications"),
-            ];
-            if let Some(home) = dirs::home_dir() {
-                dirs.push(home.join(".local/share/applications"));
-            }
-            scan_apps_in_dirs(&dirs)
-        })
-        .clone()
+pub async fn get_apps() -> Vec<AppEntry> {
+    tauri::async_runtime::spawn_blocking(move || {
+        APPS_CACHE
+            .get_or_init(|| {
+                let mut dirs = vec![
+                    PathBuf::from("/usr/share/applications"),
+                    PathBuf::from("/usr/local/share/applications"),
+                ];
+                if let Some(home) = dirs::home_dir() {
+                    dirs.push(home.join(".local/share/applications"));
+                }
+                scan_apps_in_dirs(&dirs)
+            })
+            .clone()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn get_recommended_apps(path: String) -> Vec<RecommendedApp> {
-    let Some(mime) = query_mime_type(&path) else {
-        return Vec::new();
-    };
+pub async fn get_recommended_apps(path: String) -> Vec<RecommendedApp> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(mime) = query_mime_type(&path) else {
+            return Vec::new();
+        };
 
-    let mut dirs = vec![PathBuf::from("/usr/share/applications")];
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(home.join(".local/share/applications"));
-    }
-    dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(home.join(".local/share/flatpak/exports/share/applications"));
-    }
+        let mut dirs = vec![PathBuf::from("/usr/share/applications")];
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(home.join(".local/share/applications"));
+        }
+        dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(home.join(".local/share/flatpak/exports/share/applications"));
+        }
 
-    scan_recommended_apps_in_dirs(&dirs, &mime)
+        scan_recommended_apps_in_dirs(&dirs, &mime)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn open_with(exec: String, path: String) -> bool {
-    spawn_open_with(&exec, &path)
+pub async fn open_with(exec: String, path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || spawn_open_with(&exec, &path))
+        .await
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

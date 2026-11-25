@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+const SYSTEM_CMD_TIMEOUT: Duration = Duration::from_secs(3);
+const DIR_SIZE_MAX_INODES: usize = 250_000;
+const DIR_SIZE_MAX_DURATION: Duration = Duration::from_secs(5);
+
+type DrivesCache = Mutex<Option<(Vec<u8>, Vec<Drive>)>>;
+static DRIVES_CACHE: OnceLock<DrivesCache> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Drive {
@@ -129,12 +138,33 @@ pub fn parse_df(output: &str) -> Option<StorageUsage> {
 }
 
 pub fn directory_size(path: &str) -> u64 {
-    if path.trim().is_empty() {
+    directory_size_bounded(path, &|| false)
+}
+
+pub fn directory_size_bounded(path: &str, is_cancelled: &dyn Fn() -> bool) -> u64 {
+    if path.trim().is_empty() || is_cancelled() {
         return 0;
     }
 
+    let start = Instant::now();
+    let mut visited_inodes: usize = 0;
     let mut total: u64 = 0;
-    for entry in walkdir::WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+
+    let walker = walkdir::WalkDir::new(path)
+        .same_file_system(true)
+        .into_iter()
+        .filter_entry(|e| !crate::scan_cancel::is_pseudo_fs_path(e.path()));
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        visited_inodes += 1;
+        if visited_inodes.is_multiple_of(256) {
+            if is_cancelled() {
+                return 0;
+            }
+            if visited_inodes >= DIR_SIZE_MAX_INODES || start.elapsed() >= DIR_SIZE_MAX_DURATION {
+                break;
+            }
+        }
         if let Ok(meta) = entry.metadata() {
             if meta.is_file() {
                 total = total.saturating_add(meta.len());
@@ -145,20 +175,48 @@ pub fn directory_size(path: &str) -> u64 {
 }
 
 pub fn get_drives() -> Vec<Drive> {
-    let output = match Command::new("lsblk")
-        .args(["--json", "-o", "NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM"])
-        .output()
-    {
+    let mountinfo = std::fs::read("/proc/self/mountinfo").ok();
+    let cache = DRIVES_CACHE.get_or_init(|| Mutex::new(None));
+
+    if let Some(ref current_bytes) = mountinfo {
+        if let Ok(guard) = cache.lock() {
+            if let Some((ref cached_bytes, ref cached_drives)) = *guard {
+                if cached_bytes == current_bytes {
+                    return cached_drives.clone();
+                }
+            }
+        }
+    }
+
+    let mut cmd = Command::new("lsblk");
+    cmd.args(["--json", "-o", "NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    let output = match crate::proc_exec::run_command_with_timeout(cmd, SYSTEM_CMD_TIMEOUT) {
         Ok(out) if out.status.success() => out.stdout,
         _ => return Vec::new(),
     };
 
     let stdout_str = String::from_utf8_lossy(&output);
-    parse_lsblk(&stdout_str)
+    let drives = parse_lsblk(&stdout_str);
+
+    if let Some(current_bytes) = mountinfo {
+        if let Ok(mut guard) = cache.lock() {
+            *guard = Some((current_bytes, drives.clone()));
+        }
+    }
+
+    drives
 }
 
 pub fn get_storage_usage() -> Option<StorageUsage> {
-    let output = match Command::new("df").args(["-kP", "/"]).output() {
+    let mut cmd = Command::new("df");
+    cmd.args(["-kP", "/"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    let output = match crate::proc_exec::run_command_with_timeout(cmd, SYSTEM_CMD_TIMEOUT) {
         Ok(out) if out.status.success() => out.stdout,
         _ => return None,
     };

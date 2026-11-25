@@ -24,11 +24,41 @@ struct WatcherEntry {
     worker_handle: Option<std::thread::JoinHandle<()>>,
 }
 
-pub struct Watchers {
+struct WatchersInner {
     emit: Arc<dyn Fn(WatchEvent) + Send + Sync>,
     debounce: Duration,
     next_id: AtomicU32,
     entries: Mutex<HashMap<u32, WatcherEntry>>,
+}
+
+impl WatchersInner {
+    fn stop_all(&self) {
+        let entries = {
+            let mut lock = self.entries.lock().unwrap();
+            std::mem::take(&mut *lock)
+        };
+
+        for (_id, mut entry) in entries {
+            entry.stopped.store(true, Ordering::SeqCst);
+            let _ = entry.trigger_tx.send(DebounceSignal::Stop);
+            if let Some(handle) = entry.worker_handle.take() {
+                if handle.thread().id() != std::thread::current().id() {
+                    let _ = handle.join();
+                }
+            }
+        }
+    }
+}
+
+impl Drop for WatchersInner {
+    fn drop(&mut self) {
+        self.stop_all();
+    }
+}
+
+#[derive(Clone)]
+pub struct Watchers {
+    inner: Arc<WatchersInner>,
 }
 
 impl Watchers {
@@ -36,10 +66,12 @@ impl Watchers {
 
     pub fn new(emit: Arc<dyn Fn(WatchEvent) + Send + Sync>, debounce: Duration) -> Self {
         Self {
-            emit,
-            debounce,
-            next_id: AtomicU32::new(1),
-            entries: Mutex::new(HashMap::new()),
+            inner: Arc::new(WatchersInner {
+                emit,
+                debounce,
+                next_id: AtomicU32::new(1),
+                entries: Mutex::new(HashMap::new()),
+            }),
         }
     }
 
@@ -48,12 +80,12 @@ impl Watchers {
     }
 
     pub fn start(&self, dir: &str) -> u32 {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let id = self.inner.next_id.fetch_add(1, Ordering::SeqCst);
         let path = PathBuf::from(dir);
 
         // Fail early if directory doesn't exist
         if !path.exists() {
-            (self.emit)(WatchEvent::Error {
+            (self.inner.emit)(WatchEvent::Error {
                 id,
                 message: format!("Directory does not exist: {}", dir),
             });
@@ -68,7 +100,7 @@ impl Watchers {
         let tx_for_notify = tx.clone();
         let stopped_for_notify = Arc::clone(&stopped);
         let deleted_emitted_for_notify = Arc::clone(&deleted_emitted);
-        let emit_for_notify = Arc::clone(&self.emit);
+        let emit_for_notify = Arc::clone(&self.inner.emit);
         let dir_path_for_notify = dir_path.clone();
         let raw_path_for_notify = path.clone();
 
@@ -118,7 +150,7 @@ impl Watchers {
         let mut watcher = match watcher_res {
             Ok(w) => w,
             Err(e) => {
-                (self.emit)(WatchEvent::Error {
+                (self.inner.emit)(WatchEvent::Error {
                     id,
                     message: e.to_string(),
                 });
@@ -127,16 +159,16 @@ impl Watchers {
         };
 
         if let Err(e) = watcher.watch(&dir_path, notify::RecursiveMode::NonRecursive) {
-            (self.emit)(WatchEvent::Error {
+            (self.inner.emit)(WatchEvent::Error {
                 id,
                 message: e.to_string(),
             });
             return id;
         }
 
-        let emit_for_worker = Arc::clone(&self.emit);
+        let emit_for_worker = Arc::clone(&self.inner.emit);
         let stopped_for_worker = Arc::clone(&stopped);
-        let debounce = self.debounce;
+        let debounce = self.inner.debounce;
 
         let worker_handle = std::thread::spawn(move || {
             while let Ok(signal) = rx.recv() {
@@ -178,13 +210,13 @@ impl Watchers {
             worker_handle: Some(worker_handle),
         };
 
-        self.entries.lock().unwrap().insert(id, entry);
+        self.inner.entries.lock().unwrap().insert(id, entry);
         id
     }
 
     pub fn stop(&self, id: u32) {
         let entry = {
-            let mut lock = self.entries.lock().unwrap();
+            let mut lock = self.inner.entries.lock().unwrap();
             lock.remove(&id)
         };
 
@@ -200,26 +232,7 @@ impl Watchers {
     }
 
     pub fn stop_all(&self) {
-        let entries = {
-            let mut lock = self.entries.lock().unwrap();
-            std::mem::take(&mut *lock)
-        };
-
-        for (_id, mut entry) in entries {
-            entry.stopped.store(true, Ordering::SeqCst);
-            let _ = entry.trigger_tx.send(DebounceSignal::Stop);
-            if let Some(handle) = entry.worker_handle.take() {
-                if handle.thread().id() != std::thread::current().id() {
-                    let _ = handle.join();
-                }
-            }
-        }
-    }
-}
-
-impl Drop for Watchers {
-    fn drop(&mut self) {
-        self.stop_all();
+        self.inner.stop_all();
     }
 }
 

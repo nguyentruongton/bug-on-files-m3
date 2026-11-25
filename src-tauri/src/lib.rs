@@ -5,17 +5,20 @@ pub mod extract;
 pub mod fs_ops;
 pub mod media;
 pub mod places;
+pub mod proc_exec;
+pub mod pty;
+pub mod scan_cancel;
 pub mod search;
 pub mod system_info;
 pub mod text_preview;
 pub mod thumbnails;
-pub mod pty;
 pub mod watcher;
 
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 use pty::PtySessions;
+use scan_cancel::ScanCancellationState;
 use watcher::Watchers;
 
 pub fn cleanup_resources(app: &tauri::AppHandle) {
@@ -30,6 +33,8 @@ pub fn cleanup_resources(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let media_semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+    let media_cache_sem = Arc::new(tokio::sync::Semaphore::new(16));
+    let media_raw_sem = Arc::new(tokio::sync::Semaphore::new(8));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -39,20 +44,25 @@ pub fn run() {
             match parsed {
                 Some((route @ (media::MediaRoute::Thumbnail(_) | media::MediaRoute::Preview), path)) => {
                     let sem = Arc::clone(&media_semaphore);
+                    let cache_sem = Arc::clone(&media_cache_sem);
                     tauri::async_runtime::spawn(async move {
-                        let fast_path = path.clone();
-                        let fast_hit = tauri::async_runtime::spawn_blocking(move || match route {
-                            media::MediaRoute::Thumbnail(size) => {
-                                thumbnails::try_get_cached_or_svg_thumbnail(&fast_path, size)
-                            }
-                            media::MediaRoute::Preview => {
-                                thumbnails::try_get_cached_or_svg_preview(&fast_path)
-                            }
-                            media::MediaRoute::Raw => None,
-                        })
-                        .await
-                        .ok()
-                        .flatten();
+                        let fast_hit = if let Ok(_cache_permit) = cache_sem.acquire_owned().await {
+                            let fast_path = path.clone();
+                            tauri::async_runtime::spawn_blocking(move || match route {
+                                media::MediaRoute::Thumbnail(size) => {
+                                    thumbnails::try_get_cached_or_svg_thumbnail(&fast_path, size)
+                                }
+                                media::MediaRoute::Preview => {
+                                    thumbnails::try_get_cached_or_svg_preview(&fast_path)
+                                }
+                                media::MediaRoute::Raw => None,
+                            })
+                            .await
+                            .ok()
+                            .flatten()
+                        } else {
+                            None
+                        };
 
                         if let Some(cached) = fast_hit {
                             responder.respond(media::media_bytes_response(cached));
@@ -82,14 +92,52 @@ pub fn run() {
                     });
                 }
                 Some((route, path)) => {
-                    tauri::async_runtime::spawn_blocking(move || {
-                        let resp = media::handle_routed_media_request(&req, route, &path);
+                    let raw_sem = Arc::clone(&media_raw_sem);
+                    tauri::async_runtime::spawn(async move {
+                        let Ok(_permit) = raw_sem.acquire_owned().await else {
+                            responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Vec::new())
+                                    .unwrap(),
+                            );
+                            return;
+                        };
+                        let resp = tauri::async_runtime::spawn_blocking(move || {
+                            media::handle_routed_media_request(&req, route, &path)
+                        })
+                        .await
+                        .unwrap_or_else(|_| {
+                            tauri::http::Response::builder()
+                                .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Vec::new())
+                                .unwrap()
+                        });
                         responder.respond(resp);
                     });
                 }
                 None => {
-                    tauri::async_runtime::spawn_blocking(move || {
-                        let resp = media::handle_media_request(&req);
+                    let raw_sem = Arc::clone(&media_raw_sem);
+                    tauri::async_runtime::spawn(async move {
+                        let Ok(_permit) = raw_sem.acquire_owned().await else {
+                            responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Vec::new())
+                                    .unwrap(),
+                            );
+                            return;
+                        };
+                        let resp = tauri::async_runtime::spawn_blocking(move || {
+                            media::handle_media_request(&req)
+                        })
+                        .await
+                        .unwrap_or_else(|_| {
+                            tauri::http::Response::builder()
+                                .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Vec::new())
+                                .unwrap()
+                        });
                         responder.respond(resp);
                     });
                 }
@@ -148,6 +196,16 @@ pub fn run() {
 
             let pty_sessions = PtySessions::new();
             app.manage(pty_sessions);
+
+            app.manage(ScanCancellationState::default());
+
+            tauri::async_runtime::spawn_blocking(move || {
+                std::thread::sleep(Duration::from_secs(10));
+                thumbnails::prune_thumbnail_cache(
+                    &thumbnails::default_cache_dir(),
+                    256 * 1024 * 1024,
+                );
+            });
 
             Ok(())
         })

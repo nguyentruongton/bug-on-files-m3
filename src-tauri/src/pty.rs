@@ -41,14 +41,76 @@ struct SessionEntry {
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
-pub struct PtySessions {
+struct PtySessionsInner {
     sessions: Arc<Mutex<HashMap<u32, SessionEntry>>>,
+}
+
+impl Drop for PtySessionsInner {
+    fn drop(&mut self) {
+        kill_all_in(&self.sessions);
+    }
+}
+
+#[derive(Clone)]
+pub struct PtySessions {
+    inner: Arc<PtySessionsInner>,
+}
+
+pub fn resolve_shell_from(env_shell: Option<&str>) -> String {
+    if let Some(shell) = env_shell {
+        let trimmed = shell.trim();
+        if !trimmed.is_empty() {
+            let p = std::path::Path::new(trimmed);
+            if let Ok(meta) = std::fs::metadata(p) {
+                if meta.is_file() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if meta.permissions().mode() & 0o111 != 0 {
+                            return trimmed.to_string();
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        return trimmed.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "bash".to_string()
+}
+
+fn kill_all_in(sessions_arc: &Arc<Mutex<HashMap<u32, SessionEntry>>>) {
+    let sessions: Vec<SessionEntry> = {
+        let mut map = sessions_arc.lock().unwrap();
+        map.drain().map(|(_, v)| v).collect()
+    };
+    for session in &sessions {
+        if let Ok(mut k) = session.killer.lock() {
+            let _ = k.kill();
+        }
+    }
+    for session in &sessions {
+        if let Ok(mut w) = session.writer.lock() {
+            w.take();
+        }
+    }
+    for mut session in sessions {
+        if let Some(handle) = session.thread_handle.take() {
+            if handle.thread().id() != std::thread::current().id() {
+                let _ = handle.join();
+            }
+        }
+    }
 }
 
 impl PtySessions {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            inner: Arc::new(PtySessionsInner {
+                sessions: Arc::new(Mutex::new(HashMap::new())),
+            }),
         }
     }
 
@@ -76,7 +138,9 @@ impl PtySessions {
             })
             .map_err(|e| e.to_string())?;
 
-        let mut cmd = CommandBuilder::new("bash");
+        let env_shell = std::env::var("SHELL").ok();
+        let shell_cmd = resolve_shell_from(env_shell.as_deref());
+        let mut cmd = CommandBuilder::new(shell_cmd);
         cmd.cwd(working_dir);
         cmd.env("TERM", "xterm-256color");
 
@@ -101,7 +165,7 @@ impl PtySessions {
         let writer_clone = Arc::clone(&writer_arc);
         let on_data_clone = Arc::clone(&on_data);
         let on_exit_clone = Arc::clone(&on_exit);
-        let sessions_weak = Arc::downgrade(&self.sessions);
+        let sessions_weak = Arc::downgrade(&self.inner.sessions);
 
         let thread_handle = std::thread::spawn(move || {
             let mut reader = reader;
@@ -163,14 +227,14 @@ impl PtySessions {
             thread_handle: Some(thread_handle),
         };
 
-        self.sessions.lock().unwrap().insert(pid, entry);
+        self.inner.sessions.lock().unwrap().insert(pid, entry);
 
         Ok(pid)
     }
 
     pub fn write(&self, pid: u32, data: &str) {
         let writer = {
-            let map = self.sessions.lock().unwrap();
+            let map = self.inner.sessions.lock().unwrap();
             map.get(&pid).map(|s| Arc::clone(&s.writer))
         };
         if let Some(writer) = writer {
@@ -185,7 +249,7 @@ impl PtySessions {
 
     pub fn resize(&self, pid: u32, cols: u16, rows: u16) {
         let master = {
-            let map = self.sessions.lock().unwrap();
+            let map = self.inner.sessions.lock().unwrap();
             map.get(&pid).map(|s| Arc::clone(&s.master))
         };
         if let Some(master) = master {
@@ -202,7 +266,7 @@ impl PtySessions {
 
     pub fn kill(&self, pid: u32) {
         let session = {
-            let mut map = self.sessions.lock().unwrap();
+            let mut map = self.inner.sessions.lock().unwrap();
             map.remove(&pid)
         };
         if let Some(mut session) = session {
@@ -221,39 +285,13 @@ impl PtySessions {
     }
 
     pub fn kill_all(&self) {
-        let sessions: Vec<SessionEntry> = {
-            let mut map = self.sessions.lock().unwrap();
-            map.drain().map(|(_, v)| v).collect()
-        };
-        for session in &sessions {
-            if let Ok(mut k) = session.killer.lock() {
-                let _ = k.kill();
-            }
-        }
-        for session in &sessions {
-            if let Ok(mut w) = session.writer.lock() {
-                w.take();
-            }
-        }
-        for mut session in sessions {
-            if let Some(handle) = session.thread_handle.take() {
-                if handle.thread().id() != std::thread::current().id() {
-                    let _ = handle.join();
-                }
-            }
-        }
+        kill_all_in(&self.inner.sessions);
     }
 }
 
 impl Default for PtySessions {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Drop for PtySessions {
-    fn drop(&mut self) {
-        self.kill_all();
     }
 }
 
@@ -401,5 +439,39 @@ mod tests {
         assert!(res2.is_ok(), "Session 2 should have exited on kill_all");
 
         pty.kill_all();
+    }
+
+    #[test]
+    fn resolve_shell_falls_back_to_bash_and_accepts_executable_shell() {
+        assert_eq!(resolve_shell_from(None), "bash");
+        assert_eq!(resolve_shell_from(Some("")), "bash");
+        assert_eq!(resolve_shell_from(Some("/nonexistent/shell/xyz")), "bash");
+        if std::path::Path::new("/bin/sh").exists() {
+            assert_eq!(resolve_shell_from(Some("/bin/sh")), "/bin/sh");
+        }
+    }
+
+    #[test]
+    fn dropping_cloned_pty_sessions_does_not_kill_active_session() {
+        let pty = PtySessions::new();
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+        let on_data = Arc::new(|_pid: u32, _s: String| {});
+        let on_exit = Arc::new(move |_pid: u32| {
+            let _ = exit_tx.send(());
+        });
+
+        let cloned = pty.clone();
+        let pid = cloned.spawn("", on_data, on_exit).expect("spawn failed");
+        drop(cloned);
+
+        // Session must stay alive after dropping clone
+        assert!(exit_rx
+            .recv_timeout(std::time::Duration::from_millis(120))
+            .is_err());
+
+        pty.kill(pid);
+        assert!(exit_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .is_ok());
     }
 }

@@ -59,6 +59,7 @@ pub enum ThumbnailError {
     Io(std::io::Error),
     Decode(String),
     Process(String),
+    Timeout,
     NotFound,
     TooLarge,
     Unsupported(String),
@@ -70,6 +71,7 @@ impl std::fmt::Display for ThumbnailError {
             ThumbnailError::Io(e) => write!(f, "I/O error: {}", e),
             ThumbnailError::Decode(s) => write!(f, "Decode error: {}", s),
             ThumbnailError::Process(s) => write!(f, "Process error: {}", s),
+            ThumbnailError::Timeout => write!(f, "Process timed out"),
             ThumbnailError::NotFound => write!(f, "File not found"),
             ThumbnailError::TooLarge => write!(f, "File exceeds maximum allowed size"),
             ThumbnailError::Unsupported(s) => write!(f, "Unsupported media: {}", s),
@@ -111,70 +113,20 @@ pub fn is_video_path(path: &Path) -> bool {
             return true;
         }
     }
-    crate::fs_ops::sniff_ts_media_kind(path).as_deref() == Some("video")
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    crate::fs_ops::classify_ts_media_kind(path, size).as_deref() == Some("video")
 }
 
-fn run_command_with_timeout(
-    mut cmd: std::process::Command,
+fn run_media_command(
+    cmd: std::process::Command,
     timeout: Duration,
 ) -> Result<std::process::Output, ThumbnailError> {
-    let mut child = cmd.spawn().map_err(|e| ThumbnailError::Process(e.to_string()))?;
-
-    let stdout_handle = child.stdout.take().map(|mut out| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = std::io::Read::read_to_end(&mut out, &mut buf);
-            buf
-        })
-    });
-    let stderr_handle = child.stderr.take().map(|mut err| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = std::io::Read::read_to_end(&mut err, &mut buf);
-            buf
-        })
-    });
-
-    let start = std::time::Instant::now();
-    let poll_interval = Duration::from_millis(50);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let stdout = stdout_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
-                let stderr = stderr_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
-                return Ok(std::process::Output {
-                    status,
-                    stdout,
-                    stderr,
-                });
-            }
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    if let Some(h) = stdout_handle {
-                        let _ = h.join();
-                    }
-                    if let Some(h) = stderr_handle {
-                        let _ = h.join();
-                    }
-                    return Err(ThumbnailError::Process("Process timed out".to_string()));
-                }
-                std::thread::sleep(poll_interval);
-            }
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                if let Some(h) = stdout_handle {
-                    let _ = h.join();
-                }
-                if let Some(h) = stderr_handle {
-                    let _ = h.join();
-                }
-                return Err(ThumbnailError::Process(e.to_string()));
-            }
+    crate::proc_exec::run_command_with_timeout(cmd, timeout).map_err(|err| match err {
+        crate::proc_exec::ProcError::Timeout => ThumbnailError::Timeout,
+        crate::proc_exec::ProcError::Spawn(msg) | crate::proc_exec::ProcError::Io(msg) => {
+            ThumbnailError::Process(msg)
         }
-    }
+    })
 }
 
 pub fn parse_ffprobe_json(raw: &str) -> Option<VideoMetadata> {
@@ -250,7 +202,7 @@ pub fn probe_video_metadata(path: &Path) -> Option<VideoMetadata> {
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::null());
 
-    let output = run_command_with_timeout(cmd, FFPROBE_TIMEOUT).ok()?;
+    let output = run_media_command(cmd, FFPROBE_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -259,10 +211,15 @@ pub fn probe_video_metadata(path: &Path) -> Option<VideoMetadata> {
 }
 
 fn decode_raster_image_pure(path: &Path) -> Result<image::DynamicImage, ThumbnailError> {
-    let reader = image::ImageReader::open(path)
+    let mut reader = image::ImageReader::open(path)
         .map_err(ThumbnailError::Io)?
         .with_guessed_format()
         .map_err(|e| ThumbnailError::Decode(e.to_string()))?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
     let mut decoder = reader
         .into_decoder()
         .map_err(|e| ThumbnailError::Decode(e.to_string()))?;
@@ -303,7 +260,7 @@ fn extract_frame_ffmpeg(
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
 
-        let first_res = run_command_with_timeout(cmd, FFMPEG_TIMEOUT);
+        let first_res = run_media_command(cmd, FFMPEG_TIMEOUT);
 
         let first_succeeded = matches!(first_res, Ok(ref out) if out.status.success())
             && tmp_path
@@ -330,7 +287,7 @@ fn extract_frame_ffmpeg(
             retry_cmd.stdout(std::process::Stdio::null());
             retry_cmd.stderr(std::process::Stdio::piped());
 
-            let output = run_command_with_timeout(retry_cmd, FFMPEG_TIMEOUT)?;
+            let output = run_media_command(retry_cmd, FFMPEG_TIMEOUT)?;
             let ok = output.status.success()
                 && tmp_path
                     .metadata()
@@ -359,7 +316,7 @@ fn extract_frame_ffmpeg(
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
 
-        let output = run_command_with_timeout(cmd, FFMPEG_TIMEOUT)?;
+        let output = run_media_command(cmd, FFMPEG_TIMEOUT)?;
         let ok = tmp_path
             .metadata()
             .map(|m| m.len() > 0)
@@ -592,6 +549,44 @@ pub fn get_or_generate_preview_in(
 
 pub fn get_or_generate_preview(path: &Path) -> Result<GeneratedMedia, ThumbnailError> {
     get_or_generate_preview_in(path, &default_cache_dir())
+}
+
+pub fn prune_thumbnail_cache(cache_dir: &Path, max_bytes: u64) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+
+    let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
+    let mut total_bytes: u64 = 0;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let size = meta.len();
+        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        total_bytes = total_bytes.saturating_add(size);
+        files.push((path, size, mtime));
+    }
+
+    if total_bytes <= max_bytes {
+        return;
+    }
+
+    files.sort_by_key(|(_, _, mtime)| *mtime);
+
+    for (path, size, _) in files {
+        if total_bytes <= max_bytes {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total_bytes = total_bytes.saturating_sub(size);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -834,5 +829,28 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!(entries[0].ends_with(".jpg"));
         assert!(!entries[0].contains(".tmp."));
+    }
+
+    #[test]
+    fn prune_thumbnail_cache_evicts_oldest_files_above_max_bytes() {
+        let cache = tempfile::tempdir().unwrap();
+        let f1 = cache.path().join("oldest.jpg");
+        let f2 = cache.path().join("middle.jpg");
+        let f3 = cache.path().join("newest.jpg");
+
+        std::fs::write(&f1, vec![b'a'; 100]).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&f2, vec![b'b'; 100]).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&f3, vec![b'c'; 100]).unwrap();
+
+        prune_thumbnail_cache(cache.path(), 200);
+        assert!(!f1.exists());
+        assert!(f2.exists());
+        assert!(f3.exists());
+
+        prune_thumbnail_cache(cache.path(), 200);
+        assert!(f2.exists());
+        assert!(f3.exists());
     }
 }
