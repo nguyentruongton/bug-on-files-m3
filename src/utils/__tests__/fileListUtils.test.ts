@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import type { IFile } from '../../types/files';
 import {
     buildDisplayEntries,
+    buildVirtualGridEntries,
+    collectOutboundDragPaths,
     compareFiles,
+    computeGridColumns,
     normalizeSortField,
 } from '../fileListUtils';
 import { calculateVirtualRange } from '../../hooks/useVirtualWindow';
@@ -177,5 +180,84 @@ describe('calculateVirtualRange', () => {
             (range.bottomSpacerHeight > 0 ? 2 + range.bottomSpacerHeight : 0);
 
         expect(reconstructedTotal).toBe(totalHeight);
+    });
+
+    test('parameterizes gapPx for Grid View (12px gap) and reconstructs totalHeight cleanly', () => {
+        const gapPx = 12;
+        const rowHeightWithGap = 156 + gapPx; // 64 + 92 + 12 = 168
+        const heights = Array.from({ length: 100 }, () => rowHeightWithGap);
+        const offsets = new Array<number>(heights.length + 1);
+        offsets[0] = 0;
+        for (let i = 0; i < heights.length; i++) {
+            offsets[i + 1] = offsets[i] + heights[i];
+        }
+        const totalHeight = offsets[heights.length] - gapPx;
+
+        const range = calculateVirtualRange(offsets, totalHeight, 1200, 600, 2, 600, gapPx);
+        expect(range.startIndex).toBeGreaterThan(0);
+        expect(range.endIndex).toBeLessThan(99);
+
+        let renderedBlockHeight = 0;
+        for (let i = range.startIndex; i <= range.endIndex; i++) {
+            renderedBlockHeight += heights[i] - gapPx;
+            if (i > range.startIndex) renderedBlockHeight += gapPx;
+        }
+        const reconstructedTotal =
+            (range.topSpacerHeight > 0 ? range.topSpacerHeight + gapPx : 0) +
+            renderedBlockHeight +
+            (range.bottomSpacerHeight > 0 ? gapPx + range.bottomSpacerHeight : 0);
+
+        expect(reconstructedTotal).toBe(totalHeight);
+    });
+});
+
+describe('Grid View virtualization helpers', () => {
+    test('computeGridColumns matches responsive formula and clamps to minimum 1', () => {
+        expect(computeGridColumns(0, 64)).toBe(1);
+        expect(computeGridColumns(100, 64)).toBe(1);
+        // cardMin = max(116, 64 + 48) = 116; available = 800 - 32 = 768; floor((768 + 12) / (116 + 12)) = floor(780 / 128) = 6
+        expect(computeGridColumns(800, 64)).toBe(6);
+        // iconSize = 96 -> cardMin = 144; available = 800 - 32 = 768; floor(780 / 156) = 5
+        expect(computeGridColumns(800, 96)).toBe(5);
+    });
+
+    test('buildVirtualGridEntries chunks flat and grouped files into fixed-height rows with fileIndexToRowIndex mapping', () => {
+        const files = [
+            makeFile('dir1', { isDirectory: true }),
+            makeFile('a.png'),
+            makeFile('b.png'),
+            makeFile('c.png'),
+            makeFile('d.png'),
+        ];
+
+        const flat = buildVirtualGridEntries(files, false, 3, 64, 12);
+        expect(flat.entries.length).toBe(2);
+        expect(flat.entries[0]).toMatchObject({ kind: 'grid-row', startIndex: 0, height: 64 + 92 + 12 });
+        expect(flat.entries[1]).toMatchObject({ kind: 'grid-row', startIndex: 3, height: 64 + 92 + 12 });
+        expect(flat.fileIndexToRowIndex).toEqual([0, 0, 0, 1, 1]);
+
+        const grouped = buildVirtualGridEntries(files, true, 3, 64, 12);
+        // Header(Folders), Row(dir1), Header(Media), Row(a,b,c), Row(d)
+        expect(grouped.entries.map((e) => e.kind)).toEqual([
+            'header',
+            'grid-row',
+            'header',
+            'grid-row',
+            'grid-row',
+        ]);
+        expect(grouped.entries[0].height).toBe(28 + 12);
+        expect(grouped.fileIndexToRowIndex).toEqual([1, 3, 3, 3, 4]);
+    });
+
+    test('collectOutboundDragPaths preserves sortedFiles multi-selection order or falls back to clicked file', () => {
+        const files = [makeFile('a.png'), makeFile('b.png'), makeFile('c.png')];
+        // Dragging a selected file drags all selected files in sortedFiles order
+        const selected = new Set([files[2].path, files[0].path]);
+        expect(collectOutboundDragPaths(files[2], files, selected)).toEqual([
+            '/tmp/a.png',
+            '/tmp/c.png',
+        ]);
+        // Dragging an unselected file drags only that file
+        expect(collectOutboundDragPaths(files[1], files, selected)).toEqual(['/tmp/b.png']);
     });
 });

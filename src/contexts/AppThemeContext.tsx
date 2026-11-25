@@ -180,17 +180,11 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     syncNow();
     window.addEventListener('focus', handleVisibilityOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        syncNow();
-      }
-    }, 2000);
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.clearInterval(timer);
     };
   }, [useMatugen, themeMode]);
 

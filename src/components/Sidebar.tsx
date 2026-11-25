@@ -57,30 +57,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [drives, setDrives] = useState<Drive[]>([]);
 
     useEffect(() => {
-        if (!api) return;
+        if (!api?.getPlaces) return;
+        api.getPlaces()
+            .then((res) => {
+                if (res) setPlaces(res);
+            })
+            .catch(console.error);
+    }, []);
 
-        if (api.getPlaces) {
-            api.getPlaces()
+    useEffect(() => {
+        if (collapsed || !api?.getDrives) return;
+
+        let cancelled = false;
+        const fetchDrives = () => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+                return;
+            }
+            api.getDrives()
                 .then((res) => {
-                    if (res) setPlaces(res);
+                    if (!cancelled && res) setDrives(res);
                 })
                 .catch(console.error);
-        }
-
-        const fetchDrives = () => {
-            if (api.getDrives) {
-                api.getDrives()
-                    .then((res) => {
-                        if (res) setDrives(res);
-                    })
-                    .catch(console.error);
-            }
         };
 
         fetchDrives();
-        const interval = setInterval(fetchDrives, 5000);
-        return () => clearInterval(interval);
-    }, []);
+        const interval = window.setInterval(fetchDrives, 5000);
+        window.addEventListener('focus', fetchDrives);
+        document.addEventListener('visibilitychange', fetchDrives);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+            window.removeEventListener('focus', fetchDrives);
+            document.removeEventListener('visibilitychange', fetchDrives);
+        };
+    }, [collapsed]);
 
     const normCurrent = normalizePath(currentPath);
     const activeMountpoint = getActiveDriveMountpoint(

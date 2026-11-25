@@ -216,3 +216,49 @@ export function filterTrashFiles(files: IFile[], query: string): IFile[] {
             (f.originalParent?.toLowerCase().includes(trimmed) ?? false)
     );
 }
+
+export function encodePath(path: string): string {
+    const encodedSegments = path.split('/').map(encodeURIComponent).join('/');
+    return encodedSegments.startsWith('/') ? encodedSegments : `/${encodedSegments}`;
+}
+
+export function toFileUri(path: string): string {
+    return `file://${encodePath(path)}`;
+}
+
+export function buildFileUriList(paths: string[]): string {
+    if (paths.length === 0) return '';
+    return `${paths.map(toFileUri).join('\r\n')}\r\n`;
+}
+
+export function parseFileUriList(raw: string): string[] {
+    const results: string[] = [];
+    for (const rawLine of raw.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) {
+            continue;
+        }
+        try {
+            const url = new URL(line);
+            if (url.protocol !== 'file:') continue;
+            if (url.hostname !== '' && url.hostname !== 'localhost') continue;
+            const decoded = decodeURIComponent(url.pathname);
+            if (!decoded.startsWith('/') || decoded.includes('\0')) continue;
+            results.push(decoded);
+        } catch {
+            // Skip malformed URI lines
+        }
+    }
+    return results;
+}
+
+export function sanitizeTerminalPath(path: string): string {
+    let out = '';
+    for (let i = 0; i < path.length; i++) {
+        const code = path.charCodeAt(i);
+        if (code >= 0x20 && code !== 0x7f) {
+            out += path[i];
+        }
+    }
+    return out;
+}

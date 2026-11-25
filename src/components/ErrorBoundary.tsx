@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 interface Props {
     children?: ReactNode;
+    fallback?: (error: Error | null, reset: () => void) => ReactNode;
 }
 
 interface State {
@@ -26,8 +27,15 @@ export class ErrorBoundary extends Component<Props, State> {
         this.setState({ error, errorInfo });
     }
 
+    private reset = () => {
+        this.setState({ hasError: false, error: null, errorInfo: null });
+    };
+
     public render() {
         if (this.state.hasError) {
+            if (this.props.fallback) {
+                return this.props.fallback(this.state.error, this.reset);
+            }
             return (
                 <div style={{ padding: '20px', color: 'red', overflow: 'auto', height: '100%', userSelect: 'text' }}>
                     <h1>Something went wrong.</h1>

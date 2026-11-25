@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
     Button,
@@ -14,6 +14,7 @@ import { useClipboard } from '../contexts/ClipboardContext';
 import { StatusBar } from './StatusBar';
 import { FileList } from './FileList';
 import { FileListSkeleton } from './FileListSkeleton';
+import { ErrorBoundary } from './ErrorBoundary';
 import { IconButton } from './IconButton';
 import { Icon } from './Icon';
 import { FileSystemService } from '../services/FileSystemService';
@@ -24,7 +25,6 @@ import { isModalDialogOpen } from '../utils/themeUtils';
 
 import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
-import { QuickLook } from './QuickLook';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDirWatch } from '../hooks/useDirWatch';
 import {
@@ -33,7 +33,12 @@ import {
     shouldApplyReload,
     resolveDragCompletion,
     resolveExtractProgressPercent,
+    processInboundDrop,
 } from '../utils/explorerTabUtils';
+
+const loadQuickLookModule = () =>
+    import('./QuickLook').then((m) => ({ default: m.QuickLook }));
+const QuickLook = React.lazy(loadQuickLookModule);
 import { filterTrashFiles, isArchiveFile, isHiddenFile } from '../utils/fileUtils';
 import {
     isPasswordArchiveError,
@@ -112,8 +117,11 @@ export function ExplorerTab({
     const isTrash = currentPath === 'app://trash';
     const currentPathRef = useRef(initialPath);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const lastScrollTopRef = useRef(0);
     const hasMountedRef = useRef(false);
     const reloadSeqRef = useRef(0);
+    const loadSeqRef = useRef(0);
+    const searchSeqRef = useRef(0);
     const isDraggingRef = useRef(false);
     const pendingReloadAfterDragRef = useRef(false);
     const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,27 +196,41 @@ export function ExplorerTab({
     }, [searchActive]);
 
     const handleSearch = async (query: string) => {
+        const seq = ++searchSeqRef.current;
+        loadSeqRef.current += 1;
+        reloadSeqRef.current += 1;
+        lastScrollTopRef.current = 0;
+        const targetDir = currentPathRef.current;
+
         setLoading(true);
         setSearchActive(true);
         searchActiveRef.current = true;
         setSearchQuery(query);
         try {
-            if (currentPathRef.current === 'app://trash') {
+            if (targetDir === 'app://trash') {
                 const allTrash = await FileSystemService.listTrash();
+                if (seq !== searchSeqRef.current) return;
                 setFiles(filterTrashFiles(allTrash, query));
             } else if (api && api.search) {
-                const results = await api.search(currentPath, query);
+                const results = await api.search(targetDir, query);
+                if (seq !== searchSeqRef.current) return;
                 setFiles(results);
             }
         } catch (e) {
+            if (seq !== searchSeqRef.current) return;
             console.error(e);
             showToast('Search failed', 'error');
         }
-        setLoading(false);
+        if (seq === searchSeqRef.current) {
+            setLoading(false);
+        }
     };
 
     const loadPath = useCallback(async (path: string, recordHistory = true) => {
         reloadSeqRef.current += 1;
+        const seq = ++loadSeqRef.current;
+        searchSeqRef.current += 1;
+        lastScrollTopRef.current = 0;
         pendingReloadAfterDragRef.current = false;
         searchActiveRef.current = false;
         setSearchActive(false);
@@ -225,6 +247,7 @@ export function ExplorerTab({
             currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
+            setLoading(false);
             return;
         }
 
@@ -234,16 +257,20 @@ export function ExplorerTab({
                 path === 'app://trash'
                     ? await FileSystemService.listTrash()
                     : await FileSystemService.listDir(path);
+            if (seq !== loadSeqRef.current) return;
             setFiles(items);
             currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
             addToRecents(path);
         } catch (e) {
+            if (seq !== loadSeqRef.current) return;
             console.error('Failed to load path', path, e);
             showToast(`Failed to open ${path}`, 'error');
         }
-        setLoading(false);
+        if (seq === loadSeqRef.current) {
+            setLoading(false);
+        }
     }, [onPathChange, tabId, addToRecents, showToast]);
 
     const isRecoveringRef = useRef(false);
@@ -315,10 +342,14 @@ export function ExplorerTab({
                 }
                 if (!exists) {
                     handleFolderMissing(targetPath);
+                } else {
+                    showToast(`Failed to refresh ${targetPath}`, 'error');
                 }
+            } else {
+                showToast(`Failed to refresh ${targetPath}`, 'error');
             }
         }
-    }, [handleFolderMissing]);
+    }, [handleFolderMissing, showToast]);
 
     // Drag-in-progress tracking
     const clearDrag = useCallback(
@@ -347,8 +378,69 @@ export function ExplorerTab({
         }
         dragTimeoutRef.current = setTimeout(() => {
             clearDrag(true);
-        }, 5000);
+        }, 10000);
     }, [clearDrag]);
+
+    // Preload QuickLook chunk during idle time after initial mount
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const win = window as Window & {
+            requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+            cancelIdleCallback?: (id: number) => void;
+        };
+        if (typeof win.requestIdleCallback === 'function') {
+            const id = win.requestIdleCallback(() => {
+                void loadQuickLookModule().catch(() => {});
+            }, { timeout: 2000 });
+            return () => win.cancelIdleCallback?.(id);
+        }
+        const timer = window.setTimeout(() => {
+            void loadQuickLookModule().catch(() => {});
+        }, 300);
+        return () => window.clearTimeout(timer);
+    }, []);
+
+    // Reset stored scroll offset if global viewMode or iconSize changes while tab is inactive
+    const prevLayoutRef = useRef({ viewMode, iconSize });
+    useEffect(() => {
+        const changed =
+            prevLayoutRef.current.viewMode !== viewMode ||
+            prevLayoutRef.current.iconSize !== iconSize;
+        prevLayoutRef.current = { viewMode, iconSize };
+        if (changed && !isActive) {
+            lastScrollTopRef.current = 0;
+        }
+    }, [viewMode, iconSize, isActive]);
+
+    // Tauri-native inbound drag-and-drop listener (active only when tab is visible and not in Trash)
+    useEffect(() => {
+        if (!isActive || isTrash || !api?.onDragDrop) return;
+        const unsub = api.onDragDrop((event) => {
+            if (event.type !== 'drop') return;
+            clearDrag(false);
+            const droppedPaths = event.paths ?? [];
+            if (droppedPaths.length === 0) return;
+
+            const destDir = currentPathRef.current;
+            void processInboundDrop(droppedPaths, destDir, searchActiveRef.current, {
+                exists: (p) => api.exists(p),
+                copyFile: (src, dest) => api.copyFile(src, dest),
+            })
+                .then((count) => {
+                    if (count > 0) {
+                        showToast(`Imported ${count} file${count === 1 ? '' : 's'}`, 'success');
+                        void loadPath(destDir, false);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Inbound drop failed', err);
+                    showToast('Failed to import dropped files', 'error');
+                });
+        });
+        return () => {
+            unsub();
+        };
+    }, [isActive, isTrash, clearDrag, loadPath, showToast]);
 
     useEffect(() => {
         if (!isActive) return;
@@ -520,6 +612,17 @@ export function ExplorerTab({
             }
         }
     }
+
+    // Release QuickLook snapshot when closed or tab deactivates
+    if ((quickLookPath === null || !isActive) && prevSortedForQuickLook.length > 0) {
+        setPrevSortedForQuickLook([]);
+    }
+
+    const getInitialScrollTop = useCallback(() => lastScrollTopRef.current, []);
+
+    const handleScrollTopChange = useCallback((top: number) => {
+        lastScrollTopRef.current = top;
+    }, []);
 
     const quickLookFile = useMemo(() => {
         if (!quickLookPath) return null;
@@ -993,63 +1096,38 @@ export function ExplorerTab({
                                 onContextMenu(e, null, []);
                             }
                         }}
-                        onDragOver={(e) => {
-                            if (isTrash) return;
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'copy';
-                        }}
-                        onDrop={async (e) => {
-                            clearDrag();
-                            e.preventDefault();
-                            if (isTrash) return;
-                            const droppedFiles = Array.from(e.dataTransfer.files);
-                            if (droppedFiles.length > 0 && currentPath) {
-                                let count = 0;
-                                for (const file of droppedFiles) {
-                                    const sourcePath = (file as File & { path?: string }).path;
-                                    if (sourcePath) {
-                                        const fileName = sourcePath.split(/[/\\]/).pop();
-                                        const destPath = `${currentPath}/${fileName}`.replace(/\\+/g, '/');
-                                        if (api && api.copyFile) {
-                                            await api.copyFile(sourcePath, destPath);
-                                            count++;
-                                        }
-                                    }
-                                }
-                                if (count > 0) {
-                                    showToast(`Imported ${count} files`, 'success');
-                                    loadPath(currentPath, false);
-                                }
-                            }
-                        }}
                     >
-                        <FileList
-                            files={sortedFiles}
-                            selectedFiles={selectedFiles}
-                            onSelect={handleSelect}
-                            onNavigate={handleNavigate}
-                            onContextMenu={(e, file) => {
-                                let effectiveSelection: IFile[];
-                                if (selectedFiles.has(file.path)) {
-                                    effectiveSelection = sortedFiles.filter((f) => selectedFiles.has(f.path));
-                                } else {
-                                    handleSelect(file, false, false);
-                                    effectiveSelection = [file];
-                                }
-                                onContextMenu(e, file, effectiveSelection);
-                            }}
-                            iconSize={iconSize}
-                            viewMode={viewMode}
-                            filledIcons={filledIcons}
-                            groupingEnabled={groupingEnabled}
-                            sortBy={sortBy}
-                            sortOrder={sortOrder}
-                            onSortChange={handleSortChange}
-                            scrollContainerRef={scrollContainerRef}
-                            isSearch={searchActive}
-                            isTrash={isTrash}
-                            homePath={homePath}
-                        />
+                        {isActive && (
+                            <FileList
+                                files={sortedFiles}
+                                selectedFiles={selectedFiles}
+                                onSelect={handleSelect}
+                                onNavigate={handleNavigate}
+                                onContextMenu={(e, file) => {
+                                    let effectiveSelection: IFile[];
+                                    if (selectedFiles.has(file.path)) {
+                                        effectiveSelection = sortedFiles.filter((f) => selectedFiles.has(f.path));
+                                    } else {
+                                        handleSelect(file, false, false);
+                                        effectiveSelection = [file];
+                                    }
+                                    onContextMenu(e, file, effectiveSelection);
+                                }}
+                                iconSize={iconSize}
+                                viewMode={viewMode}
+                                filledIcons={filledIcons}
+                                groupingEnabled={groupingEnabled}
+                                sortBy={sortBy}
+                                sortOrder={sortOrder}
+                                onSortChange={handleSortChange}
+                                scrollContainerRef={scrollContainerRef}
+                                getInitialScrollTop={getInitialScrollTop}
+                                onScrollTopChange={handleScrollTopChange}
+                                isSearch={searchActive}
+                                isTrash={isTrash}
+                                homePath={homePath}
+                            />
+                        )}
                     </div>
 
                     <AnimatePresence>
@@ -1328,19 +1406,54 @@ export function ExplorerTab({
             })()}
 
             {quickLookFile && (
-                <QuickLook
-                    file={quickLookFile}
-                    files={sortedFiles}
-                    viewMode={viewMode}
-                    onClose={() => setQuickLookPath(null)}
-                    onNavigate={(nextFile) => {
-                        handleSelect(nextFile, false, false);
-                        setQuickLookPath(nextFile.path);
-                    }}
-                    onOpen={(fileToOpen) => {
-                        handleNavigate(fileToOpen);
-                    }}
-                />
+                <ErrorBoundary
+                    key="quicklook"
+                    fallback={(_err, reset) => (
+                        <div
+                            role="alert"
+                            className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-m3-lg bg-m3-error-container text-m3-on-error-container px-4 py-3 shadow-md"
+                        >
+                            <span className="text-sm font-medium">Failed to load Quick Look preview.</span>
+                            <Button
+                                variant="default"
+                                colorStyle="text"
+                                size="sm"
+                                onClick={() => {
+                                    reset();
+                                }}
+                            >
+                                Retry
+                            </Button>
+                            <Button
+                                variant="default"
+                                colorStyle="text"
+                                size="sm"
+                                onClick={() => {
+                                    reset();
+                                    setQuickLookPath(null);
+                                }}
+                            >
+                                Close
+                            </Button>
+                        </div>
+                    )}
+                >
+                    <Suspense fallback={null}>
+                        <QuickLook
+                            file={quickLookFile}
+                            files={sortedFiles}
+                            viewMode={viewMode}
+                            onClose={() => setQuickLookPath(null)}
+                            onNavigate={(nextFile) => {
+                                handleSelect(nextFile, false, false);
+                                setQuickLookPath(nextFile.path);
+                            }}
+                            onOpen={(fileToOpen) => {
+                                handleNavigate(fileToOpen);
+                            }}
+                        />
+                    </Suspense>
+                </ErrorBoundary>
             )}
         </div>
     );

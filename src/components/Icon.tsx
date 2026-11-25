@@ -1,8 +1,9 @@
 import React from 'react';
 import { Icon as M3Icon, type IconProps as M3IconProps } from '@bug-on/m3-expressive';
 
-export interface IconProps extends Omit<M3IconProps, 'fill' | 'opticalSize' | 'size'> {
+export interface IconProps extends Omit<M3IconProps, 'fill' | 'opticalSize' | 'size' | 'variant'> {
   name: string;
+  variant?: 'rounded';
   className?: string;
   filled?: boolean;
   fill?: 0 | 1;

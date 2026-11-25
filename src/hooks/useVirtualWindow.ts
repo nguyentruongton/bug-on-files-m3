@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
+
+const useIsomorphicLayoutEffect =
+    typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface VirtualRange {
     startIndex: number;
@@ -15,13 +18,15 @@ export interface UseVirtualWindowOptions {
     overscan?: number;
     topOffset?: number;
     fallbackHeight?: number;
+    gapPx?: number;
+    rebindKey?: unknown;
 }
 
 export interface UseVirtualWindowResult extends VirtualRange {
     offsets: number[];
 }
 
-const LIST_GAP_PX = 2;
+const DEFAULT_GAP_PX = 2;
 
 function findFirstIntersectingIndex(offsets: number[], targetOffset: number): number {
     const itemCount = offsets.length - 1;
@@ -67,7 +72,8 @@ export function calculateVirtualRange(
     scrollTop: number,
     viewportHeight: number,
     overscan = 6,
-    fallbackHeight = 600
+    fallbackHeight = 600,
+    gapPx = DEFAULT_GAP_PX
 ): VirtualRange {
     const itemCount = Math.max(0, offsets.length - 1);
     if (itemCount === 0 || totalHeight <= 0) {
@@ -92,9 +98,7 @@ export function calculateVirtualRange(
     const startIndex = Math.max(0, rawStart - safeOverscan);
     const endIndex = Math.min(itemCount - 1, rawEnd + safeOverscan);
 
-    // Subtract LIST_GAP_PX from non-zero spacers because flex <List> adds gap-[2px]
-    // between the spacer <li> and the first/last rendered row.
-    const topSpacerHeight = startIndex > 0 ? Math.max(0, offsets[startIndex] - LIST_GAP_PX) : 0;
+    const topSpacerHeight = startIndex > 0 ? Math.max(0, offsets[startIndex] - gapPx) : 0;
     const bottomSpacerHeight =
         endIndex < itemCount - 1 ? Math.max(0, totalHeight - offsets[endIndex + 1]) : 0;
 
@@ -114,11 +118,13 @@ export function useVirtualWindow({
     overscan = 6,
     topOffset = 0,
     fallbackHeight = 600,
+    gapPx = DEFAULT_GAP_PX,
+    rebindKey,
 }: UseVirtualWindowOptions): UseVirtualWindowResult {
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
 
-    useEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         const el = containerRef.current;
         if (!el) return;
 
@@ -146,7 +152,7 @@ export function useVirtualWindow({
             el.removeEventListener('scroll', handleScroll);
             resizeObserver?.disconnect();
         };
-    }, [containerRef]);
+    }, [containerRef, rebindKey]);
 
     const { offsets, totalHeight } = useMemo(() => {
         const nextOffsets = new Array<number>(itemCount + 1);
@@ -154,10 +160,9 @@ export function useVirtualWindow({
         for (let i = 0; i < itemCount; i++) {
             nextOffsets[i + 1] = nextOffsets[i] + getItemHeight(i);
         }
-        // Final item inside <List> has no trailing gap-[2px] after it.
-        const total = itemCount > 0 ? Math.max(0, nextOffsets[itemCount] - LIST_GAP_PX) : 0;
+        const total = itemCount > 0 ? Math.max(0, nextOffsets[itemCount] - gapPx) : 0;
         return { offsets: nextOffsets, totalHeight: total };
-    }, [itemCount, getItemHeight]);
+    }, [itemCount, getItemHeight, gapPx]);
 
     const adjustedScrollTop = Math.max(0, scrollTop - topOffset);
     const adjustedViewportHeight =
@@ -171,9 +176,10 @@ export function useVirtualWindow({
                 adjustedScrollTop,
                 adjustedViewportHeight,
                 overscan,
-                fallbackHeight
+                fallbackHeight,
+                gapPx
             ),
-        [offsets, totalHeight, adjustedScrollTop, adjustedViewportHeight, overscan, fallbackHeight]
+        [offsets, totalHeight, adjustedScrollTop, adjustedViewportHeight, overscan, fallbackHeight, gapPx]
     );
 
     return {

@@ -3,6 +3,7 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { api } from '../api';
+import { sanitizeTerminalPath } from '../utils/fileUtils';
 
 interface TerminalPaneProps {
     cwd?: string;
@@ -113,8 +114,10 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
 
             const targetCwd = latestCwdRef.current;
             if (targetCwd && !targetCwd.startsWith('app://') && targetCwd !== initialCwd) {
-                const safePath = targetCwd.replace(/'/g, "'\\''");
-                api.ptyWrite(pid, `cd '${safePath}'\r`);
+                const safePath = sanitizeTerminalPath(targetCwd).replace(/'/g, "'\\''");
+                if (safePath) {
+                    api.ptyWrite(pid, `cd '${safePath}'\r`);
+                }
             }
         });
 
@@ -138,9 +141,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
     useEffect(() => {
         latestCwdRef.current = cwd;
         if (cwd && !cwd.startsWith('app://') && pidRef.current) {
-            const safePath = cwd.replace(/'/g, "'\\''");
-            const cmd = `cd '${safePath}'\r`;
-            api.ptyWrite(pidRef.current, cmd);
+            const safePath = sanitizeTerminalPath(cwd).replace(/'/g, "'\\''");
+            if (safePath) {
+                const cmd = `cd '${safePath}'\r`;
+                api.ptyWrite(pidRef.current, cmd);
+            }
         }
     }, [cwd]);
 

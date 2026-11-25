@@ -5,7 +5,10 @@ import {
   shouldApplyReload,
   resolveDragCompletion,
   shouldSyncQuickLookOnRender,
+  processInboundDrop,
 } from '../../utils/explorerTabUtils';
+import { FileSystemService } from '../../services/FileSystemService';
+import { api } from '../../api';
 
 describe('ExplorerTab silent reload & recovery logic', () => {
   describe('selection pruning', () => {
@@ -171,6 +174,79 @@ describe('ExplorerTab silent reload & recovery logic', () => {
 
     test('syncs when quickLookPath is open and sorted files reference changed', () => {
       expect(shouldSyncQuickLookOnRender('/a', listA, listB)).toBe(true);
+    });
+  });
+
+  describe('inbound drag-and-drop guard (processInboundDrop)', () => {
+    test('blocks drops during active search or in trash/dashboard views', async () => {
+      const copied: Array<[string, string]> = [];
+      const deps = {
+        exists: async () => false,
+        copyFile: async (src: string, dest: string) => {
+          copied.push([src, dest]);
+          return true;
+        },
+      };
+
+      expect(await processInboundDrop(['/tmp/a.txt'], '/home/u', true, deps)).toBe(0);
+      expect(await processInboundDrop(['/tmp/a.txt'], 'app://trash', false, deps)).toBe(0);
+      expect(await processInboundDrop(['/tmp/a.txt'], 'app://dashboard', false, deps)).toBe(0);
+      expect(copied).toEqual([]);
+    });
+
+    test('rejects same-folder self-drops, descendant drops, and invalid paths, and avoids overwriting colliding names', async () => {
+      const existing = new Set(['/home/u/Pictures/photo.png']);
+      const copied: Array<[string, string]> = [];
+      const deps = {
+        exists: async (p: string) => existing.has(p),
+        copyFile: async (src: string, dest: string) => {
+          copied.push([src, dest]);
+          existing.add(dest);
+          return true;
+        },
+      };
+
+      const count = await processInboundDrop(
+        [
+          '/home/u/Pictures/same.png', // same folder -> skip
+          '/home/u', // ancestor of /home/u/Pictures -> skip
+          '/home/u/Pictures', // same dir -> skip
+          'relative/path.txt', // non-absolute -> skip
+          '/tmp/evil\0.txt', // NUL byte -> skip
+          '/tmp/photo.png', // collision -> photo (2).png
+          '/tmp/fresh.png', // no collision -> fresh.png
+        ],
+        '/home/u/Pictures',
+        false,
+        deps
+      );
+
+      expect(count).toBe(2);
+      expect(copied).toEqual([
+        ['/tmp/photo.png', '/home/u/Pictures/photo (2).png'],
+        ['/tmp/fresh.png', '/home/u/Pictures/fresh.png'],
+      ]);
+    });
+  });
+
+  describe('FileSystemService error propagation', () => {
+    test('propagates listDir and listTrash rejections instead of swallowing them', async () => {
+      const origListDir = api.listDir;
+      const origListTrash = api.listTrash;
+      try {
+        Object.assign(api, {
+          listDir: async () => {
+            throw new Error('EACCES: permission denied');
+          },
+          listTrash: async () => {
+            throw new Error('Trash unavailable');
+          },
+        });
+        await expect(FileSystemService.listDir('/root')).rejects.toThrow('EACCES');
+        await expect(FileSystemService.listTrash()).rejects.toThrow('Trash unavailable');
+      } finally {
+        Object.assign(api, { listDir: origListDir, listTrash: origListTrash });
+      }
     });
   });
 });

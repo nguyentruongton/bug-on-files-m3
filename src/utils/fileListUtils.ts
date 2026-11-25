@@ -83,6 +83,116 @@ function resolveSegmentPosition(indexInGroup: number, groupLength: number): List
     return 'middle';
 }
 
+export const GRID_HEADER_HEIGHT = 28;
+export const GRID_GAP_PX = 12;
+
+export function getGridCardHeight(iconSize: number): number {
+    return iconSize + 92;
+}
+
+export function computeGridColumns(
+    containerWidth: number,
+    iconSize: number,
+    gapPx = GRID_GAP_PX,
+    horizontalPaddingPx = 32
+): number {
+    const usableWidth = Math.max(0, containerWidth - horizontalPaddingPx);
+    const minCardWidth = Math.max(116, iconSize + 48);
+    return Math.max(1, Math.floor((usableWidth + gapPx) / (minCardWidth + gapPx)));
+}
+
+export type VirtualGridEntry =
+    | { kind: 'header'; key: string; group: FileGroup; height: number }
+    | { kind: 'grid-row'; key: string; items: IFile[]; startIndex: number; height: number };
+
+export function buildVirtualGridEntries(
+    files: IFile[],
+    groupingEnabled: boolean,
+    columnCount: number,
+    iconSize: number,
+    gapPx = GRID_GAP_PX
+): { entries: VirtualGridEntry[]; fileIndexToRowIndex: number[] } {
+    if (files.length === 0) {
+        return { entries: [], fileIndexToRowIndex: [] };
+    }
+
+    const cols = Math.max(1, Math.floor(columnCount));
+    const headerEntryHeight = GRID_HEADER_HEIGHT + gapPx;
+    const rowEntryHeight = getGridCardHeight(iconSize) + gapPx;
+    const entries: VirtualGridEntry[] = [];
+    const fileIndexToRowIndex = new Array<number>(files.length);
+
+    if (!groupingEnabled) {
+        for (let i = 0; i < files.length; i += cols) {
+            const rowItems = files.slice(i, i + cols);
+            const rowIndex = entries.length;
+            entries.push({
+                kind: 'grid-row',
+                key: `row:${i}:${rowItems[0]?.path ?? ''}`,
+                items: rowItems,
+                startIndex: i,
+                height: rowEntryHeight,
+            });
+            for (let j = 0; j < rowItems.length; j++) {
+                fileIndexToRowIndex[i + j] = rowIndex;
+            }
+        }
+        return { entries, fileIndexToRowIndex };
+    }
+
+    let i = 0;
+    while (i < files.length) {
+        const group = getSemanticGroup(files[i]);
+        let groupEnd = i + 1;
+        while (groupEnd < files.length && getSemanticGroup(files[groupEnd]) === group) {
+            groupEnd++;
+        }
+
+        entries.push({
+            kind: 'header',
+            key: `grid-header:${group}:${i}`,
+            group,
+            height: headerEntryHeight,
+        });
+
+        for (let rowStart = i; rowStart < groupEnd; rowStart += cols) {
+            const sliceEnd = Math.min(groupEnd, rowStart + cols);
+            const rowItems = files.slice(rowStart, sliceEnd);
+            const rowIndex = entries.length;
+            entries.push({
+                kind: 'grid-row',
+                key: `grid-row:${group}:${rowStart}:${rowItems[0]?.path ?? ''}`,
+                items: rowItems,
+                startIndex: rowStart,
+                height: rowEntryHeight,
+            });
+            for (let j = 0; j < rowItems.length; j++) {
+                fileIndexToRowIndex[rowStart + j] = rowIndex;
+            }
+        }
+
+        i = groupEnd;
+    }
+
+    return { entries, fileIndexToRowIndex };
+}
+
+export function collectOutboundDragPaths(
+    clickedFile: IFile,
+    sortedFiles: IFile[],
+    selectedFiles: Set<string>
+): string[] {
+    if (selectedFiles.has(clickedFile.path) && selectedFiles.size > 0) {
+        const ordered = sortedFiles
+            .filter((f) => selectedFiles.has(f.path))
+            .map((f) => f.path);
+        if (ordered.length > 0) {
+            return ordered;
+        }
+    }
+    return [clickedFile.path];
+}
+
 export function buildDisplayEntries(
     files: IFile[],
     groupingEnabled: boolean

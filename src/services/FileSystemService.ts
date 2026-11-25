@@ -19,15 +19,7 @@ export const FileSystemService = {
     },
 
     async listTrash(): Promise<IFile[]> {
-        if (api && api.listTrash) {
-            try {
-                return await api.listTrash();
-            } catch (error) {
-                console.error('Trash list error:', error);
-                return [];
-            }
-        }
-        return [];
+        return api.listTrash();
     },
 
     async restoreTrash(ids: string[]): Promise<boolean> {
@@ -55,14 +47,6 @@ export const FileSystemService = {
     },
 
     async listDir(path: string): Promise<IFile[]> {
-        if (api && api.listDir) {
-            try {
-                return await api.listDir(path);
-            } catch (error) {
-                console.error('FS Error:', error);
-                return [];
-            }
-        }
-        return [];
+        return api.listDir(path);
     }
 };

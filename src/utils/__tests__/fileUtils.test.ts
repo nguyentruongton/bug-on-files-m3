@@ -16,6 +16,11 @@ import {
   validateFileName,
   formatOriginalParent,
   filterTrashFiles,
+  encodePath,
+  toFileUri,
+  buildFileUriList,
+  parseFileUriList,
+  sanitizeTerminalPath,
 } from '../fileUtils';
 import type { IFile } from '../../types/files';
 
@@ -210,5 +215,30 @@ describe('fileUtils', () => {
     expect(filterTrashFiles(items, 'report').map((f) => f.name)).toEqual(['Report.pdf']);
     expect(filterTrashFiles(items, 'pictures').map((f) => f.name)).toEqual(['photo.png']);
     expect(filterTrashFiles(items, '').map((f) => f.name)).toEqual(['Report.pdf', 'photo.png']);
+  });
+
+  test('encodePath, toFileUri, buildFileUriList, and parseFileUriList handle RFC 2483, UTF-8, spaces, and remote/NUL rejections', () => {
+    expect(encodePath('/home/u/café #1?100%.png')).toBe('/home/u/caf%C3%A9%20%231%3F100%25.png');
+    expect(encodePath('relative/path.txt')).toBe('/relative/path.txt');
+    expect(toFileUri('/home/u/my file.txt')).toBe('file:///home/u/my%20file.txt');
+
+    const uriList = buildFileUriList(['/home/u/a b.txt', '/home/u/café.png']);
+    expect(uriList).toBe('file:///home/u/a%20b.txt\r\nfile:///home/u/caf%C3%A9.png\r\n');
+
+    const parsed = parseFileUriList(
+      '# RFC 2483 comment\r\n' +
+        'file:///home/u/a%20b.txt\r\n' +
+        'file://localhost/home/u/caf%C3%A9.png\r\n' +
+        'file://remote-host/share/evil.txt\r\n' +
+        'file:///home/u/bad%00null.txt\r\n' +
+        'https://example.com/not-a-file\r\n'
+    );
+    expect(parsed).toEqual(['/home/u/a b.txt', '/home/u/café.png']);
+  });
+
+  test('sanitizeTerminalPath strips ASCII control bytes while preserving UTF-8 and quotes', () => {
+    expect(sanitizeTerminalPath("/home/u/café 'test'\r\n\x1b[31m\x00\x7f")).toBe(
+      "/home/u/café 'test'[31m"
+    );
   });
 });

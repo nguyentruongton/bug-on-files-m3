@@ -5,6 +5,7 @@ import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
 import {
+    buildFileUriList,
     formatFileDate,
     formatFileSize,
     formatOriginalParent,
@@ -14,12 +15,25 @@ import {
     isMediaThumbnailCandidate,
     isVideoEntry,
 } from '../utils/fileUtils';
-import { buildDisplayEntries, type SortField } from '../utils/fileListUtils';
+import {
+    GRID_GAP_PX,
+    GRID_HEADER_HEIGHT,
+    buildDisplayEntries,
+    buildVirtualGridEntries,
+    collectOutboundDragPaths,
+    computeGridColumns,
+    getGridCardHeight,
+    type SortField,
+} from '../utils/fileListUtils';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../utils/shapeUtils';
 import { toThumbnailUrl } from '../utils/quickLook';
 import { useVirtualWindow } from '../hooks/useVirtualWindow';
 
+const useIsomorphicLayoutEffect =
+    typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 const LIST_TOP_PADDING = 8;
+const GRID_TOP_PADDING = 16;
 const HEADER_ROW_HEIGHT_WITH_GAP = 38;
 const FILE_ROW_HEIGHT = 56;
 const FILE_ROW_HEIGHT_WITH_GAP = 58;
@@ -38,6 +52,9 @@ interface FileListProps {
     sortOrder?: 'asc' | 'desc';
     onSortChange?: (field: SortField) => void;
     scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+    initialScrollTop?: number;
+    getInitialScrollTop?: () => number;
+    onScrollTopChange?: (scrollTop: number) => void;
     isSearch?: boolean;
     isTrash?: boolean;
     homePath?: string;
@@ -237,6 +254,9 @@ export const FileList: React.FC<FileListProps> = ({
     sortOrder = 'asc',
     onSortChange,
     scrollContainerRef,
+    initialScrollTop = 0,
+    getInitialScrollTop,
+    onScrollTopChange,
     isSearch = false,
     isTrash = false,
     homePath,
@@ -248,6 +268,40 @@ export const FileList: React.FC<FileListProps> = ({
     const activeScrollRef = scrollContainerRef ?? localScrollRef;
     const pendingFocusPathRef = useRef<string | null>(null);
     const isProgrammaticScrollRef = useRef(false);
+    const [containerWidth, setContainerWidth] = useState(800);
+
+    const rebindKey = `${viewMode}-${sortedFiles.length > 0}`;
+    const isList = viewMode === 'list';
+
+    useIsomorphicLayoutEffect(() => {
+        const scroller = activeScrollRef.current;
+        if (!scroller) return;
+
+        const updateWidth = () => {
+            if (scroller.clientWidth > 0) {
+                setContainerWidth(scroller.clientWidth);
+            }
+        };
+
+        updateWidth();
+        const resizeObserver =
+            typeof ResizeObserver !== 'undefined'
+                ? new ResizeObserver(() => {
+                      updateWidth();
+                  })
+                : null;
+        resizeObserver?.observe(scroller);
+
+        return () => {
+            resizeObserver?.disconnect();
+        };
+    }, [activeScrollRef, rebindKey]);
+
+    const columnCount = useMemo(
+        () => computeGridColumns(containerWidth, iconSize, GRID_GAP_PX),
+        [containerWidth, iconSize]
+    );
+    const gridCardHeight = getGridCardHeight(iconSize);
 
     const { displayEntries, fileIndexToEntryIndex } = useMemo(() => {
         const entries = buildDisplayEntries(sortedFiles, Boolean(groupingEnabled));
@@ -260,21 +314,39 @@ export const FileList: React.FC<FileListProps> = ({
         return { displayEntries: entries, fileIndexToEntryIndex: indexMap };
     }, [sortedFiles, groupingEnabled]);
 
-    const getEntryHeight = useCallback(
-        (index: number) =>
-            displayEntries[index]?.kind === 'header'
-                ? HEADER_ROW_HEIGHT_WITH_GAP
-                : FILE_ROW_HEIGHT_WITH_GAP,
-        [displayEntries]
+    const gridLayout = useMemo(
+        () =>
+            buildVirtualGridEntries(
+                sortedFiles,
+                Boolean(groupingEnabled),
+                columnCount,
+                iconSize,
+                GRID_GAP_PX
+            ),
+        [sortedFiles, groupingEnabled, columnCount, iconSize]
+    );
+
+    const getVirtualEntryHeight = useCallback(
+        (index: number) => {
+            if (isList) {
+                return displayEntries[index]?.kind === 'header'
+                    ? HEADER_ROW_HEIGHT_WITH_GAP
+                    : FILE_ROW_HEIGHT_WITH_GAP;
+            }
+            return gridLayout.entries[index]?.height ?? gridCardHeight + GRID_GAP_PX;
+        },
+        [isList, displayEntries, gridLayout.entries, gridCardHeight]
     );
 
     const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, offsets } = useVirtualWindow({
         containerRef: activeScrollRef,
-        itemCount: displayEntries.length,
-        getItemHeight: getEntryHeight,
-        overscan: 6,
-        topOffset: LIST_TOP_PADDING,
+        itemCount: isList ? displayEntries.length : gridLayout.entries.length,
+        getItemHeight: getVirtualEntryHeight,
+        overscan: isList ? 6 : 3,
+        topOffset: isList ? LIST_TOP_PADDING : GRID_TOP_PADDING,
         fallbackHeight: 600,
+        gapPx: isList ? 2 : GRID_GAP_PX,
+        rebindKey,
     });
 
     const latestRef = useRef({
@@ -283,23 +355,47 @@ export const FileList: React.FC<FileListProps> = ({
         onSelect,
         onNavigate,
         onContextMenu,
+        onScrollTopChange,
         offsets,
         fileIndexToEntryIndex,
+        gridFileIndexToRowIndex: gridLayout.fileIndexToRowIndex,
+        isList,
+        columnCount,
+        gridCardHeight,
         scrollEl: null as HTMLDivElement | null,
     });
 
-    useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         latestRef.current = {
             selectedFiles,
             sortedFiles,
             onSelect,
             onNavigate,
             onContextMenu,
+            onScrollTopChange,
             offsets,
             fileIndexToEntryIndex,
+            gridFileIndexToRowIndex: gridLayout.fileIndexToRowIndex,
+            isList,
+            columnCount,
+            gridCardHeight,
             scrollEl: activeScrollRef.current,
         };
     });
+
+    // Synchronously restore scroll position on mount before paint
+    const hasRestoredScrollRef = useRef(false);
+    useIsomorphicLayoutEffect(() => {
+        if (hasRestoredScrollRef.current) return;
+        const scroller = activeScrollRef.current;
+        if (!scroller) return;
+        hasRestoredScrollRef.current = true;
+        const targetTop = getInitialScrollTop ? getInitialScrollTop() : initialScrollTop;
+        if (targetTop > 0) {
+            isProgrammaticScrollRef.current = true;
+            scroller.scrollTop = targetTop;
+        }
+    }, [activeScrollRef, initialScrollTop, getInitialScrollTop, rebindKey]);
 
     const selectedArray = useMemo(() => Array.from(selectedFiles), [selectedFiles]);
 
@@ -309,12 +405,13 @@ export const FileList: React.FC<FileListProps> = ({
         pendingFocusPathRef.current = null;
     }, [directorySignature]);
 
-    // Clear pending keyboard focus target on manual scroll
+    // Report scroll position continuously and clear pending keyboard focus target on manual scroll
     useEffect(() => {
         const scroller = activeScrollRef.current;
         if (!scroller) return;
 
         const handleScroll = () => {
+            latestRef.current.onScrollTopChange?.(scroller.scrollTop);
             if (isProgrammaticScrollRef.current) {
                 isProgrammaticScrollRef.current = false;
                 return;
@@ -332,16 +429,16 @@ export const FileList: React.FC<FileListProps> = ({
             scroller.removeEventListener('scroll', handleScroll);
             scroller.removeEventListener('wheel', handleManualInput);
         };
-    }, [activeScrollRef]);
+    }, [activeScrollRef, rebindKey]);
 
     // Restore keyboard focus once virtualized row mounts after scroll
-    useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         const pendingPath = pendingFocusPathRef.current;
         if (!pendingPath) return;
         if (focusFileRowByPath(listRootRef.current, pendingPath)) {
             pendingFocusPathRef.current = null;
         }
-    }, [startIndex, endIndex, displayEntries]);
+    }, [startIndex, endIndex, displayEntries, gridLayout.entries]);
 
     const handleItemClick = useCallback((e: React.MouseEvent, file: IFile) => {
         const { selectedFiles: currentSelected, onNavigate: navigate, onSelect: select } =
@@ -364,8 +461,13 @@ export const FileList: React.FC<FileListProps> = ({
     }, []);
 
     const handleItemDragStart = useCallback((e: React.DragEvent, file: IFile) => {
-        void file;
-        e.preventDefault();
+        const { sortedFiles: currentFiles, selectedFiles: currentSelected } = latestRef.current;
+        const dragPaths = collectOutboundDragPaths(file, currentFiles, currentSelected);
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'copyMove';
+            e.dataTransfer.setData('text/uri-list', buildFileUriList(dragPaths));
+            e.dataTransfer.setData('text/plain', dragPaths.join('\n'));
+        }
     }, []);
 
     const handleItemKeyDown = useCallback(
@@ -375,6 +477,10 @@ export const FileList: React.FC<FileListProps> = ({
                 sortedFiles: currentFiles,
                 offsets: currentOffsets,
                 fileIndexToEntryIndex: entryMap,
+                gridFileIndexToRowIndex: gridRowMap,
+                isList: currentIsList,
+                columnCount: cols,
+                gridCardHeight: cardHeight,
                 scrollEl: scroller,
             } = latestRef.current;
 
@@ -392,14 +498,30 @@ export const FileList: React.FC<FileListProps> = ({
             if (currentFiles.length === 0) return;
 
             let nextFileIndex = -1;
-            if (e.key === 'ArrowDown') {
-                nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + 1);
-            } else if (e.key === 'ArrowUp') {
-                nextFileIndex = Math.max(0, fileIndex - 1);
-            } else if (e.key === 'Home') {
-                nextFileIndex = 0;
-            } else if (e.key === 'End') {
-                nextFileIndex = currentFiles.length - 1;
+            if (currentIsList) {
+                if (e.key === 'ArrowDown') {
+                    nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + 1);
+                } else if (e.key === 'ArrowUp') {
+                    nextFileIndex = Math.max(0, fileIndex - 1);
+                } else if (e.key === 'Home') {
+                    nextFileIndex = 0;
+                } else if (e.key === 'End') {
+                    nextFileIndex = currentFiles.length - 1;
+                }
+            } else {
+                if (e.key === 'ArrowRight') {
+                    nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + 1);
+                } else if (e.key === 'ArrowLeft') {
+                    nextFileIndex = Math.max(0, fileIndex - 1);
+                } else if (e.key === 'ArrowDown') {
+                    nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + cols);
+                } else if (e.key === 'ArrowUp') {
+                    nextFileIndex = Math.max(0, fileIndex - cols);
+                } else if (e.key === 'Home') {
+                    nextFileIndex = 0;
+                } else if (e.key === 'End') {
+                    nextFileIndex = currentFiles.length - 1;
+                }
             }
 
             if (nextFileIndex === -1) return;
@@ -412,10 +534,14 @@ export const FileList: React.FC<FileListProps> = ({
 
             pendingFocusPathRef.current = nextFile.path;
 
-            const entryIdx = entryMap.get(nextFileIndex);
+            const entryIdx = currentIsList
+                ? entryMap.get(nextFileIndex)
+                : gridRowMap[nextFileIndex];
             if (scroller && entryIdx !== undefined) {
-                const rowTop = LIST_TOP_PADDING + (currentOffsets[entryIdx] ?? 0);
-                const rowBottom = rowTop + FILE_ROW_HEIGHT;
+                const topPad = currentIsList ? LIST_TOP_PADDING : GRID_TOP_PADDING;
+                const rowHeight = currentIsList ? FILE_ROW_HEIGHT : cardHeight;
+                const rowTop = topPad + (currentOffsets[entryIdx] ?? 0);
+                const rowBottom = rowTop + rowHeight;
                 const visibleTop = scroller.scrollTop;
                 const visibleBottom = scroller.scrollTop + scroller.clientHeight;
 
@@ -477,7 +603,7 @@ export const FileList: React.FC<FileListProps> = ({
         );
     }
 
-    if (viewMode === 'list') {
+    if (isList) {
         const visibleEntries =
             endIndex >= startIndex ? displayEntries.slice(startIndex, endIndex + 1) : [];
 
@@ -637,107 +763,132 @@ export const FileList: React.FC<FileListProps> = ({
         );
     }
 
+    const visibleGridEntries =
+        endIndex >= startIndex ? gridLayout.entries.slice(startIndex, endIndex + 1) : [];
+    const containerSize = iconSize + 16;
+
     return (
-        <div
-            ref={activeScrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-m3-surface-container-low"
-        >
-        <div
-            className="grid content-start gap-3 p-4 pb-24 min-h-full bg-m3-surface-container-low"
-            style={{
-                gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(116, iconSize + 48)}px, 1fr))`,
-            }}
-        >
-            {sortedFiles.map((file, index) => {
-                const currentGroup = groupingEnabled ? getSemanticGroup(file) : '';
-                const prevGroup =
-                    groupingEnabled && index > 0 ? getSemanticGroup(sortedFiles[index - 1]) : '';
-                const showHeader = Boolean(groupingEnabled && currentGroup !== prevGroup);
-
-                const isSelected = selectedFiles.has(file.path);
-                const hidden = isHiddenFile(file.name);
-                const iconInfo = getFileIconInfo(file);
-                const groupName = getSemanticGroup(file);
-                const shapePair = getFileGroupShapePair(groupName, file.isDirectory, file.name, file.mediaKind);
-                const enableMorph = shouldEnableItemMorph(sortedFiles.length, isSelected);
-                const containerSize = iconSize + 16;
-
-                return (
-                    <React.Fragment key={file.path}>
-                        {showHeader && (
-                            <div
-                                className="flex items-center col-span-full"
-                                style={{ marginTop: index > 0 ? '12px' : '2px' }}
-                            >
-                                <span className="px-3 py-1 rounded-full bg-m3-secondary-container text-m3-on-secondary-container text-xs font-semibold">
-                                    {currentGroup}
-                                </span>
-                            </div>
-                        )}
+        <div ref={listRootRef} className="flex flex-col flex-1 min-h-0 w-full bg-m3-surface-container-low">
+            <div
+                ref={activeScrollRef}
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-m3-surface-container-low"
+            >
+                <div className="grid content-start gap-3 p-4 pb-24 min-h-full bg-m3-surface-container-low">
+                    {topSpacerHeight > 0 && (
                         <div
-                            data-file-path={file.path}
-                            className={`file-list-item group relative flex flex-col items-center p-2.5 rounded-m3-lg transition-colors cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-m3-primary ${
-                                isSelected
-                                    ? 'bg-m3-secondary-container text-m3-on-secondary-container'
-                                    : 'hover:bg-m3-surface-container-high text-m3-on-surface'
-                            } ${hidden ? 'opacity-60' : ''}`}
-                            title={file.name}
-                            onClick={(e) => handleItemClick(e, file)}
-                            onDoubleClick={() => onNavigate(file)}
-                            onContextMenu={(e) => onContextMenu?.(e, file)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    onNavigate(file);
-                                } else if (e.key === ' ') {
-                                    e.preventDefault();
-                                }
-                            }}
-                            draggable={!isTrash}
-                            onDragStart={(e) => handleItemDragStart(e, file)}
-                            tabIndex={0}
-                            role="button"
-                            aria-pressed={isSelected}
-                        >
-                            <ExpressiveShape
-                                shape={isSelected ? shapePair.morph : shapePair.rest}
-                                morphOn="none"
-                                disabled={!enableMorph}
-                                width={containerSize}
-                                height={containerSize}
-                                className={`${shapePair.containerClass} mb-2`}
-                            >
-                                <MediaThumbnail
-                                    file={file}
-                                    iconName={iconInfo.icon}
-                                    iconSize={Math.max(24, Math.round(iconSize * 0.56))}
-                                    filled={filledIcons || file.isDirectory}
-                                />
-                            </ExpressiveShape>
-
-                            <span className="text-xs font-medium text-center leading-tight line-clamp-2 break-all w-full px-1">
-                                {file.name}
-                            </span>
-
-                            {isTrash ? (
-                                <span
-                                    className="text-[11px] text-m3-on-surface-variant mt-0.5 truncate max-w-full px-1"
-                                    title={file.originalParent}
+                            role="presentation"
+                            aria-hidden="true"
+                            className="shrink-0 pointer-events-none"
+                            style={{ height: topSpacerHeight }}
+                        />
+                    )}
+                    {visibleGridEntries.map((entry) => {
+                        if (entry.kind === 'header') {
+                            return (
+                                <div
+                                    key={entry.key}
+                                    className="flex items-center shrink-0 select-none"
+                                    style={{ height: GRID_HEADER_HEIGHT }}
                                 >
-                                    {formatOriginalParent(file.originalParent, homePath)}
-                                </span>
-                            ) : (
-                                !file.isDirectory && (
-                                    <span className="text-[11px] text-m3-on-surface-variant mt-0.5">
-                                        {formatFileSize(file.size)}
+                                    <span className="px-3 py-1 rounded-full bg-m3-secondary-container text-m3-on-secondary-container text-xs font-semibold">
+                                        {entry.group}
                                     </span>
-                                )
-                            )}
-                        </div>
-                    </React.Fragment>
-                );
-            })}
-        </div>
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div
+                                key={entry.key}
+                                className="grid gap-3 shrink-0"
+                                style={{
+                                    gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+                                    height: gridCardHeight,
+                                }}
+                            >
+                                {entry.items.map((file, colIdx) => {
+                                    const fileIndex = entry.startIndex + colIdx;
+                                    const isSelected = selectedFiles.has(file.path);
+                                    const hidden = isHiddenFile(file.name);
+                                    const iconInfo = getFileIconInfo(file);
+                                    const groupName = getSemanticGroup(file);
+                                    const shapePair = getFileGroupShapePair(
+                                        groupName,
+                                        file.isDirectory,
+                                        file.name,
+                                        file.mediaKind
+                                    );
+                                    const enableMorph = shouldEnableItemMorph(
+                                        sortedFiles.length,
+                                        isSelected
+                                    );
+
+                                    return (
+                                        <div
+                                            key={file.path}
+                                            data-file-path={file.path}
+                                            className={`file-list-item group relative flex flex-col items-center h-full p-2.5 rounded-m3-lg transition-colors cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-m3-primary ${
+                                                isSelected
+                                                    ? 'bg-m3-secondary-container text-m3-on-secondary-container'
+                                                    : 'hover:bg-m3-surface-container-high text-m3-on-surface'
+                                            } ${hidden ? 'opacity-60' : ''}`}
+                                            title={file.name}
+                                            onClick={(e) => handleItemClick(e, file)}
+                                            onDoubleClick={() => onNavigate(file)}
+                                            onContextMenu={(e) => onContextMenu?.(e, file)}
+                                            onKeyDown={(e) => handleItemKeyDown(e, file, fileIndex)}
+                                            draggable={!isTrash}
+                                            onDragStart={(e) => handleItemDragStart(e, file)}
+                                            tabIndex={0}
+                                            role="button"
+                                            aria-pressed={isSelected}
+                                        >
+                                            <ExpressiveShape
+                                                shape={isSelected ? shapePair.morph : shapePair.rest}
+                                                morphOn="none"
+                                                disabled={!enableMorph}
+                                                width={containerSize}
+                                                height={containerSize}
+                                                className={`${shapePair.containerClass} mb-2 shrink-0`}
+                                            >
+                                                <MediaThumbnail
+                                                    file={file}
+                                                    iconName={iconInfo.icon}
+                                                    iconSize={Math.max(24, Math.round(iconSize * 0.56))}
+                                                    filled={filledIcons || file.isDirectory}
+                                                />
+                                            </ExpressiveShape>
+
+                                            <span className="h-[30px] overflow-hidden text-xs font-medium text-center leading-tight line-clamp-2 break-all w-full px-1">
+                                                {file.name}
+                                            </span>
+
+                                            <span
+                                                className="h-[18px] text-[11px] text-m3-on-surface-variant mt-0.5 truncate max-w-full px-1"
+                                                title={isTrash ? file.originalParent : undefined}
+                                            >
+                                                {isTrash
+                                                    ? formatOriginalParent(file.originalParent, homePath)
+                                                    : !file.isDirectory
+                                                        ? formatFileSize(file.size)
+                                                        : ''}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })}
+                    {bottomSpacerHeight > 0 && (
+                        <div
+                            role="presentation"
+                            aria-hidden="true"
+                            className="shrink-0 pointer-events-none"
+                            style={{ height: bottomSpacerHeight }}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     );
 };

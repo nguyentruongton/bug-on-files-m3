@@ -86,6 +86,31 @@ describe('FileList media thumbnails and play badge', () => {
         expect(html).not.toContain('media://thumb/home/u/code.ts');
     });
 
+    test('bounds mounted DOM cards in Grid View for large folders (500 items)', () => {
+        const files: IFile[] = Array.from({ length: 500 }, (_, i) =>
+            makeFile(`photo_${String(i).padStart(4, '0')}.png`)
+        );
+
+        const html = renderToStaticMarkup(
+            <FileList
+                files={files}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                sortBy="name"
+                sortOrder="asc"
+            />
+        );
+
+        const renderedItemMatches = html.match(/data-file-path="/g) ?? [];
+        expect(renderedItemMatches.length).toBeGreaterThan(0);
+        expect(renderedItemMatches.length).toBeLessThan(120);
+    });
+
     test('routes video shape pair to video candidate with mediaKind: "video"', () => {
         const videoFile = makeFile('stream.ts', { mediaKind: 'video' });
         const html = renderToStaticMarkup(

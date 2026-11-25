@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { AppThemeProvider } from './contexts/AppThemeContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
@@ -13,7 +13,11 @@ import { ContextMenu } from './components/ContextMenu';
 import type { ContextMenuItem } from './components/ContextMenu';
 import { SettingsDialog } from './components/SettingsDialog';
 import { AboutDialog } from './components/AboutDialog';
-import { TerminalPane } from './components/TerminalPane';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+const TerminalPane = lazy(() =>
+  import('./components/TerminalPane').then((m) => ({ default: m.TerminalPane }))
+);
 import type { IFile } from './types/files';
 import { Dialog } from './components/Dialog';
 import { Button } from './components/Button';
@@ -954,7 +958,33 @@ function AppContent() {
               </IconButton>
             </div>
             <div className="flex-1 min-h-0 relative">
-              <TerminalPane cwd={terminalCwd || (currentPath && !currentPath.startsWith('app://') ? currentPath : undefined)} />
+              <ErrorBoundary
+                fallback={(_err, reset) => (
+                  <div
+                    role="alert"
+                    className="h-full flex items-center justify-center gap-3 p-4 bg-m3-error-container text-m3-on-error-container"
+                  >
+                    <span className="text-sm font-medium">Failed to load terminal pane.</span>
+                    <Button variant="text" size="sm" onClick={reset}>
+                      Retry
+                    </Button>
+                    <Button
+                      variant="text"
+                      size="sm"
+                      onClick={() => {
+                        reset();
+                        setTerminalOpen(false);
+                      }}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                )}
+              >
+                <Suspense fallback={null}>
+                  <TerminalPane cwd={terminalCwd || (currentPath && !currentPath.startsWith('app://') ? currentPath : undefined)} />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           </div>
         )}
@@ -1019,11 +1049,13 @@ function AppContent() {
           />
         </Dialog>
 
-        <PropertiesDialog
-          open={propertiesDialogOpen}
-          onClose={() => setPropertiesDialogOpen(false)}
-          file={propertiesFile}
-        />
+        {propertiesDialogOpen && (
+          <PropertiesDialog
+            open={propertiesDialogOpen}
+            onClose={() => setPropertiesDialogOpen(false)}
+            file={propertiesFile}
+          />
+        )}
         {openWithFile && (
           <OpenWithDialog
             open={!!openWithFile}
@@ -1038,25 +1070,29 @@ function AppContent() {
           />
         )}
 
-        <AboutDialog
-          open={aboutDialogOpen}
-          onClose={() => setAboutDialogOpen(false)}
-        />
+        {aboutDialogOpen && (
+          <AboutDialog
+            open={aboutDialogOpen}
+            onClose={() => setAboutDialogOpen(false)}
+          />
+        )}
 
-        <SettingsDialog
-          open={settingsDialogOpen}
-          onClose={() => setSettingsDialogOpen(false)}
-          showHiddenFiles={showHiddenFiles}
-          onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
-          confirmTrash={confirmTrash}
-          onToggleConfirmTrash={() => setConfirmTrash(!confirmTrash)}
-          iconSize={iconSize}
-          onIconSizeChange={setIconSize}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          filledIcons={filledIcons}
-          onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
-        />
+        {settingsDialogOpen && (
+          <SettingsDialog
+            open={settingsDialogOpen}
+            onClose={() => setSettingsDialogOpen(false)}
+            showHiddenFiles={showHiddenFiles}
+            onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
+            confirmTrash={confirmTrash}
+            onToggleConfirmTrash={() => setConfirmTrash(!confirmTrash)}
+            iconSize={iconSize}
+            onIconSizeChange={setIconSize}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            filledIcons={filledIcons}
+            onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
+          />
+        )}
 
         <Dialog
           title="Move to Trash?"
@@ -1115,28 +1151,32 @@ function AppContent() {
           </p>
         </Dialog>
 
-        <CompressDialog
-          open={Boolean(compressDialogItems && compressDialogItems.length > 0)}
-          defaultName={
-            compressDialogItems
-              ? buildDefaultArchiveName(
-                  compressDialogItems,
-                  currentPath && !currentPath.startsWith('app://')
-                    ? currentPath.split('/').pop() || 'archive'
-                    : 'archive'
-                )
-              : 'archive'
-          }
-          onClose={() => setCompressDialogItems(null)}
-          onConfirm={(filename, format) => {
-            void handleCompressConfirm(filename, format);
-          }}
-        />
+        {Boolean(compressDialogItems && compressDialogItems.length > 0) && (
+          <CompressDialog
+            open={Boolean(compressDialogItems && compressDialogItems.length > 0)}
+            defaultName={
+              compressDialogItems
+                ? buildDefaultArchiveName(
+                    compressDialogItems,
+                    currentPath && !currentPath.startsWith('app://')
+                      ? currentPath.split('/').pop() || 'archive'
+                      : 'archive'
+                  )
+                : 'archive'
+            }
+            onClose={() => setCompressDialogItems(null)}
+            onConfirm={(filename, format) => {
+              void handleCompressConfirm(filename, format);
+            }}
+          />
+        )}
 
-        <MissingToolDialog
-          info={missingToolInfo}
-          onClose={() => setMissingToolInfo(null)}
-        />
+        {missingToolInfo && (
+          <MissingToolDialog
+            info={missingToolInfo}
+            onClose={() => setMissingToolInfo(null)}
+          />
+        )}
 
         {conflictDialog}
       </main>

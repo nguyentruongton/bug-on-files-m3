@@ -1,5 +1,6 @@
 import type { IFile } from '../types/files';
 import {
+    encodePath,
     getFileExtension,
     isImageFile,
     isVideoFile,
@@ -26,11 +27,6 @@ export function getPreviewKind(file: IFile): PreviewKind {
     if (isPdfFile(name)) return 'pdf';
     if (isTextFile(name)) return 'text';
     return 'other';
-}
-
-function encodePath(path: string): string {
-    const encodedSegments = path.split('/').map(encodeURIComponent).join('/');
-    return encodedSegments.startsWith('/') ? encodedSegments : `/${encodedSegments}`;
 }
 
 export function toMediaUrl(path: string): string {
