@@ -7,8 +7,9 @@ import {
     compareFiles,
     computeGridColumns,
     normalizeSortField,
+    resolveGridArrowTarget,
 } from '../fileListUtils';
-import { calculateVirtualRange } from '../../hooks/useVirtualWindow';
+import { calculateVirtualRange, shouldRestoreVirtualScroll } from '../../hooks/useVirtualWindow';
 
 function makeFile(
     name: string,
@@ -259,5 +260,58 @@ describe('Grid View virtualization helpers', () => {
         ]);
         // Dragging an unselected file drags only that file
         expect(collectOutboundDragPaths(files[1], files, selected)).toEqual(['/tmp/b.png']);
+    });
+
+    test('resolveGridArrowTarget steps across visual rows when category grouping leaves partial rows', () => {
+        const files = [
+            makeFile('folderA', { isDirectory: true }), // 0: Folders row 0, col 0
+            makeFile('doc1.md'), // 1: Documents row, col 0
+            makeFile('doc2.md'), // 2: Documents row, col 1
+            makeFile('img1.png'), // 3: Media row, col 0
+            makeFile('img2.png'), // 4: Media row, col 1
+            makeFile('img3.png'), // 5: Media row, col 2
+            makeFile('img4.png'), // 6: Media row, col 3
+        ];
+        // Note: buildVirtualGridEntries preserves input order grouping contiguous semantic groups
+        const { entries, fileIndexToRowIndex } = buildVirtualGridEntries(files, true, 4, 64, 12);
+
+        // From Folders (0) pressing ArrowDown must land on Documents col 0 (1), NOT skip to 4
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 0, 'ArrowDown', files.length)).toBe(1);
+        // From Documents col 1 (2) pressing ArrowDown must land on Media col 1 (4)
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 2, 'ArrowDown', files.length)).toBe(4);
+        // From Media col 3 (6) pressing ArrowUp must clamp to Documents last col (2)
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 6, 'ArrowUp', files.length)).toBe(2);
+        // ArrowLeft / ArrowRight / Home / End
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 1, 'ArrowLeft', files.length)).toBe(0);
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 1, 'ArrowRight', files.length)).toBe(2);
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 4, 'Home', files.length)).toBe(0);
+        expect(resolveGridArrowTarget(entries, fileIndexToRowIndex, 1, 'End', files.length)).toBe(6);
+    });
+
+    test('shouldRestoreVirtualScroll waits until container width is measured before restoring non-zero scrollTop', () => {
+        expect(
+            shouldRestoreVirtualScroll({
+                alreadyRestored: false,
+                restoreReady: false,
+                hasContainer: true,
+                targetScrollTop: 4200,
+            })
+        ).toBe(false);
+        expect(
+            shouldRestoreVirtualScroll({
+                alreadyRestored: false,
+                restoreReady: true,
+                hasContainer: true,
+                targetScrollTop: 4200,
+            })
+        ).toBe(true);
+        expect(
+            shouldRestoreVirtualScroll({
+                alreadyRestored: true,
+                restoreReady: true,
+                hasContainer: true,
+                targetScrollTop: 4200,
+            })
+        ).toBe(false);
     });
 });

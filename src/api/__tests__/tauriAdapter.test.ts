@@ -10,7 +10,7 @@ describe('tauriAdapter', () => {
         const adapter = createTauriAdapter(invoke, listen);
 
         for (const key of Object.keys(COMMAND_MAP) as (keyof typeof COMMAND_MAP)[]) {
-            expect(typeof (adapter as any)[key]).toBe('function');
+            expect(typeof adapter[key]).toBe('function');
         }
         expect(typeof adapter.onDragDrop).toBe('function');
         expect(typeof adapter.onWatchEvent).toBe('function');
@@ -69,7 +69,7 @@ describe('tauriAdapter', () => {
             resolveListen = resolve;
         });
 
-        const listen = async (event: string, _cb: (payload: unknown) => void) => {
+        const listen = async (event: string) => {
             expect(event).toBe('fs:watch-event');
             return listenPromise;
         };

@@ -34,6 +34,8 @@ import {
     resolveDragCompletion,
     resolveExtractProgressPercent,
     processInboundDrop,
+    shouldCheckMissingFolderOnReloadError,
+    shouldReloadAfterInboundDrop,
 } from '../utils/explorerTabUtils';
 
 const loadQuickLookModule = () =>
@@ -329,7 +331,7 @@ export function ExplorerTab({
             })) {
                 return;
             }
-            if (api?.exists) {
+            if (shouldCheckMissingFolderOnReloadError(targetPath) && api?.exists) {
                 const exists = await api.exists(targetPath);
                 if (!shouldApplyReload({
                     seq,
@@ -346,7 +348,12 @@ export function ExplorerTab({
                     showToast(`Failed to refresh ${targetPath}`, 'error');
                 }
             } else {
-                showToast(`Failed to refresh ${targetPath}`, 'error');
+                showToast(
+                    targetPath === 'app://trash'
+                        ? 'Failed to refresh Trash'
+                        : `Failed to refresh ${targetPath}`,
+                    'error'
+                );
             }
         }
     }, [handleFolderMissing, showToast]);
@@ -429,6 +436,15 @@ export function ExplorerTab({
                 .then((count) => {
                     if (count > 0) {
                         showToast(`Imported ${count} file${count === 1 ? '' : 's'}`, 'success');
+                    }
+                    if (
+                        shouldReloadAfterInboundDrop(
+                            count,
+                            destDir,
+                            currentPathRef.current,
+                            searchActiveRef.current
+                        )
+                    ) {
                         void loadPath(destDir, false);
                     }
                 })

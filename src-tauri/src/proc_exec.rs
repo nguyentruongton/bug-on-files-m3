@@ -20,7 +20,30 @@ impl std::fmt::Display for ProcError {
 
 impl std::error::Error for ProcError {}
 
+fn kill_child_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pgid = child.id();
+        if pgid > 0 {
+            let _ = Command::new("kill")
+                .args(["-9", &format!("-{}", pgid)])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 pub fn run_command_with_timeout(mut cmd: Command, timeout: Duration) -> Result<Output, ProcError> {
+    cmd.stdin(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     let mut child = cmd.spawn().map_err(|e| ProcError::Spawn(e.to_string()))?;
 
     let stdout_handle = child.stdout.take().map(|mut out| {
@@ -58,8 +81,7 @@ pub fn run_command_with_timeout(mut cmd: Command, timeout: Duration) -> Result<O
             }
             Ok(None) => {
                 if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    kill_child_tree(&mut child);
                     if let Some(h) = stdout_handle {
                         let _ = h.join();
                     }
@@ -71,8 +93,7 @@ pub fn run_command_with_timeout(mut cmd: Command, timeout: Duration) -> Result<O
                 std::thread::sleep(poll_interval);
             }
             Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_child_tree(&mut child);
                 if let Some(h) = stdout_handle {
                     let _ = h.join();
                 }
@@ -116,5 +137,22 @@ mod tests {
         let cmd = Command::new("/definitely/nonexistent/binary_proc_exec_test");
         let err = run_command_with_timeout(cmd, Duration::from_secs(1)).unwrap_err();
         assert!(matches!(err, ProcError::Spawn(_)));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn timeout_reaps_grandchild_holding_stdout_without_hanging() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 5 & wait"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let start = Instant::now();
+        let err = run_command_with_timeout(cmd, Duration::from_millis(80)).unwrap_err();
+        assert_eq!(err, ProcError::Timeout);
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "timeout must return promptly even when grandchild holds stdout open (took {:?})",
+            start.elapsed()
+        );
     }
 }

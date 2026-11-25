@@ -177,6 +177,42 @@ export function buildVirtualGridEntries(
     return { entries, fileIndexToRowIndex };
 }
 
+export function resolveGridArrowTarget(
+    entries: VirtualGridEntry[],
+    fileIndexToRowIndex: number[],
+    currentFileIndex: number,
+    key: string,
+    totalFiles: number
+): number {
+    if (totalFiles <= 0) return -1;
+    if (key === 'Home') return 0;
+    if (key === 'End') return totalFiles - 1;
+    if (key === 'ArrowRight') return Math.min(totalFiles - 1, currentFileIndex + 1);
+    if (key === 'ArrowLeft') return Math.max(0, currentFileIndex - 1);
+
+    if (key !== 'ArrowDown' && key !== 'ArrowUp') {
+        return -1;
+    }
+
+    const rowIdx = fileIndexToRowIndex[currentFileIndex];
+    const currentRow = rowIdx !== undefined ? entries[rowIdx] : undefined;
+    if (!currentRow || currentRow.kind !== 'grid-row') {
+        return -1;
+    }
+
+    const colIdx = Math.max(0, currentFileIndex - currentRow.startIndex);
+    const step = key === 'ArrowDown' ? 1 : -1;
+
+    for (let i = rowIdx + step; i >= 0 && i < entries.length; i += step) {
+        const candidate = entries[i];
+        if (candidate.kind === 'grid-row' && candidate.items.length > 0) {
+            return candidate.startIndex + Math.min(colIdx, candidate.items.length - 1);
+        }
+    }
+
+    return currentFileIndex;
+}
+
 export function collectOutboundDragPaths(
     clickedFile: IFile,
     sortedFiles: IFile[],

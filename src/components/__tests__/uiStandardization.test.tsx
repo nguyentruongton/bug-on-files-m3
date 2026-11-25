@@ -91,15 +91,15 @@ describe('TabBar standardization', () => {
         expect(html).toContain('role="tablist"');
         expect(html).toMatch(/role="tablist"[^>]*rounded-m3-full/);
         expect(html).not.toContain('!rounded-m3-full');
-        expect(html).toContain('!bg-m3-secondary-container');
-        expect(html).toContain('!bg-m3-surface-container-high');
+        expect(html).toContain('bg-m3-secondary text-m3-on-secondary');
+        expect(html).toContain('bg-m3-secondary-container text-m3-on-secondary-container');
         expect(html).toContain('aria-label="Home"');
         expect(html).toContain('aria-label="Documents with a very long folder name"');
         expect(html).toContain('aria-label="Close Home"');
 
-        // Tab roots use native <button role="tab"> with non-button close triggers (never nested <button> inside <button>)
+        // Tab roots use native <button role="tab"> with close trigger carrying role="button" and aria-label
         expect(html).toMatch(/<button[^>]*role="tab"/);
-        expect(html).toContain('<span role="button" tabindex="-1" aria-label="Close Home"');
+        expect(html).toContain('aria-label="Close Home"');
 
         // External New Tab button renders outside role="tablist"
         const tablistEnd = html.lastIndexOf('</fieldset>');
@@ -477,7 +477,7 @@ describe('Phase 4 Views & Overlays standardization', () => {
         expect(html).toContain('role="menu"');
         expect(html.match(/role="group"/g)?.length ?? 0).toBe(2);
         expect(html.match(/role="menuitem"/g)?.length ?? 0).toBe(2);
-        expect(html).toContain('bg-m3-surface-container-low');
+        expect(html).toContain('bg-m3-tertiary-container');
         expect(html).not.toContain('shadow-xl');
         expect(html).not.toContain('border-m3-outline-variant/40');
     });

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
 const useIsomorphicLayoutEffect =
     typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -20,10 +20,29 @@ export interface UseVirtualWindowOptions {
     fallbackHeight?: number;
     gapPx?: number;
     rebindKey?: unknown;
+    getInitialScrollTop?: () => number;
+    scrollRestoreReady?: boolean;
+    onProgrammaticScroll?: () => void;
 }
 
 export interface UseVirtualWindowResult extends VirtualRange {
     offsets: number[];
+}
+
+export interface VirtualScrollRestoreCheck {
+    alreadyRestored: boolean;
+    restoreReady: boolean;
+    hasContainer: boolean;
+    targetScrollTop: number;
+}
+
+export function shouldRestoreVirtualScroll({
+    alreadyRestored,
+    restoreReady,
+    hasContainer,
+    targetScrollTop,
+}: VirtualScrollRestoreCheck): boolean {
+    return !alreadyRestored && restoreReady && hasContainer && targetScrollTop > 0;
 }
 
 const DEFAULT_GAP_PX = 2;
@@ -120,13 +139,33 @@ export function useVirtualWindow({
     fallbackHeight = 600,
     gapPx = DEFAULT_GAP_PX,
     rebindKey,
+    getInitialScrollTop,
+    scrollRestoreReady = true,
+    onProgrammaticScroll,
 }: UseVirtualWindowOptions): UseVirtualWindowResult {
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const hasRestoredScrollRef = useRef(false);
 
     useIsomorphicLayoutEffect(() => {
         const el = containerRef.current;
         if (!el) return;
+
+        if (!hasRestoredScrollRef.current && scrollRestoreReady) {
+            const targetTop = getInitialScrollTop ? getInitialScrollTop() : 0;
+            hasRestoredScrollRef.current = true;
+            if (
+                shouldRestoreVirtualScroll({
+                    alreadyRestored: false,
+                    restoreReady: true,
+                    hasContainer: true,
+                    targetScrollTop: targetTop,
+                })
+            ) {
+                onProgrammaticScroll?.();
+                el.scrollTop = targetTop;
+            }
+        }
 
         const syncMeasurements = () => {
             setScrollTop(el.scrollTop);
@@ -152,7 +191,7 @@ export function useVirtualWindow({
             el.removeEventListener('scroll', handleScroll);
             resizeObserver?.disconnect();
         };
-    }, [containerRef, rebindKey]);
+    }, [containerRef, rebindKey, scrollRestoreReady, getInitialScrollTop, onProgrammaticScroll]);
 
     const { offsets, totalHeight } = useMemo(() => {
         const nextOffsets = new Array<number>(itemCount + 1);

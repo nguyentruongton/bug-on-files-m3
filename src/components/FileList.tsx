@@ -23,6 +23,7 @@ import {
     collectOutboundDragPaths,
     computeGridColumns,
     getGridCardHeight,
+    resolveGridArrowTarget,
     type SortField,
 } from '../utils/fileListUtils';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../utils/shapeUtils';
@@ -269,6 +270,7 @@ export const FileList: React.FC<FileListProps> = ({
     const pendingFocusPathRef = useRef<string | null>(null);
     const isProgrammaticScrollRef = useRef(false);
     const [containerWidth, setContainerWidth] = useState(800);
+    const [widthMeasured, setWidthMeasured] = useState(false);
 
     const rebindKey = `${viewMode}-${sortedFiles.length > 0}`;
     const isList = viewMode === 'list';
@@ -280,6 +282,7 @@ export const FileList: React.FC<FileListProps> = ({
         const updateWidth = () => {
             if (scroller.clientWidth > 0) {
                 setContainerWidth(scroller.clientWidth);
+                setWidthMeasured(true);
             }
         };
 
@@ -296,6 +299,15 @@ export const FileList: React.FC<FileListProps> = ({
             resizeObserver?.disconnect();
         };
     }, [activeScrollRef, rebindKey]);
+
+    const resolveInitialScrollTop = useCallback(
+        () => (getInitialScrollTop ? getInitialScrollTop() : initialScrollTop),
+        [getInitialScrollTop, initialScrollTop]
+    );
+
+    const markProgrammaticScroll = useCallback(() => {
+        isProgrammaticScrollRef.current = true;
+    }, []);
 
     const columnCount = useMemo(
         () => computeGridColumns(containerWidth, iconSize, GRID_GAP_PX),
@@ -338,6 +350,8 @@ export const FileList: React.FC<FileListProps> = ({
         [isList, displayEntries, gridLayout.entries, gridCardHeight]
     );
 
+    const scrollRestoreReady = isList || widthMeasured;
+
     const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, offsets } = useVirtualWindow({
         containerRef: activeScrollRef,
         itemCount: isList ? displayEntries.length : gridLayout.entries.length,
@@ -347,6 +361,9 @@ export const FileList: React.FC<FileListProps> = ({
         fallbackHeight: 600,
         gapPx: isList ? 2 : GRID_GAP_PX,
         rebindKey,
+        getInitialScrollTop: resolveInitialScrollTop,
+        scrollRestoreReady,
+        onProgrammaticScroll: markProgrammaticScroll,
     });
 
     const latestRef = useRef({
@@ -358,9 +375,10 @@ export const FileList: React.FC<FileListProps> = ({
         onScrollTopChange,
         offsets,
         fileIndexToEntryIndex,
+        gridEntries: gridLayout.entries,
         gridFileIndexToRowIndex: gridLayout.fileIndexToRowIndex,
         isList,
-        columnCount,
+        scrollRestoreReady,
         gridCardHeight,
         scrollEl: null as HTMLDivElement | null,
     });
@@ -375,27 +393,14 @@ export const FileList: React.FC<FileListProps> = ({
             onScrollTopChange,
             offsets,
             fileIndexToEntryIndex,
+            gridEntries: gridLayout.entries,
             gridFileIndexToRowIndex: gridLayout.fileIndexToRowIndex,
             isList,
-            columnCount,
+            scrollRestoreReady,
             gridCardHeight,
             scrollEl: activeScrollRef.current,
         };
     });
-
-    // Synchronously restore scroll position on mount before paint
-    const hasRestoredScrollRef = useRef(false);
-    useIsomorphicLayoutEffect(() => {
-        if (hasRestoredScrollRef.current) return;
-        const scroller = activeScrollRef.current;
-        if (!scroller) return;
-        hasRestoredScrollRef.current = true;
-        const targetTop = getInitialScrollTop ? getInitialScrollTop() : initialScrollTop;
-        if (targetTop > 0) {
-            isProgrammaticScrollRef.current = true;
-            scroller.scrollTop = targetTop;
-        }
-    }, [activeScrollRef, initialScrollTop, getInitialScrollTop, rebindKey]);
 
     const selectedArray = useMemo(() => Array.from(selectedFiles), [selectedFiles]);
 
@@ -411,7 +416,9 @@ export const FileList: React.FC<FileListProps> = ({
         if (!scroller) return;
 
         const handleScroll = () => {
-            latestRef.current.onScrollTopChange?.(scroller.scrollTop);
+            if (latestRef.current.scrollRestoreReady) {
+                latestRef.current.onScrollTopChange?.(scroller.scrollTop);
+            }
             if (isProgrammaticScrollRef.current) {
                 isProgrammaticScrollRef.current = false;
                 return;
@@ -477,9 +484,9 @@ export const FileList: React.FC<FileListProps> = ({
                 sortedFiles: currentFiles,
                 offsets: currentOffsets,
                 fileIndexToEntryIndex: entryMap,
+                gridEntries: currentGridEntries,
                 gridFileIndexToRowIndex: gridRowMap,
                 isList: currentIsList,
-                columnCount: cols,
                 gridCardHeight: cardHeight,
                 scrollEl: scroller,
             } = latestRef.current;
@@ -509,19 +516,13 @@ export const FileList: React.FC<FileListProps> = ({
                     nextFileIndex = currentFiles.length - 1;
                 }
             } else {
-                if (e.key === 'ArrowRight') {
-                    nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + 1);
-                } else if (e.key === 'ArrowLeft') {
-                    nextFileIndex = Math.max(0, fileIndex - 1);
-                } else if (e.key === 'ArrowDown') {
-                    nextFileIndex = Math.min(currentFiles.length - 1, fileIndex + cols);
-                } else if (e.key === 'ArrowUp') {
-                    nextFileIndex = Math.max(0, fileIndex - cols);
-                } else if (e.key === 'Home') {
-                    nextFileIndex = 0;
-                } else if (e.key === 'End') {
-                    nextFileIndex = currentFiles.length - 1;
-                }
+                nextFileIndex = resolveGridArrowTarget(
+                    currentGridEntries,
+                    gridRowMap,
+                    fileIndex,
+                    e.key,
+                    currentFiles.length
+                );
             }
 
             if (nextFileIndex === -1) return;

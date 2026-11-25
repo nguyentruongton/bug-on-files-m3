@@ -6,6 +6,8 @@ import {
   resolveDragCompletion,
   shouldSyncQuickLookOnRender,
   processInboundDrop,
+  shouldCheckMissingFolderOnReloadError,
+  shouldReloadAfterInboundDrop,
 } from '../../utils/explorerTabUtils';
 import { FileSystemService } from '../../services/FileSystemService';
 import { api } from '../../api';
@@ -226,6 +228,19 @@ describe('ExplorerTab silent reload & recovery logic', () => {
         ['/tmp/photo.png', '/home/u/Pictures/photo (2).png'],
         ['/tmp/fresh.png', '/home/u/Pictures/fresh.png'],
       ]);
+    });
+
+    test('shouldReloadAfterInboundDrop only reloads if tab is still at destDir and not searching', () => {
+      expect(shouldReloadAfterInboundDrop(2, '/home/u/Pictures', '/home/u/Pictures', false)).toBe(true);
+      expect(shouldReloadAfterInboundDrop(2, '/home/u/Pictures', '/home/u/Documents', false)).toBe(false);
+      expect(shouldReloadAfterInboundDrop(2, '/home/u/Pictures', '/home/u/Pictures', true)).toBe(false);
+      expect(shouldReloadAfterInboundDrop(0, '/home/u/Pictures', '/home/u/Pictures', false)).toBe(false);
+    });
+
+    test('shouldCheckMissingFolderOnReloadError excludes virtual app:// paths like app://trash', () => {
+      expect(shouldCheckMissingFolderOnReloadError('app://trash')).toBe(false);
+      expect(shouldCheckMissingFolderOnReloadError('app://dashboard')).toBe(false);
+      expect(shouldCheckMissingFolderOnReloadError('/home/u/Documents')).toBe(true);
     });
   });
 

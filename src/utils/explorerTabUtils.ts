@@ -97,6 +97,19 @@ export function resolveExtractProgressPercent(percent?: number | null): number |
   return Math.max(0, Math.min(100, Math.round(percent)));
 }
 
+export function shouldCheckMissingFolderOnReloadError(targetPath: string): boolean {
+  return Boolean(targetPath) && !targetPath.startsWith('app://');
+}
+
+export function shouldReloadAfterInboundDrop(
+  copiedCount: number,
+  destDir: string,
+  currentPath: string,
+  searchActive: boolean
+): boolean {
+  return copiedCount > 0 && currentPath === destDir && !searchActive;
+}
+
 export interface InboundDropDeps {
   exists: (path: string) => Promise<boolean>;
   copyFile: (source: string, dest: string) => Promise<boolean>;
