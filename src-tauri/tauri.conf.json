@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Bug On Files M3",
+  "mainBinaryName": "bug-on-files-m3",
   "version": "../package.json",
   "identifier": "com.bugon.filesm3",
   "build": {

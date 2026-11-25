@@ -223,5 +223,28 @@ mod tests {
         let url = resolve_target_url("spike.html?ping=http://127.0.0.1:8787/ready", None).unwrap();
         assert_eq!(url.as_str(), "tauri://localhost/spike.html?ping=http://127.0.0.1:8787/ready");
     }
+
+    #[test]
+    fn test_tauri_conf_main_binary_name_matches_desktop_entry() {
+        let raw = include_str!("../tauri.conf.json");
+        let cfg: serde_json::Value = serde_json::from_str(raw).expect("valid tauri.conf.json");
+        assert_eq!(
+            cfg["mainBinaryName"].as_str(),
+            Some("bug-on-files-m3"),
+            "mainBinaryName must match bug-on-files-m3.desktop for Wayland/dock icon resolution"
+        );
+
+        let install_sh = include_str!("../../install.sh");
+        assert!(
+            install_sh.contains("StartupWMClass=bug-on-files-m3"),
+            "install.sh must set StartupWMClass=bug-on-files-m3"
+        );
+
+        let pkgbuild = include_str!("../../PKGBUILD");
+        assert!(
+            pkgbuild.contains("StartupWMClass=bug-on-files-m3"),
+            "PKGBUILD must set StartupWMClass=bug-on-files-m3"
+        );
+    }
 }
 

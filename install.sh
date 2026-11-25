@@ -49,7 +49,7 @@ Type=Application
 Categories=Utility;FileManager;
 Comment=Bug On Files M3 - Material 3 Expressive File Explorer
 Terminal=false
-StartupWMClass=Bug On Files M3
+StartupWMClass=bug-on-files-m3
 EOF
 
 echo "Desktop entry created at $DESKTOP_FILE"
