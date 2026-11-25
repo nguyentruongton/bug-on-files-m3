@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createTauriAdapter } from '../tauriAdapter';
 import { COMMAND_MAP } from '../commandMap';
-import type { IApi, WatchEvent } from '../types';
+import type { DragDropEventPayload } from '../types';
 
 describe('tauriAdapter', () => {
     test('every COMMAND_MAP key exists on the adapter', () => {
@@ -12,7 +12,7 @@ describe('tauriAdapter', () => {
         for (const key of Object.keys(COMMAND_MAP) as (keyof typeof COMMAND_MAP)[]) {
             expect(typeof (adapter as any)[key]).toBe('function');
         }
-        expect(typeof adapter.startDrag).toBe('function');
+        expect(typeof adapter.onDragDrop).toBe('function');
         expect(typeof adapter.onWatchEvent).toBe('function');
         expect(typeof adapter.onExtractProgress).toBe('function');
         expect(typeof adapter.onCompressProgress).toBe('function');
@@ -163,12 +163,31 @@ describe('tauriAdapter', () => {
         expect(results[0].mtime.getTime()).toBe(1600000000000);
     });
 
-    test('startDrag is a no-op that does not throw', () => {
-        const invoke = async () => {};
-        const listen = async () => () => {};
-        const adapter = createTauriAdapter(invoke, listen);
+    test('onDragDrop subscribes via listenDragDrop and forwards payload', async () => {
+        let received: DragDropEventPayload | null = null;
+        let registeredCb: ((payload: DragDropEventPayload) => void) | null = null;
+        let unlistenCalled = false;
 
-        expect(() => adapter.startDrag('/some/path')).not.toThrow();
+        const listenDragDrop = async (cb: (payload: DragDropEventPayload) => void) => {
+            registeredCb = cb;
+            return () => {
+                unlistenCalled = true;
+            };
+        };
+        const adapter = createTauriAdapter(async () => {}, async () => () => {}, listenDragDrop);
+
+        const unsub = adapter.onDragDrop((e) => {
+            received = e;
+        });
+
+        expect(registeredCb).not.toBeNull();
+        const sample: DragDropEventPayload = { type: 'drop', paths: ['/tmp/a.txt'], position: { x: 10, y: 20 } };
+        registeredCb!(sample);
+        expect(received).toEqual(sample);
+
+        await Promise.resolve();
+        unsub();
+        expect(unlistenCalled).toBe(true);
     });
 
     test('listDir preserves mediaKind: "video" when present and leaves undefined otherwise', async () => {
@@ -187,7 +206,7 @@ describe('tauriAdapter', () => {
                 isDirectory: false,
                 size: 2000,
                 mtimeMs: 1700000000000,
-                media_kind: 'video',
+                mediaKind: 'video',
             },
             {
                 name: 'notes.txt',

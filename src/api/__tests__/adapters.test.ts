@@ -1,35 +1,28 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { api, electronAdapter, createTauriAdapter, COMMAND_MAP } from '../index';
+import { describe, expect, test } from 'bun:test';
+import { api } from '../index';
 
-describe('api and electronAdapter', () => {
+describe('api (Tauri-only client)', () => {
     test('api is defined at module evaluation time without throwing in node/bun', () => {
         expect(api).toBeDefined();
+        expect(typeof api.listDir).toBe('function');
+        expect(typeof api.onDragDrop).toBe('function');
     });
 
-    test('electronAdapter falls back cleanly when window is undefined', () => {
-        expect(electronAdapter.getPlaces).toBeUndefined();
+    test('calling an unmocked IPC method outside Tauri rejects with diagnostic error', async () => {
+        await expect(api.getHomePath()).rejects.toThrow(/Tauri IPC unavailable.*get_home/);
     });
 
-    test('electronAdapter delegates dynamically when window has electron property', async () => {
-        const originalWindow = (globalThis as any).window;
+    test('api supports mutable mock assignment via Object.assign and clean restoration', async () => {
+        const originalGetHomePath = api.getHomePath;
         try {
-            (globalThis as any).window = {
-                electron: {
-                    getHomePath: async () => '/mock/home',
-                },
-            };
-
-            expect(typeof electronAdapter.getHomePath).toBe('function');
-            const home = await electronAdapter.getHomePath();
-            expect(home).toBe('/mock/home');
+            Object.assign(api, {
+                getHomePath: async () => '/mock/home',
+            });
+            expect(await api.getHomePath()).toBe('/mock/home');
         } finally {
-            (globalThis as any).window = originalWindow;
+            Object.assign(api, { getHomePath: originalGetHomePath });
         }
-    });
 
-    test('electronAdapter supports mock property assignment when electron property is absent', async () => {
-        (electronAdapter as any).customMock = () => 42;
-        expect((electronAdapter as any).customMock()).toBe(42);
-        delete (electronAdapter as any).customMock;
+        await expect(api.getHomePath()).rejects.toThrow(/Tauri IPC unavailable/);
     });
 });

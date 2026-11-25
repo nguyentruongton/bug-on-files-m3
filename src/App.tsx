@@ -164,9 +164,6 @@ function AppContent() {
       splashEl.classList.add('is-hidden');
       window.setTimeout(() => splashEl.remove(), 220);
     }
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      api.closeSplashscreen().catch(() => {});
-    }
   }, []);
 
   // -- Handlers --

@@ -1,46 +1,46 @@
 import type { IFile } from '../types/files';
-import type { ExtractProgressEvent, IApi, IDrive, TextPreview, VideoMetadata, WatchEvent } from './types';
+import type {
+    DragDropEventPayload,
+    ExtractProgressEvent,
+    IApi,
+    IDrive,
+    TextPreview,
+    VideoMetadata,
+    WatchEvent,
+} from './types';
 import { COMMAND_MAP } from './commandMap';
 
 export type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 export type ListenFn = (event: string, cb: (payload: unknown) => void) => Promise<() => void>;
+export type ListenDragDropFn = (cb: (payload: DragDropEventPayload) => void) => Promise<() => void>;
 
 interface RawFileEntry {
     name: string;
     path: string;
     isDirectory?: boolean;
-    is_directory?: boolean;
     size: number;
     mtimeMs?: number;
-    mtime_ms?: number;
     mediaKind?: 'video';
-    media_kind?: 'video';
     trashId?: string;
-    trash_id?: string;
     originalParent?: string;
-    original_parent?: string;
 }
 
 function toIFile(entry: RawFileEntry): IFile {
-    const mtimeMs = entry.mtimeMs ?? entry.mtime_ms ?? 0;
-    const rawMediaKind = entry.mediaKind ?? entry.media_kind;
-    const trashId = entry.trashId ?? entry.trash_id;
-    const originalParent = entry.originalParent ?? entry.original_parent;
     const file: IFile = {
         name: entry.name,
         path: entry.path,
-        isDirectory: Boolean(entry.isDirectory ?? entry.is_directory),
+        isDirectory: Boolean(entry.isDirectory),
         size: entry.size,
-        mtime: new Date(mtimeMs),
+        mtime: new Date(entry.mtimeMs ?? 0),
     };
-    if (rawMediaKind === 'video') {
+    if (entry.mediaKind === 'video') {
         file.mediaKind = 'video';
     }
-    if (trashId !== undefined) {
-        file.trashId = trashId;
+    if (entry.trashId !== undefined) {
+        file.trashId = entry.trashId;
     }
-    if (originalParent !== undefined) {
-        file.originalParent = originalParent;
+    if (entry.originalParent !== undefined) {
+        file.originalParent = entry.originalParent;
     }
     return file;
 }
@@ -72,7 +72,13 @@ function wrapListener(listenPromise: Promise<() => void>): () => void {
     };
 }
 
-export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
+const defaultListenDragDrop: ListenDragDropFn = async () => () => {};
+
+export function createTauriAdapter(
+    invoke: InvokeFn,
+    listen: ListenFn,
+    listenDragDrop: ListenDragDropFn = defaultListenDragDrop
+): IApi {
     return {
         getThemeCss: () => invoke(COMMAND_MAP.getThemeCss) as Promise<string | null>,
         listDir: async (path: string): Promise<IFile[]> => {
@@ -129,9 +135,6 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
             invoke(COMMAND_MAP.readFile, { path }) as Promise<string | null>,
         readTextPreview: (path: string) =>
             invoke(COMMAND_MAP.readTextPreview, { path }) as Promise<TextPreview>,
-        startDrag: (_path: string, _iconPath?: string) => {
-            // Deferred no-op in Tauri
-        },
         getStartupPath: () =>
             invoke(COMMAND_MAP.getStartupPath) as Promise<string | null>,
         quitApp: () =>
@@ -172,6 +175,9 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
                 listen('fs:watch-event', (payload) => cb(payload as WatchEvent))
             );
         },
+        onDragDrop: (cb: (e: DragDropEventPayload) => void) => {
+            return wrapListener(listenDragDrop(cb));
+        },
         onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => {
             return wrapListener(
                 listen('fs:extract-progress', (payload) => cb(payload as ExtractProgressEvent))
@@ -205,7 +211,5 @@ export function createTauriAdapter(invoke: InvokeFn, listen: ListenFn): IApi {
                 listen(`terminal:exit:${pid}`, () => callback())
             );
         },
-        closeSplashscreen: () =>
-            invoke(COMMAND_MAP.closeSplashscreen) as Promise<void>,
     };
 }

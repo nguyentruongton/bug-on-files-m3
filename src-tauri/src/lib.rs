@@ -18,41 +18,12 @@ use tauri::{Emitter, Manager};
 use pty::PtySessions;
 use watcher::Watchers;
 
-pub fn resolve_target_url(
-    raw: &str,
-    current: Option<&tauri::Url>,
-) -> Result<tauri::Url, Box<dyn std::error::Error>> {
-    match tauri::Url::parse(raw) {
-        Ok(url) => Ok(url),
-        Err(url::ParseError::RelativeUrlWithoutBase) => {
-            if let Some(base) = current {
-                Ok(base.join(raw)?)
-            } else {
-                let fallback = tauri::Url::parse("tauri://localhost/")?;
-                Ok(fallback.join(raw)?)
-            }
-        }
-        Err(e) => Err(Box::new(e)),
-    }
-}
-
 pub fn cleanup_resources(app: &tauri::AppHandle) {
     if let Some(pty) = app.try_state::<PtySessions>() {
         pty.kill_all();
     }
     if let Some(watchers) = app.try_state::<Watchers>() {
         watchers.stop_all();
-    }
-}
-
-#[tauri::command]
-fn close_splashscreen(app: tauri::AppHandle) {
-    if let Some(splash) = app.get_webview_window("splashscreen") {
-        let _ = splash.close();
-    }
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.show();
-        let _ = main.set_focus();
     }
 }
 
@@ -164,7 +135,6 @@ pub fn run() {
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_kill,
-            close_splashscreen,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -179,14 +149,6 @@ pub fn run() {
             let pty_sessions = PtySessions::new();
             app.manage(pty_sessions);
 
-            if let Ok(spike_url_str) = std::env::var("MATERIALS_SPIKE_URL") {
-                if let Some(window) = app.get_webview_window("main") {
-                    let current = window.url().ok();
-                    if let Ok(target) = resolve_target_url(&spike_url_str, current.as_ref()) {
-                        let _ = window.navigate(target);
-                    }
-                }
-            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -200,30 +162,6 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_resolve_absolute_url() {
-        let url = resolve_target_url("http://127.0.0.1:8787/ready", None).unwrap();
-        assert_eq!(url.as_str(), "http://127.0.0.1:8787/ready");
-    }
-
-    #[test]
-    fn test_resolve_relative_url_with_base() {
-        let base = tauri::Url::parse("http://tauri.localhost/index.html").unwrap();
-        let url = resolve_target_url("spike.html?ping=http://127.0.0.1:8787/ready", Some(&base)).unwrap();
-        assert_eq!(url.as_str(), "http://tauri.localhost/spike.html?ping=http://127.0.0.1:8787/ready");
-
-        let slash_url = resolve_target_url("/spike.html?ping=http://127.0.0.1:8787/ready", Some(&base)).unwrap();
-        assert_eq!(slash_url.as_str(), "http://tauri.localhost/spike.html?ping=http://127.0.0.1:8787/ready");
-    }
-
-    #[test]
-    fn test_resolve_relative_url_fallback() {
-        let url = resolve_target_url("spike.html?ping=http://127.0.0.1:8787/ready", None).unwrap();
-        assert_eq!(url.as_str(), "tauri://localhost/spike.html?ping=http://127.0.0.1:8787/ready");
-    }
-
     #[test]
     fn test_tauri_conf_main_window_geometry_and_no_tiny_splash_toplevel() {
         let raw = include_str!("../tauri.conf.json");

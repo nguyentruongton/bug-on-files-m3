@@ -4,6 +4,12 @@ export type WatchEvent =
     | { id: number; type: 'change' }
     | { id: number; type: 'error'; message: string };
 
+export type DragDropEventPayload = {
+    type: 'enter' | 'over' | 'drop' | 'leave';
+    paths?: string[];
+    position?: { x: number; y: number };
+};
+
 export type TextPreview =
     | { kind: 'text'; content: string }
     | { kind: 'too-large'; size: number }
@@ -62,7 +68,6 @@ export interface IApi {
     openDirectoryDialog: () => Promise<string | null>;
     readFile: (path: string) => Promise<string | null>;
     readTextPreview: (path: string) => Promise<TextPreview>;
-    startDrag: (path: string, iconPath?: string) => void;
     getStartupPath: () => Promise<string | null>;
     quitApp: () => Promise<void>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
@@ -75,6 +80,7 @@ export interface IApi {
     watchStart: (dir: string) => Promise<number>;
     watchStop: (id: number) => Promise<void>;
     onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
+    onDragDrop: (cb: (e: DragDropEventPayload) => void) => () => void;
     onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     onCompressProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     getVideoMetadata: (path: string) => Promise<VideoMetadata | null>;
@@ -86,10 +92,4 @@ export interface IApi {
     ptyKill: (pid: number) => void;
     ptyOnData: (pid: number, callback: (data: string) => void) => () => void;
     ptyOnExit: (pid: number, callback: () => void) => () => void;
-
-    // Window lifecycle
-    closeSplashscreen: () => Promise<void>;
 }
-
-export type IElectronAPI = IApi;
-

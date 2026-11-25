@@ -4,7 +4,6 @@ import type { ListItemPosition } from '@bug-on/m3-expressive/layout';
 import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
-import { api } from '../api';
 import {
     formatFileDate,
     formatFileSize,
@@ -365,10 +364,8 @@ export const FileList: React.FC<FileListProps> = ({
     }, []);
 
     const handleItemDragStart = useCallback((e: React.DragEvent, file: IFile) => {
+        void file;
         e.preventDefault();
-        if (api && api.startDrag) {
-            api.startDrag(file.path, file.path);
-        }
     }, []);
 
     const handleItemKeyDown = useCallback(

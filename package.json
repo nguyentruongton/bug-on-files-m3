@@ -3,24 +3,20 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
-    "build:web": "tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && node scripts/set-cjs.cjs && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "npm run build && node scripts/set-cjs.cjs && electron-builder",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:bin": "tauri build --no-bundle"
   },
   "dependencies": {
     "@bug-on/m3-expressive": "1.3.24",
     "@bug-on/m3-fonts": "^1.1.5",
     "@tauri-apps/api": "^2.12.4",
     "motion": "14.12.0",
-    "node-pty": "^1.2.0-beta.18",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "xterm": "^5.3.0",
@@ -34,10 +30,6 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
-    "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0",
-    "electron": "^39.2.6",
-    "electron-builder": "^27.0.0-alpha.14",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -45,28 +37,6 @@
     "tailwindcss": "^4.3.5",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4",
-    "wait-on": "^9.0.3"
-  },
-  "trustedDependencies": [
-    "electron"
-  ],
-  "build": {
-    "appId": "com.bugon.filesm3",
-    "productName": "Bug On Files M3",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist-electron/**/*",
-      "dist/**/*"
-    ],
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility",
-      "icon": "assets/icon.png"
-    }
+    "vite": "^7.2.4"
   }
 }
