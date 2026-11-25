@@ -57,6 +57,26 @@ jobs:
       - name: Disable local Cargo sccache/mold config on CI runner
         run: rm -f src-tauri/.cargo/config.toml
 
+      - name: Run frontend unit tests
+        run: bun test
+
+      - name: Build frontend and verify Rounded-only icon font assets
+        run: |
+          bun run build
+          ls -la dist/assets/
+          ls dist/assets/MaterialSymbolsRounded* >/dev/null
+          if ls dist/assets/MaterialSymbolsOutlined* >/dev/null 2>&1; then
+            echo "ERROR: MaterialSymbolsOutlined font leaked into dist/assets/"
+            exit 1
+          fi
+          if ls dist/assets/MaterialSymbolsSharp* >/dev/null 2>&1; then
+            echo "ERROR: MaterialSymbolsSharp font leaked into dist/assets/"
+            exit 1
+          fi
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -67,3 +87,6 @@ jobs:
           releaseBody: 'Pre-built Linux packages (`.AppImage`, `.deb`) for **Bug On Files M3** (*Bất Ổn Files M3*).'
           releaseDraft: false
           prerelease: false
+
+      - name: Audit dynamically linked libraries of release ELF binary
+        run: ldd ./src-tauri/target/release/bug-on-files-m3

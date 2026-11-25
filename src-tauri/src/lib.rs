@@ -264,6 +264,22 @@ mod tests {
             install_sh.contains("StartupWMClass=bug-on-files-m3"),
             "install.sh must set StartupWMClass=bug-on-files-m3"
         );
+        assert!(
+            install_sh.contains("Exec=/usr/local/bin/bug-on-files-m3 %U"),
+            "install.sh must set Exec=/usr/local/bin/bug-on-files-m3 %U"
+        );
+        assert!(
+            install_sh.contains("MimeType=inode/directory;"),
+            "install.sh must register MimeType=inode/directory;"
+        );
+        assert!(
+            install_sh.contains("--uninstall"),
+            "install.sh must support --uninstall"
+        );
+        assert!(
+            install_sh.contains("pacman -Qo"),
+            "install.sh must guard /usr/share cleanup with pacman -Qo"
+        );
 
         let pkgbuild = include_str!("../../PKGBUILD");
         assert!(
@@ -277,6 +293,18 @@ mod tests {
         assert!(
             pkgbuild.contains("Icon=bug-on-files-m3"),
             "PKGBUILD desktop entry must reference Icon=bug-on-files-m3"
+        );
+        assert!(
+            pkgbuild.contains("Exec=/usr/bin/bug-on-files-m3 %U"),
+            "PKGBUILD must set Exec=/usr/bin/bug-on-files-m3 %U"
+        );
+        assert!(
+            pkgbuild.contains("MimeType=inode/directory;"),
+            "PKGBUILD must register MimeType=inode/directory;"
+        );
+        assert!(
+            !pkgbuild.contains("fuse2"),
+            "PKGBUILD must not require fuse2 for native ELF installation"
         );
     }
 
