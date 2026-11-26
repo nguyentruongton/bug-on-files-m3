@@ -24,7 +24,8 @@ function makeParams(overrides: Partial<FileContextMenuParams> = {}): FileContext
     currentPath: '/home/user',
     hasClipboardFiles: false,
     allSelectedAreArchives: false,
-    onOpen: () => {},
+    onOpenFolder: () => {},
+    onOpenFile: () => {},
     onOpenInNewTab: () => {},
     onOpenInTerminal: () => {},
     onCopyPath: () => {},
@@ -163,5 +164,104 @@ describe('copyPathToClipboard', () => {
       )
     ).resolves.toBeUndefined();
     expect(toasts).toEqual([['Failed to copy path', 'error']]);
+  });
+});
+
+describe('buildFileContextMenuItems — Open & Open in New Tab', () => {
+  test('shows Open in New Tab immediately after Open for a single folder', () => {
+    const openedInNewTab: string[] = [];
+    const folder = makeFile('Projects', true);
+    const items = buildFileContextMenuItems(
+      makeParams({
+        item: folder,
+        targetItems: [folder],
+        onOpenInNewTab: (path) => openedInNewTab.push(path),
+      })
+    );
+
+    const openIdx = items.findIndex((i) => i.label === 'Open');
+    const newTabIdx = items.findIndex((i) => i.label === 'Open in New Tab');
+    expect(openIdx).toBe(0);
+    expect(newTabIdx).toBe(1);
+    expect(items[newTabIdx]?.icon).toBe('tab_new_right');
+
+    items[newTabIdx]!.action();
+    expect(openedInNewTab).toEqual(['/home/user/Projects']);
+  });
+
+  test('does not show Open in New Tab for a single file', () => {
+    const file = makeFile('notes.txt', false);
+    const items = buildFileContextMenuItems(
+      makeParams({
+        item: file,
+        targetItems: [file],
+      })
+    );
+
+    expect(items.some((i) => i.label === 'Open in New Tab')).toBe(false);
+  });
+
+  test('does not show Open in New Tab for multi-selection of folders', () => {
+    const d1 = makeFile('DirA', true);
+    const d2 = makeFile('DirB', true);
+    const items = buildFileContextMenuItems(
+      makeParams({
+        item: d1,
+        targetItems: [d1, d2],
+      })
+    );
+
+    expect(items.some((i) => i.label === 'Open in New Tab')).toBe(false);
+  });
+
+  test('does not show Open in New Tab in Trash view or on background right-click', () => {
+    const folder = makeFile('DeletedDir', true);
+    const trashItems = buildFileContextMenuItems(
+      makeParams({
+        item: folder,
+        targetItems: [folder],
+        isTrashView: true,
+        currentPath: 'app://trash',
+      })
+    );
+    const bgItems = buildFileContextMenuItems(
+      makeParams({
+        item: null,
+        targetItems: [],
+      })
+    );
+
+    expect(trashItems.some((i) => i.label === 'Open in New Tab')).toBe(false);
+    expect(bgItems.some((i) => i.label === 'Open in New Tab')).toBe(false);
+  });
+
+  test('Open navigates folder in current tab and opens file with OS', () => {
+    const openedFolders: string[] = [];
+    const openedFiles: string[] = [];
+    const folder = makeFile('Projects', true);
+    const file = makeFile('notes.txt', false);
+
+    const folderItems = buildFileContextMenuItems(
+      makeParams({
+        item: folder,
+        targetItems: [folder],
+        onOpenFolder: (path) => openedFolders.push(path),
+        onOpenFile: (path) => openedFiles.push(path),
+      })
+    );
+    folderItems.find((i) => i.label === 'Open')!.action();
+
+    const fileItems = buildFileContextMenuItems(
+      makeParams({
+        item: file,
+        targetItems: [file],
+        onOpenFolder: (path) => openedFolders.push(path),
+        onOpenFile: (path) => openedFiles.push(path),
+      })
+    );
+    fileItems.find((i) => i.label === 'Open')!.action();
+
+    expect(openedFolders).toEqual(['/home/user/Projects']);
+    expect(openedFiles).toEqual(['/home/user/notes.txt']);
   });
 });

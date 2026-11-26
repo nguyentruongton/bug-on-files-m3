@@ -2,7 +2,7 @@ import type { ContextMenuItem } from '../components/ContextMenu';
 import type { IFile } from '../types/files';
 import { getArchiveStem } from './archiveUtils';
 
-export type ToastSeverity = 'success' | 'info' | 'error' | 'warning';
+export type ToastSeverity = 'success' | 'info' | 'error';
 
 export interface FileContextMenuParams {
   item: IFile | null;
@@ -11,7 +11,8 @@ export interface FileContextMenuParams {
   currentPath: string;
   hasClipboardFiles: boolean;
   allSelectedAreArchives: boolean;
-  onOpen: (item: IFile) => void;
+  onOpenFolder: (path: string) => void;
+  onOpenFile: (path: string) => void;
   onOpenInNewTab: (path: string) => void;
   onOpenInTerminal: (item: IFile) => void;
   onCopyPath: (path: string) => void;
@@ -54,7 +55,9 @@ export function buildFileContextMenuItems(params: FileContextMenuParams): Contex
     currentPath,
     hasClipboardFiles,
     allSelectedAreArchives,
-    onOpen,
+    onOpenFolder,
+    onOpenFile,
+    onOpenInNewTab,
     onOpenInTerminal,
     onCopyPath,
     onCopy,
@@ -102,8 +105,17 @@ export function buildFileContextMenuItems(params: FileContextMenuParams): Contex
       {
         label: 'Open',
         icon: 'open_in_new',
-        action: () => onOpen(item),
+        action: () => (item.isDirectory ? onOpenFolder(item.path) : onOpenFile(item.path)),
       },
+      ...(targetItems.length === 1 && item.isDirectory
+        ? [
+            {
+              label: 'Open in New Tab',
+              icon: 'tab_new_right',
+              action: () => onOpenInNewTab(item.path),
+            },
+          ]
+        : []),
       {
         label: 'Open in Terminal',
         icon: 'terminal',

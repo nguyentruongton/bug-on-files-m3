@@ -572,8 +572,12 @@ function AppContent() {
       currentPath,
       hasClipboardFiles: Boolean(clipboard && clipboard.files.length > 0),
       allSelectedAreArchives,
-      onOpen: (item) => {
-        FileSystemService.open(item.path);
+      onOpenFolder: (path) => {
+        handleSidebarNavigate(path);
+        setContextMenu(null);
+      },
+      onOpenFile: (path) => {
+        FileSystemService.open(path);
         setContextMenu(null);
       },
       onOpenInNewTab: (path) => {
