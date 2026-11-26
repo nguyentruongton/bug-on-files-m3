@@ -223,6 +223,16 @@ pub async fn set_icon(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn start_native_drag(
+    window: tauri::WebviewWindow,
+    paths: Vec<String>,
+    label: Option<String>,
+    is_directory: bool,
+) -> Result<bool, String> {
+    crate::native_drag::start_drag_on_window(window, paths, label, is_directory).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn quit_app(app: tauri::AppHandle) {
     crate::cleanup_resources(&app);
     app.exit(0);

@@ -4,6 +4,7 @@ pub mod desktop_entry;
 pub mod extract;
 pub mod fs_ops;
 pub mod media;
+pub mod native_drag;
 pub mod places;
 pub mod proc_exec;
 pub mod pty;
@@ -170,6 +171,7 @@ pub fn run() {
             commands::app::get_startup_path,
             commands::app::get_theme_css,
             commands::app::set_icon,
+            commands::app::start_native_drag,
             commands::app::quit_app,
             commands::apps::get_apps,
             commands::apps::get_recommended_apps,
@@ -198,6 +200,10 @@ pub fn run() {
             app.manage(pty_sessions);
 
             app.manage(ScanCancellationState::default());
+
+            if let Some(main_window) = app.get_webview_window("main") {
+                native_drag::install_for_window(&main_window);
+            }
 
             tauri::async_runtime::spawn_blocking(move || {
                 std::thread::sleep(Duration::from_secs(10));

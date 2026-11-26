@@ -2199,6 +2199,8 @@ name = "materials"
 version = "0.2.0"
 dependencies = [
  "dirs 5.0.1",
+ "gdk",
+ "gtk",
  "image",
  "notify",
  "percent-encoding",
