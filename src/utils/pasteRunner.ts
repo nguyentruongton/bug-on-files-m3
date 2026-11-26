@@ -19,9 +19,10 @@ export interface PasteResult {
   skipped: number;
   failed: string[];
   cancelled: boolean;
+  completedSourcePaths: string[];
 }
 
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
   const clean = p.replace(/\/+/g, '/');
   if (clean.length > 1 && clean.endsWith('/')) {
     return clean.slice(0, -1);
@@ -80,6 +81,7 @@ export async function runPaste(
     skipped: 0,
     failed: [],
     cancelled: false,
+    completedSourcePaths: [],
   };
 
   let savedAction: ConflictAction | null = null;
@@ -110,6 +112,7 @@ export async function runPaste(
           const uniqueDestPath = joinPath(destDir, uniqueName);
           await deps.copy(file.path, uniqueDestPath);
           result.done++;
+          result.completedSourcePaths.push(file.path);
         } catch {
           result.failed.push(file.name);
         }
@@ -127,6 +130,7 @@ export async function runPaste(
           await deps.move(file.path, destPath);
         }
         result.done++;
+        result.completedSourcePaths.push(file.path);
       } catch {
         result.failed.push(file.name);
       }
@@ -168,6 +172,7 @@ export async function runPaste(
           await deps.move(file.path, uniqueDestPath);
         }
         result.done++;
+        result.completedSourcePaths.push(file.path);
       } catch {
         result.failed.push(file.name);
       }
@@ -183,6 +188,7 @@ export async function runPaste(
           await deps.move(file.path, destPath);
         }
         result.done++;
+        result.completedSourcePaths.push(file.path);
       } catch {
         result.failed.push(file.name);
       }

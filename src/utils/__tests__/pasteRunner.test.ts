@@ -134,7 +134,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/src/doc.txt'],
+    });
     expect(conflictCalls).toHaveLength(0);
     expect(callLog).toEqual(['exists:/dest/doc.txt', 'copy:/src/doc.txt->/dest/doc.txt']);
   });
@@ -145,7 +151,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/src/rootdoc.txt'],
+    });
     expect(callLog).toEqual(['exists:/rootdoc.txt', 'copy:/src/rootdoc.txt->/rootdoc.txt']);
   });
 
@@ -155,7 +167,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'cut', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/src/cutme.txt'],
+    });
     expect(conflictCalls).toHaveLength(0);
     expect(callLog).toEqual(['exists:/dest/cutme.txt', 'move:/src/cutme.txt->/dest/cutme.txt']);
   });
@@ -169,7 +187,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/src/doc.txt'],
+    });
     expect(callLog).toContain('trash:/dest/doc.txt');
     expect(callLog).toContain('copy:/src/doc.txt->/dest/doc.txt');
     expect(callLog.indexOf('trash:/dest/doc.txt')).toBeLessThan(
@@ -185,7 +209,13 @@ describe('runPaste', () => {
     });
 
     const failResult = await runPaste([failFile], 'copy', '/dest', failDeps);
-    expect(failResult).toEqual({ done: 0, skipped: 0, failed: ['doc.txt'], cancelled: false });
+    expect(failResult).toEqual({
+      done: 0,
+      skipped: 0,
+      failed: ['doc.txt'],
+      cancelled: false,
+      completedSourcePaths: [],
+    });
     expect(failLog).toContain('trash:/dest/doc.txt');
     expect(failLog.some((c) => c.startsWith('copy:'))).toBe(false);
   });
@@ -199,7 +229,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 0, skipped: 1, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 0,
+      skipped: 1,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: [],
+    });
     expect(callLog.some((c) => c.startsWith('copy:') || c.startsWith('trash:') || c.startsWith('move:'))).toBe(false);
   });
 
@@ -212,7 +248,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/src/data.txt'],
+    });
     expect(callLog).toContain('copy:/src/data.txt->/dest/data (2).txt');
   });
 
@@ -228,7 +270,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([f1, f2, f3], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 0, skipped: 3, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 0,
+      skipped: 3,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: [],
+    });
     expect(conflictCalls).toHaveLength(1);
     expect(conflictCalls[0].remaining).toBe(3);
   });
@@ -245,7 +293,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([f1, f2, f3], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: true });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: true,
+      completedSourcePaths: ['/src/f1.txt'],
+    });
     expect(callLog).toContain('copy:/src/f1.txt->/dest/f1.txt');
     expect(callLog.some((c) => c.includes('f3.txt'))).toBe(false);
   });
@@ -258,7 +312,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'copy', '/d', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: ['/d/a.txt'],
+    });
     expect(conflictCalls).toHaveLength(0);
     expect(callLog).toContain('copy:/d/a.txt->/d/a (2).txt');
     expect(callLog.some((c) => c.startsWith('trash:'))).toBe(false);
@@ -272,7 +332,13 @@ describe('runPaste', () => {
 
     const result = await runPaste([file], 'cut', '/d', deps);
 
-    expect(result).toEqual({ done: 0, skipped: 1, failed: [], cancelled: false });
+    expect(result).toEqual({
+      done: 0,
+      skipped: 1,
+      failed: [],
+      cancelled: false,
+      completedSourcePaths: [],
+    });
     expect(conflictCalls).toHaveLength(0);
     expect(callLog.some((c) => c.startsWith('trash:') || c.startsWith('copy:') || c.startsWith('move:'))).toBe(false);
   });
@@ -286,7 +352,13 @@ describe('runPaste', () => {
     const { deps: deps1, callLog: callLog1 } = createFakePasteDeps();
     const result1 = await runPaste([dirSame, nextFile], 'copy', '/x/dir', deps1);
 
-    expect(result1).toEqual({ done: 1, skipped: 0, failed: ['dir'], cancelled: false });
+    expect(result1).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: ['dir'],
+      cancelled: false,
+      completedSourcePaths: ['/src/other.txt'],
+    });
     expect(callLog1.some((c) => c.includes('/x/dir/dir'))).toBe(false);
     expect(callLog1).toContain('copy:/src/other.txt->/x/dir/other.txt');
 
@@ -294,7 +366,13 @@ describe('runPaste', () => {
     const { deps: deps2, callLog: callLog2 } = createFakePasteDeps();
     const result2 = await runPaste([dirSub, nextFile], 'copy', '/x/dir/sub', deps2);
 
-    expect(result2).toEqual({ done: 1, skipped: 0, failed: ['dir'], cancelled: false });
+    expect(result2).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: ['dir'],
+      cancelled: false,
+      completedSourcePaths: ['/src/other.txt'],
+    });
     expect(callLog2.some((c) => c.includes('/x/dir/sub/dir'))).toBe(false);
     expect(callLog2).toContain('copy:/src/other.txt->/x/dir/sub/other.txt');
   });
@@ -309,7 +387,51 @@ describe('runPaste', () => {
 
     const result = await runPaste([f1, f2], 'copy', '/dest', deps);
 
-    expect(result).toEqual({ done: 1, skipped: 0, failed: ['fail.txt'], cancelled: false });
+    expect(result).toEqual({
+      done: 1,
+      skipped: 0,
+      failed: ['fail.txt'],
+      cancelled: false,
+      completedSourcePaths: ['/src/ok.txt'],
+    });
+  });
+
+  test('records only succeeded source paths in completedSourcePaths across skip, cancel, keep-both, and replace', async () => {
+    const fReplace = makeFile('replace.txt', false, '/src/a');
+    const fSkip = makeFile('skip.txt', false, '/src/b');
+    const fKeepBoth = makeFile('keep.txt', false, '/src/c');
+    const fCancel = makeFile('cancel.txt', false, '/src/d');
+    const fTrailing = makeFile('trailing.txt', false, '/src/e');
+
+    const { deps } = createFakePasteDeps({
+      existing: [
+        '/dest/replace.txt',
+        '/dest/skip.txt',
+        '/dest/keep.txt',
+        '/dest/cancel.txt',
+      ],
+      conflictResolutions: [
+        { action: 'replace', applyToAll: false },
+        { action: 'skip', applyToAll: false },
+        { action: 'keep-both', applyToAll: false },
+        { action: 'cancel', applyToAll: false },
+      ],
+    });
+
+    const result = await runPaste(
+      [fReplace, fSkip, fKeepBoth, fCancel, fTrailing],
+      'cut',
+      '/dest',
+      deps
+    );
+
+    expect(result).toEqual({
+      done: 2,
+      skipped: 1,
+      failed: [],
+      cancelled: true,
+      completedSourcePaths: ['/src/a/replace.txt', '/src/c/keep.txt'],
+    });
   });
 
   test('remaining count passed to resolveConflict is files.length - index (inclusive count remaining)', async () => {
