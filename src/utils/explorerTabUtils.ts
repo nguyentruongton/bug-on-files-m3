@@ -1,6 +1,42 @@
 import { normalizePath } from './navigationHistory';
 import { getUniqueName, isSameOrDescendant } from './pasteRunner';
 
+export interface TransferSyncSignal {
+  id: number;
+  affectedDirs: string[];
+  removedPaths: string[];
+  refreshTrash?: boolean;
+}
+
+export function pruneRemovedFilePaths<T extends { path: string }>(
+  files: T[],
+  removedPaths: ReadonlySet<string>
+): T[] {
+  if (files.length === 0 || removedPaths.size === 0) {
+    return files;
+  }
+  const next = files.filter((file) => !removedPaths.has(file.path));
+  return next.length === files.length ? files : next;
+}
+
+export function shouldSilentlyRefreshTab(
+  tabPath: string,
+  searchActive: boolean,
+  affectedDirs: ReadonlySet<string>,
+  refreshTrash?: boolean
+): boolean {
+  if (!tabPath || searchActive || tabPath === 'app://dashboard') {
+    return false;
+  }
+  if (tabPath === 'app://trash') {
+    return Boolean(refreshTrash);
+  }
+  if (tabPath.startsWith('app://') || tabPath.startsWith('search://')) {
+    return false;
+  }
+  return affectedDirs.has(normalizePath(tabPath));
+}
+
 export function pruneSelectedFiles(
   prev: Set<string>,
   currentFiles: Array<{ path: string }>

@@ -29,15 +29,16 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDirWatch } from '../hooks/useDirWatch';
 import {
     pruneSelectedFiles,
+    pruneRemovedFilePaths,
     recoverMissingFolder,
     shouldApplyReload,
-    resolveDragCompletion,
+    shouldSilentlyRefreshTab,
     resolveExtractProgressPercent,
-    processInboundDrop,
     shouldCheckMissingFolderOnReloadError,
-    shouldReloadAfterInboundDrop,
     resolveLoadFailureFallbackPath,
+    type TransferSyncSignal,
 } from '../utils/explorerTabUtils';
+import type { ResolvedDropTarget } from '../utils/dropTargetUtils';
 
 const loadQuickLookModule = () =>
     import('./QuickLook').then((m) => ({ default: m.QuickLook }));
@@ -55,6 +56,7 @@ import {
 } from '../utils/quickLook';
 import {
     createHistory,
+    normalizePath,
     pushHistory,
     stepBack,
     stepForward,
@@ -87,6 +89,10 @@ interface ExplorerTabProps {
     archiveBatchLabel?: string | null;
     onExtractRequest?: (items: IFile[]) => void;
     onMissingToolError?: (info: MissingToolInfo) => void;
+    isDragging?: boolean;
+    activeDropTarget?: ResolvedDropTarget | null;
+    onStartOutboundDrag?: (items: IFile[], sourceDir: string) => void;
+    transferSyncSignal?: TransferSyncSignal | null;
 }
 
 export function ExplorerTab({
@@ -115,6 +121,10 @@ export function ExplorerTab({
     archiveBatchLabel,
     onExtractRequest,
     onMissingToolError,
+    isDragging = false,
+    activeDropTarget = null,
+    onStartOutboundDrag,
+    transferSyncSignal = null,
 }: ExplorerTabProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
     const isTrash = currentPath === 'app://trash';
@@ -125,11 +135,13 @@ export function ExplorerTab({
     const reloadSeqRef = useRef(0);
     const loadSeqRef = useRef(0);
     const searchSeqRef = useRef(0);
-    const isDraggingRef = useRef(false);
+    const isDraggingRef = useRef(Boolean(isDragging));
+    const prevIsDraggingRef = useRef(Boolean(isDragging));
     const pendingReloadAfterDragRef = useRef(false);
-    const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastProcessedSyncIdRef = useRef<number>(transferSyncSignal?.id ?? 0);
     const [historyState, setHistoryState] = useState<HistoryState>(() => createHistory(initialPath));
     const [files, setFiles] = useState<IFile[]>([]);
+    const filesRef = useRef<IFile[]>(files);
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
     const { copy, cut } = useClipboard();
@@ -365,35 +377,58 @@ export function ExplorerTab({
         }
     }, [handleFolderMissing, showToast]);
 
-    // Drag-in-progress tracking
-    const clearDrag = useCallback(
-        (triggerPendingReload = true) => {
-            isDraggingRef.current = false;
-            if (dragTimeoutRef.current) {
-                clearTimeout(dragTimeoutRef.current);
-                dragTimeoutRef.current = null;
+    useEffect(() => {
+        filesRef.current = files;
+    }, [files]);
+
+    // Sync app-level drag state and flush deferred watcher reload when drag finishes
+    useEffect(() => {
+        const dragging = Boolean(isDragging);
+        isDraggingRef.current = dragging;
+        if (prevIsDraggingRef.current && !dragging && pendingReloadAfterDragRef.current) {
+            pendingReloadAfterDragRef.current = false;
+            void reloadSilently();
+        }
+        prevIsDraggingRef.current = dragging;
+    }, [isDragging, reloadSilently]);
+
+    const applyTransferSync = useCallback(
+        (signal: TransferSyncSignal) => {
+            if (searchActiveRef.current) {
+                if (signal.removedPaths.length > 0) {
+                    const removedSet = new Set(signal.removedPaths);
+                    const nextFiles = pruneRemovedFilePaths(filesRef.current, removedSet);
+                    if (nextFiles !== filesRef.current) {
+                        filesRef.current = nextFiles;
+                        setFiles(nextFiles);
+                        setSelectedFiles((prev) => pruneSelectedFiles(prev, nextFiles));
+                    }
+                }
+                return;
             }
-            const { shouldReload, nextPendingReload } = resolveDragCompletion(
-                triggerPendingReload,
-                pendingReloadAfterDragRef.current
-            );
-            pendingReloadAfterDragRef.current = nextPendingReload;
-            if (shouldReload) {
-                reloadSilently();
+
+            const affectedSet = new Set(signal.affectedDirs);
+            if (
+                shouldSilentlyRefreshTab(
+                    currentPathRef.current,
+                    searchActiveRef.current,
+                    affectedSet,
+                    signal.refreshTrash
+                )
+            ) {
+                void reloadSilently();
             }
         },
         [reloadSilently]
     );
 
-    const markDragStarted = useCallback(() => {
-        isDraggingRef.current = true;
-        if (dragTimeoutRef.current) {
-            clearTimeout(dragTimeoutRef.current);
+    useEffect(() => {
+        if (!transferSyncSignal || transferSyncSignal.id === lastProcessedSyncIdRef.current) {
+            return;
         }
-        dragTimeoutRef.current = setTimeout(() => {
-            clearDrag(true);
-        }, 10000);
-    }, [clearDrag]);
+        lastProcessedSyncIdRef.current = transferSyncSignal.id;
+        applyTransferSync(transferSyncSignal);
+    }, [transferSyncSignal, applyTransferSync]);
 
     // Preload QuickLook chunk during idle time after initial mount
     useEffect(() => {
@@ -425,67 +460,6 @@ export function ExplorerTab({
             lastScrollTopRef.current = 0;
         }
     }, [viewMode, iconSize, isActive]);
-
-    // Tauri-native inbound drag-and-drop listener (active only when tab is visible and not in Trash)
-    useEffect(() => {
-        if (!isActive || isTrash || !api?.onDragDrop) return;
-        const unsub = api.onDragDrop((event) => {
-            if (event.type !== 'drop') return;
-            clearDrag(false);
-            const droppedPaths = event.paths ?? [];
-            if (droppedPaths.length === 0) return;
-
-            const destDir = currentPathRef.current;
-            void processInboundDrop(droppedPaths, destDir, searchActiveRef.current, {
-                exists: (p) => api.exists(p),
-                copyFile: (src, dest) => api.copyFile(src, dest),
-            })
-                .then((count) => {
-                    if (count > 0) {
-                        showToast(`Imported ${count} file${count === 1 ? '' : 's'}`, 'success');
-                    }
-                    if (
-                        shouldReloadAfterInboundDrop(
-                            count,
-                            destDir,
-                            currentPathRef.current,
-                            searchActiveRef.current
-                        )
-                    ) {
-                        void loadPath(destDir, false);
-                    }
-                })
-                .catch((err) => {
-                    console.error('Inbound drop failed', err);
-                    showToast('Failed to import dropped files', 'error');
-                });
-        });
-        return () => {
-            unsub();
-        };
-    }, [isActive, isTrash, clearDrag, loadPath, showToast]);
-
-    useEffect(() => {
-        if (!isActive) return;
-        const handlePointerUp = () => clearDrag(true);
-        const handleFocus = () => clearDrag(true);
-        const handleDragEnd = () => clearDrag(true);
-
-        window.addEventListener('pointerup', handlePointerUp);
-        window.addEventListener('mouseup', handlePointerUp);
-        window.addEventListener('dragend', handleDragEnd);
-        window.addEventListener('drop', handlePointerUp);
-        window.addEventListener('focus', handleFocus);
-
-        return () => {
-            window.removeEventListener('pointerup', handlePointerUp);
-            window.removeEventListener('mouseup', handlePointerUp);
-            window.removeEventListener('dragend', handleDragEnd);
-            window.removeEventListener('drop', handlePointerUp);
-            window.removeEventListener('focus', handleFocus);
-            clearDrag(false);
-        };
-    }, [isActive, clearDrag]);
 
     // Step 4: Refresh on re-activation
     const prevActiveRef = useRef(isActive);
@@ -858,6 +832,14 @@ export function ExplorerTab({
         quickLookPath,
     ]);
 
+    const isExplorerRootDropActive = Boolean(
+        isActive &&
+        !searchActive &&
+        activeDropTarget?.kind === 'folder' &&
+        activeDropTarget.source === 'explorer-root' &&
+        normalizePath(activeDropTarget.path) === normalizePath(currentPath)
+    );
+
     return (
         <div
             className={`relative flex-col flex-1 h-full overflow-hidden bg-m3-surface-container ${isActive ? 'flex' : 'hidden'}`}
@@ -1100,10 +1082,13 @@ export function ExplorerTab({
                         </div>
                     )}
                     <div
-                        className="flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low flex flex-col isolate"
-                        onDragStartCapture={markDragStarted}
-                        onDragStart={markDragStarted}
-                        onDragEnd={() => clearDrag(true)}
+                        data-drop-explorer-root="true"
+                        data-explorer-path={currentPath}
+                        data-search-active={searchActive ? 'true' : 'false'}
+                        data-drop-active={isExplorerRootDropActive ? 'true' : undefined}
+                        className={`flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low flex flex-col isolate${
+                            isExplorerRootDropActive ? ' ring-2 ring-inset ring-m3-primary/60' : ''
+                        }`}
                         onClick={(e) => {
                             if (
                                 e.target === e.currentTarget ||
@@ -1149,6 +1134,8 @@ export function ExplorerTab({
                                 isSearch={searchActive}
                                 isTrash={isTrash}
                                 homePath={homePath}
+                                activeDropTarget={activeDropTarget}
+                                onStartOutboundDrag={(items) => onStartOutboundDrag?.(items, currentPathRef.current)}
                             />
                         )}
                     </div>

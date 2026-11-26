@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   pruneSelectedFiles,
+  pruneRemovedFilePaths,
   recoverMissingFolder,
   shouldApplyReload,
+  shouldSilentlyRefreshTab,
   resolveDragCompletion,
   shouldSyncQuickLookOnRender,
   processInboundDrop,
@@ -12,6 +16,9 @@ import {
 } from '../../utils/explorerTabUtils';
 import { FileSystemService } from '../../services/FileSystemService';
 import { api } from '../../api';
+import { ClipboardProvider } from '../../contexts/ClipboardContext';
+import { ToastProvider } from '../../contexts/ToastContext';
+import { ExplorerTab } from '../ExplorerTab';
 
 describe('ExplorerTab silent reload & recovery logic', () => {
   describe('selection pruning', () => {
@@ -274,6 +281,132 @@ describe('ExplorerTab silent reload & recovery logic', () => {
     test('returns null when failed path matches currentPath or currentPath is empty', () => {
       expect(resolveLoadFailureFallbackPath('/home/u', '/home/u')).toBeNull();
       expect(resolveLoadFailureFallbackPath('/root', '')).toBeNull();
+    });
+  });
+
+  describe('search-mode path pruning (pruneRemovedFilePaths)', () => {
+    test('removes only paths in removedPaths while keeping skipped and cancelled items intact', () => {
+      const moved = { path: '/home/u/Docs/moved.txt', name: 'moved.txt' };
+      const skipped = { path: '/home/u/Docs/skipped.txt', name: 'skipped.txt' };
+      const cancelled = { path: '/home/u/Docs/cancelled.txt', name: 'cancelled.txt' };
+      const files = [moved, skipped, cancelled];
+
+      const result = pruneRemovedFilePaths(files, new Set(['/home/u/Docs/moved.txt']));
+
+      expect(result).toEqual([skipped, cancelled]);
+      expect(result[0]).toBe(skipped);
+      expect(result[1]).toBe(cancelled);
+    });
+
+    test('returns the same array reference when nothing matched or removedPaths is empty', () => {
+      const files = [
+        { path: '/home/u/Docs/a.txt', name: 'a.txt' },
+        { path: '/home/u/Docs/b.txt', name: 'b.txt' },
+      ];
+
+      expect(pruneRemovedFilePaths(files, new Set(['/home/u/Docs/other.txt']))).toBe(files);
+      expect(pruneRemovedFilePaths(files, new Set())).toBe(files);
+    });
+  });
+
+  describe('directory-scoped silent refresh (shouldSilentlyRefreshTab)', () => {
+    test('returns true for normal tabs whose normalized path is in affectedDirs', () => {
+      const affected = new Set(['/home/u/Docs', '/home/u/Archive']);
+
+      expect(shouldSilentlyRefreshTab('/home/u/Docs', false, affected)).toBe(true);
+      expect(shouldSilentlyRefreshTab('/home/u/Docs/', false, affected)).toBe(true);
+      expect(shouldSilentlyRefreshTab('/home/u/Downloads', false, affected)).toBe(false);
+    });
+
+    test('returns true for app://trash only when refreshTrash is true and search is inactive', () => {
+      expect(shouldSilentlyRefreshTab('app://trash', false, new Set(), true)).toBe(true);
+      expect(shouldSilentlyRefreshTab('app://trash', false, new Set(['app://trash']), false)).toBe(false);
+      expect(shouldSilentlyRefreshTab('app://trash', false, new Set())).toBe(false);
+      expect(shouldSilentlyRefreshTab('app://trash', true, new Set(), true)).toBe(false);
+    });
+
+    test('returns false when search is active or tabPath is app://dashboard or empty', () => {
+      const affected = new Set(['/home/u/Docs', 'app://dashboard']);
+
+      expect(shouldSilentlyRefreshTab('/home/u/Docs', true, affected, true)).toBe(false);
+      expect(shouldSilentlyRefreshTab('app://dashboard', false, affected, true)).toBe(false);
+      expect(shouldSilentlyRefreshTab('', false, affected, true)).toBe(false);
+    });
+  });
+
+  describe('ExplorerTab explorer-root drop target markup', () => {
+    function withMockLocalStorage<T>(run: () => T): T {
+      const hadLocalStorage = 'localStorage' in globalThis;
+      const prevLocalStorage = globalThis.localStorage;
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem: () => null,
+          setItem: () => {},
+          removeItem: () => {},
+          clear: () => {},
+          key: () => null,
+          length: 0,
+        },
+      });
+      try {
+        return run();
+      } finally {
+        if (!hadLocalStorage) {
+          Reflect.deleteProperty(globalThis, 'localStorage');
+        } else {
+          Object.defineProperty(globalThis, 'localStorage', {
+            configurable: true,
+            value: prevLocalStorage,
+          });
+        }
+      }
+    }
+
+    test('renders explorer-root drop attributes and highlights only when explorer-root activeDropTarget matches currentPath', () => {
+      const renderTab = (activeDropTarget: Parameters<typeof ExplorerTab>[0]['activeDropTarget']) =>
+        withMockLocalStorage(() =>
+          renderToStaticMarkup(
+            React.createElement(
+              ToastProvider,
+              null,
+              React.createElement(
+                ClipboardProvider,
+                null,
+                React.createElement(ExplorerTab, {
+                  tabId: 't1',
+                  isActive: true,
+                  initialPath: '/tmp/demo',
+                  onPathChange: () => {},
+                  onContextMenu: () => {},
+                  showHiddenFiles: false,
+                  iconSize: 64,
+                  viewMode: 'list',
+                  filledIcons: false,
+                  activeDropTarget,
+                })
+              )
+            )
+          )
+        );
+
+      const activeHtml = renderTab({
+        kind: 'folder',
+        path: '/tmp/demo/',
+        source: 'explorer-root',
+      });
+      expect(activeHtml).toContain('data-drop-explorer-root="true"');
+      expect(activeHtml).toContain('data-explorer-path="/tmp/demo"');
+      expect(activeHtml).toContain('data-search-active="false"');
+      expect(activeHtml).toContain('ring-2 ring-inset ring-m3-primary/60');
+
+      const sidebarHtml = renderTab({
+        kind: 'folder',
+        path: '/tmp/demo',
+        source: 'sidebar',
+      });
+      expect(sidebarHtml).toContain('data-drop-explorer-root="true"');
+      expect(sidebarHtml).not.toContain('ring-2 ring-inset ring-m3-primary/60');
     });
   });
 });

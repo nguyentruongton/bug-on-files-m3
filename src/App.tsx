@@ -29,7 +29,9 @@ import { PropertiesDialog } from './components/PropertiesDialog';
 import { CompressDialog } from './components/CompressDialog';
 import { MissingToolDialog } from './components/MissingToolDialog';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { usePaste } from './hooks/usePaste';
+import { usePaste, type TransferCompletionInfo } from './hooks/usePaste';
+import { useAppDragDrop } from './hooks/useAppDragDrop';
+import type { TransferSyncSignal } from './utils/explorerTabUtils';
 import {
   resolveTerminalTargetDir,
   resolveAfterTabClose,
@@ -88,8 +90,9 @@ function joinPath(dir: string, name: string): string {
 }
 
 function getParentDir(filePath: string): string {
-  const lastSlash = filePath.lastIndexOf('/');
-  return lastSlash > 0 ? filePath.slice(0, lastSlash) : '/';
+  const norm = normalizePath(filePath);
+  const lastSlash = norm.lastIndexOf('/');
+  return lastSlash > 0 ? norm.slice(0, lastSlash) : '/';
 }
 
 function AppContent() {
@@ -317,7 +320,31 @@ function AppContent() {
     setContextMenu(null);
   };
 
-  const { paste, conflictDialog } = usePaste(refreshActiveTab);
+  const [transferSyncSignal, setTransferSyncSignal] = useState<TransferSyncSignal | null>(null);
+
+  const emitTransferSync = useCallback((payload: Omit<TransferSyncSignal, 'id'>) => {
+    setTransferSyncSignal((prev) => ({
+      id: (prev?.id ?? 0) + 1,
+      ...payload,
+    }));
+  }, []);
+
+  const handleTransferComplete = useCallback(
+    (info: TransferCompletionInfo) => {
+      emitTransferSync({
+        affectedDirs: info.affectedDirs,
+        removedPaths: info.operation === 'cut' ? info.completedSourcePaths : [],
+      });
+    },
+    [emitTransferSync]
+  );
+
+  const noopFinished = useCallback(() => {}, []);
+
+  const { paste, transferFiles, conflictDialog } = usePaste(
+    noopFinished,
+    handleTransferComplete
+  );
 
   const handlePaste = useCallback(() => {
     if (currentPath) {
@@ -353,12 +380,30 @@ function AppContent() {
   };
 
   const executeTrashItems = useCallback(async (items: IFile[]) => {
+    if (items.length === 0) return;
+    const trashedPaths: string[] = [];
     await executeTrashBatch(items, {
-      trash: FileSystemService.trash,
+      trash: async (path: string) => {
+        const ok = await FileSystemService.trash(path);
+        if (ok !== false) {
+          trashedPaths.push(path);
+        }
+        return ok;
+      },
       showToast,
-      refresh: refreshActiveTab,
+      refresh: () => {
+        if (trashedPaths.length === 0) return;
+        const affectedDirs = Array.from(
+          new Set(trashedPaths.map((p) => normalizePath(getParentDir(p))))
+        );
+        emitTransferSync({
+          affectedDirs,
+          removedPaths: trashedPaths,
+          refreshTrash: true,
+        });
+      },
     });
-  }, [showToast, refreshActiveTab]);
+  }, [showToast, emitTransferSync]);
 
   const handleTrashRequest = useCallback((items: IFile[]) => {
     if (items.length === 0) return;
@@ -368,6 +413,26 @@ function AppContent() {
       void executeTrashItems(items);
     }
   }, [confirmTrash, executeTrashItems]);
+
+  const handleExternalImportComplete = useCallback(
+    (destDir: string) => {
+      emitTransferSync({
+        affectedDirs: [normalizePath(destDir)],
+        removedPaths: [],
+      });
+    },
+    [emitTransferSync]
+  );
+
+  const { isDragging, activeDropTarget, startOutboundDrag } = useAppDragDrop({
+    tabs,
+    activeTabId,
+    onSelectTab: handleSelectTab,
+    transferFiles,
+    onTrashItems: handleTrashRequest,
+    onExternalImportComplete: handleExternalImportComplete,
+    showToast,
+  });
 
   const handleRestoreRequest = useCallback(async (items: IFile[]) => {
     await executeRestoreBatch(items, {
@@ -803,6 +868,7 @@ function AppContent() {
         onNavigate={handleSidebarNavigate}
         currentPath={currentPath}
         collapsed={!sidebarOpen}
+        activeDropTarget={activeDropTarget}
       />
 
       {/* Main Content Area */}
@@ -817,6 +883,7 @@ function AppContent() {
             onNewTab={() => handleAddTab()}
             onTabContextMenu={handleTabContextMenu}
             onTabBarContextMenu={handleTabBarContextMenu}
+            activeDropTarget={activeDropTarget}
           />
         </header>
 
@@ -857,6 +924,10 @@ function AppContent() {
                 archiveBatchLabel={tab.id === activeTabId ? archiveBatchLabel : null}
                 onExtractRequest={(items) => void handleExtractBatch(items, 'here')}
                 onMissingToolError={setMissingToolInfo}
+                isDragging={isDragging}
+                activeDropTarget={tab.id === activeTabId ? activeDropTarget : null}
+                onStartOutboundDrag={startOutboundDrag}
+                transferSyncSignal={transferSyncSignal}
               />
             </div>
           ))}
