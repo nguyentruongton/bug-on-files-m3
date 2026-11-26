@@ -42,6 +42,10 @@ import {
   buildTabContextMenuItems,
   buildTabBarContextMenuItems,
 } from './utils/tabContextMenu';
+import {
+  buildFileContextMenuItems,
+  copyPathToClipboard,
+} from './utils/fileContextMenu';
 import { isArchiveFile, validateFileName } from './utils/fileUtils';
 import {
   buildDefaultArchiveName,
@@ -537,7 +541,6 @@ function AppContent() {
   const targetItems = fileContextMenu?.item
     ? (fileContextMenu.selectedItems.length > 0 ? fileContextMenu.selectedItems : [fileContextMenu.item])
     : [];
-  const selectionSuffix = targetItems.length > 1 ? ` (${targetItems.length})` : '';
   const allSelectedAreArchives =
     targetItems.length > 0 &&
     targetItems.every((item) => !item.isDirectory && isArchiveFile(item.name));
@@ -561,152 +564,86 @@ function AppContent() {
       onAbout: () => setAboutDialogOpen(true),
       onQuit: handleQuitApp,
     })
-  ) : fileContextMenu?.item ? (
-    isTrashView ? [
-      {
-        label: `Restore${selectionSuffix}`,
-        icon: 'restore_from_trash',
-        action: () => {
-          const itemsToRestore = targetItems;
-          setContextMenu(null);
-          void handleRestoreRequest(itemsToRestore);
-        }
-      },
-      {
-        label: `Delete Permanently${selectionSuffix}`,
-        icon: 'delete_forever',
-        action: () => {
-          const itemsToPurge = targetItems;
-          setContextMenu(null);
-          handlePurgeRequest(itemsToPurge);
-        }
-      },
-      { divider: true, label: '', action: () => { } },
-      {
-        label: 'Properties',
-        icon: 'info',
-        action: () => {
-          setPropertiesFile(fileContextMenu.item);
-          setPropertiesDialogOpen(true);
-          setContextMenu(null);
-        }
-      }
-    ] : [
-      {
-        label: 'Open', icon: 'open_in_new', action: () => {
-          FileSystemService.open(fileContextMenu.item!.path);
-          setContextMenu(null);
-        }
-      },
-      {
-        label: 'Open in Terminal', icon: 'terminal', action: () => {
-          const targetDir = resolveTerminalTargetDir(fileContextMenu.item!.path, fileContextMenu.item!.isDirectory);
-          if (targetDir) {
-            setTerminalCwd(targetDir);
-            setTerminalOpen(true);
-          }
-          setContextMenu(null);
-        }
-      },
-      { divider: true, label: '', action: () => { } },
-      { label: `Copy${selectionSuffix}`, icon: 'content_copy', action: () => handleCopy(targetItems) },
-      { label: `Cut${selectionSuffix}`, icon: 'content_cut', action: () => handleCut(targetItems) },
-      {
-        label: `Delete${selectionSuffix}`, icon: 'delete', action: () => {
-          const itemsToTrash = targetItems;
-          setContextMenu(null);
-          handleTrashRequest(itemsToTrash);
-        }
-      },
-      ...(allSelectedAreArchives
-        ? [
-            {
-              label: `Extract Here${selectionSuffix}`,
-              icon: 'unarchive',
-              action: () => {
-                const items = targetItems;
-                setContextMenu(null);
-                void handleExtractBatch(items, 'here');
-              },
-            },
-            {
-              label:
-                targetItems.length === 1
-                  ? `Extract to "${getArchiveStem(targetItems[0].name)}/"`
-                  : `Extract Each to Own Folder (${targetItems.length})`,
-              icon: 'drive_file_move',
-              action: () => {
-                const items = targetItems;
-                setContextMenu(null);
-                void handleExtractBatch(items, 'own-folder');
-              },
-            },
-            {
-              label: 'Extract to...',
-              icon: 'folder_open',
-              action: () => {
-                const items = targetItems;
-                setContextMenu(null);
-                void handleExtractBatch(items, 'choose-dir');
-              },
-            },
-          ]
-        : []),
-      ...(targetItems.length > 0
-        ? [
-            {
-              label: `Compress${selectionSuffix}...`,
-              icon: 'folder_zip',
-              action: () => {
-                const items = targetItems;
-                setContextMenu(null);
-                setCompressDialogItems(items);
-              },
-            },
-          ]
-        : []),
-      {
-        label: 'Rename', icon: 'edit', action: () => {
-          setRenameFile(fileContextMenu.item);
-          setNewName(fileContextMenu.item!.name);
-          setRenameDialogOpen(true);
-          setContextMenu(null);
-        }
-      },
-      { divider: true, label: '', action: () => { } },
-      {
-        label: 'Open With...', icon: 'apps', action: () => {
-          setOpenWithFile(fileContextMenu.item);
-          setContextMenu(null);
-        }
-      },
-      {
-        label: 'Properties', icon: 'info', action: () => {
-          setPropertiesFile(fileContextMenu.item);
-          setPropertiesDialogOpen(true);
-          setContextMenu(null);
-        }
-      }
-    ]
   ) : (
-    isTrashView ? [
-      {
-        label: 'Empty Trash',
-        icon: 'delete_forever',
-        action: () => {
-          setContextMenu(null);
-          handleEmptyTrashRequest();
+    buildFileContextMenuItems({
+      item: fileContextMenu?.item ?? null,
+      targetItems,
+      isTrashView,
+      currentPath,
+      hasClipboardFiles: Boolean(clipboard && clipboard.files.length > 0),
+      allSelectedAreArchives,
+      onOpen: (item) => {
+        FileSystemService.open(item.path);
+        setContextMenu(null);
+      },
+      onOpenInNewTab: (path) => {
+        handleAddTab(path);
+        setContextMenu(null);
+      },
+      onOpenInTerminal: (item) => {
+        const targetDir = resolveTerminalTargetDir(item.path, item.isDirectory);
+        if (targetDir) {
+          setTerminalCwd(targetDir);
+          setTerminalOpen(true);
         }
-      }
-    ] : [
-      // Background Context Menu
-      ...(currentPath && !currentPath.startsWith('app://')
-        ? [{ label: 'New Folder', icon: 'create_new_folder', action: handleOpenNewFolder }]
-        : []),
-      ...(clipboard && clipboard.files.length > 0 && currentPath && !currentPath.startsWith('app://')
-        ? [{ label: 'Paste', icon: 'content_paste', action: handlePaste }]
-        : []),
-    ]
+        setContextMenu(null);
+      },
+      onCopyPath: (path) => {
+        setContextMenu(null);
+        void copyPathToClipboard(path, navigator.clipboard, showToast);
+      },
+      onCopy: (items) => handleCopy(items),
+      onCut: (items) => handleCut(items),
+      onDelete: (items) => {
+        setContextMenu(null);
+        handleTrashRequest(items);
+      },
+      onExtractHere: (items) => {
+        setContextMenu(null);
+        void handleExtractBatch(items, 'here');
+      },
+      onExtractToOwnFolder: (items) => {
+        setContextMenu(null);
+        void handleExtractBatch(items, 'own-folder');
+      },
+      onExtractToDir: (items) => {
+        setContextMenu(null);
+        void handleExtractBatch(items, 'choose-dir');
+      },
+      onCompress: (items) => {
+        setContextMenu(null);
+        setCompressDialogItems(items);
+      },
+      onRename: (item) => {
+        setRenameFile(item);
+        setNewName(item.name);
+        setRenameDialogOpen(true);
+        setContextMenu(null);
+      },
+      onOpenWith: (item) => {
+        setOpenWithFile(item);
+        setContextMenu(null);
+      },
+      onProperties: (item) => {
+        setPropertiesFile(item);
+        setPropertiesDialogOpen(true);
+        setContextMenu(null);
+      },
+      onRestore: (items) => {
+        setContextMenu(null);
+        void handleRestoreRequest(items);
+      },
+      onPurge: (items) => {
+        setContextMenu(null);
+        handlePurgeRequest(items);
+      },
+      onEmptyTrash: () => {
+        setContextMenu(null);
+        handleEmptyTrashRequest();
+      },
+      onNewFolder: handleOpenNewFolder,
+      onPaste: handlePaste,
+    })
   );
 
   const handleRename = async () => {
