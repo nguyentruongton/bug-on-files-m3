@@ -36,6 +36,7 @@ import {
     processInboundDrop,
     shouldCheckMissingFolderOnReloadError,
     shouldReloadAfterInboundDrop,
+    resolveLoadFailureFallbackPath,
 } from '../utils/explorerTabUtils';
 
 const loadQuickLookModule = () =>
@@ -241,11 +242,10 @@ export function ExplorerTab({
         setLastSelectedPath(null);
         setQuickLookPath(null);
 
-        if (recordHistory) {
-            setHistoryState((prev) => pushHistory(prev, path));
-        }
-
         if (path === 'app://dashboard') {
+            if (recordHistory) {
+                setHistoryState((prev) => pushHistory(prev, path));
+            }
             currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
@@ -260,6 +260,9 @@ export function ExplorerTab({
                     ? await FileSystemService.listTrash()
                     : await FileSystemService.listDir(path);
             if (seq !== loadSeqRef.current) return;
+            if (recordHistory) {
+                setHistoryState((prev) => pushHistory(prev, path));
+            }
             setFiles(items);
             currentPathRef.current = path;
             setCurrentPath(path);
@@ -269,6 +272,10 @@ export function ExplorerTab({
             if (seq !== loadSeqRef.current) return;
             console.error('Failed to load path', path, e);
             showToast(`Failed to open ${path}`, 'error');
+            const fallbackPath = resolveLoadFailureFallbackPath(path, currentPathRef.current);
+            if (fallbackPath) {
+                onPathChange(tabId, fallbackPath);
+            }
         }
         if (seq === loadSeqRef.current) {
             setLoading(false);

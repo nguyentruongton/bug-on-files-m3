@@ -110,6 +110,16 @@ export function shouldReloadAfterInboundDrop(
   return copiedCount > 0 && currentPath === destDir && !searchActive;
 }
 
+export function resolveLoadFailureFallbackPath(
+  failedPath: string,
+  currentPath: string
+): string | null {
+  if (!currentPath || failedPath === currentPath) {
+    return null;
+  }
+  return currentPath;
+}
+
 export interface InboundDropDeps {
   exists: (path: string) => Promise<boolean>;
   copyFile: (source: string, dest: string) => Promise<boolean>;

@@ -8,6 +8,7 @@ import {
   processInboundDrop,
   shouldCheckMissingFolderOnReloadError,
   shouldReloadAfterInboundDrop,
+  resolveLoadFailureFallbackPath,
 } from '../../utils/explorerTabUtils';
 import { FileSystemService } from '../../services/FileSystemService';
 import { api } from '../../api';
@@ -262,6 +263,17 @@ describe('ExplorerTab silent reload & recovery logic', () => {
       } finally {
         Object.assign(api, { listDir: origListDir, listTrash: origListTrash });
       }
+    });
+  });
+
+  describe('loadPath failure fallback', () => {
+    test('returns currentPath when external/context-menu navigation fails on a different path', () => {
+      expect(resolveLoadFailureFallbackPath('/root', '/home/u')).toBe('/home/u');
+    });
+
+    test('returns null when failed path matches currentPath or currentPath is empty', () => {
+      expect(resolveLoadFailureFallbackPath('/home/u', '/home/u')).toBeNull();
+      expect(resolveLoadFailureFallbackPath('/root', '')).toBeNull();
     });
   });
 });
