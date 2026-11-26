@@ -2,6 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { Button, ButtonGroup } from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
+import type { ResolvedDropTarget } from '../utils/dropTargetUtils';
+import { normalizePath } from '../utils/navigationHistory';
 
 export interface Tab {
     id: string;
@@ -18,6 +20,7 @@ interface TabBarProps {
     onNewTab: () => void;
     onTabContextMenu?: (e: React.MouseEvent, tab: Tab) => void;
     onTabBarContextMenu?: (e: React.MouseEvent) => void;
+    activeDropTarget?: ResolvedDropTarget | null;
 }
 
 const getTabIconName = (path: string): string => {
@@ -36,6 +39,7 @@ export const TabBar: React.FC<TabBarProps> = ({
     onNewTab,
     onTabContextMenu,
     onTabBarContextMenu,
+    activeDropTarget = null,
 }) => {
     const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -110,6 +114,11 @@ export const TabBar: React.FC<TabBarProps> = ({
                 <ButtonGroup variant="connected" size="sm" className="w-max overflow-visible">
                     {tabs.map((tab) => {
                         const isActive = tab.id === activeTabId;
+                        const isDropActive = Boolean(
+                            activeDropTarget &&
+                            ((activeDropTarget.kind === 'tab' && activeDropTarget.tabId === tab.id) ||
+                                (activeDropTarget.kind === 'trash' && normalizePath(tab.path) === 'app://trash'))
+                        );
                         return (
                             <Button
                                 key={tab.id}
@@ -135,6 +144,8 @@ export const TabBar: React.FC<TabBarProps> = ({
                                 iconPosition="leading"
                                 role="tab"
                                 data-tab-id={tab.id}
+                                data-drop-tab-id={tab.id}
+                                data-drop-active={isDropActive ? 'true' : undefined}
                                 aria-selected={isActive}
                                 aria-label={tab.title}
                                 tabIndex={isActive ? 0 : -1}
@@ -151,7 +162,9 @@ export const TabBar: React.FC<TabBarProps> = ({
                                         onTabClose(tab.id);
                                     }
                                 }}
-                                className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 pl-2! pr-1.5!`}
+                                className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 pl-2! pr-1.5! ${
+                                    isDropActive ? 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35' : ''
+                                }`}
                             >
                                 <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">
                                     <span className="truncate flex-1 text-left">{tab.title}</span>

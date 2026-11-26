@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { IFile } from '../../types/files';
-import { FileList, MediaThumbnail } from '../FileList';
+import { FileList, MediaThumbnail, shouldSuppressClickAfterDrag } from '../FileList';
 
 function makeFile(name: string, overrides: Partial<IFile> = {}): IFile {
     return {
@@ -201,5 +201,12 @@ describe('MediaThumbnail subcomponent', () => {
         // No img tag or play badge rendered in failed state
         expect(html).not.toContain('<img');
         expect(html).not.toContain('play_arrow');
+    });
+});
+
+describe('FileList drag click suppression helper', () => {
+    test('shouldSuppressClickAfterDrag suppresses clicks only before deadline', () => {
+        expect(shouldSuppressClickAfterDrag(1000, 950)).toBe(true);
+        expect(shouldSuppressClickAfterDrag(1000, 1050)).toBe(false);
     });
 });

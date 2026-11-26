@@ -1,0 +1,282 @@
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { IFile } from '../../types/files';
+import { getGridCardHeight } from '../../utils/fileListUtils';
+import type { ResolvedDropTarget } from '../../utils/dropTargetUtils';
+import { FileList } from '../FileList';
+import { Sidebar } from '../Sidebar';
+import { TabBar, type Tab } from '../TabBar';
+
+function makeFile(name: string, overrides: Partial<IFile> = {}): IFile {
+    return {
+        name,
+        path: `/home/u/${name}`,
+        isDirectory: false,
+        size: 1024,
+        mtime: new Date('2026-05-01T10:00:00Z'),
+        ...overrides,
+    };
+}
+
+describe('FileList drop target markup', () => {
+    const files: IFile[] = [
+        makeFile('docs', { isDirectory: true }),
+        makeFile('notes', { isDirectory: true }),
+        makeFile('readme.txt'),
+    ];
+
+    test('renders folder drop attributes and active highlight in list mode without changing h-14', () => {
+        const activeTarget: ResolvedDropTarget = {
+            kind: 'folder',
+            path: '/home/u/docs',
+            source: 'filelist',
+        };
+
+        const html = renderToStaticMarkup(
+            <FileList
+                files={files}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="list"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                activeDropTarget={activeTarget}
+            />
+        );
+
+        expect(html).toContain('data-drop-scroll-container="true"');
+        expect(html).toContain('data-drop-folder-path="/home/u/docs"');
+        expect(html).toContain('data-drop-folder-path="/home/u/notes"');
+        expect(html).not.toContain('data-drop-folder-path="/home/u/readme.txt"');
+
+        const docsRow = html.match(/<div[^>]*data-file-path="\/home\/u\/docs"[^>]*>/)?.[0] ?? '';
+        expect(docsRow).toContain('data-drop-active="true"');
+        expect(docsRow).toContain('ring-2 ring-inset ring-m3-primary');
+        expect(docsRow).toContain('h-14');
+
+        const notesRow = html.match(/<div[^>]*data-file-path="\/home\/u\/notes"[^>]*>/)?.[0] ?? '';
+        expect(notesRow).not.toContain('data-drop-active="true"');
+        expect(notesRow).not.toContain('bg-m3-primary-container/35');
+    });
+
+    test('renders folder drop attributes and active highlight in grid mode without changing card height', () => {
+        const activeTarget: ResolvedDropTarget = {
+            kind: 'folder',
+            path: '/home/u/docs',
+            source: 'filelist',
+        };
+        const expectedHeight = getGridCardHeight(64);
+
+        const html = renderToStaticMarkup(
+            <FileList
+                files={files}
+                selectedFiles={new Set()}
+                onSelect={() => {}}
+                onNavigate={() => {}}
+                viewMode="grid"
+                iconSize={64}
+                filledIcons
+                groupingEnabled={false}
+                activeDropTarget={activeTarget}
+            />
+        );
+
+        expect(html).toContain('data-drop-scroll-container="true"');
+        expect(html).toContain('data-drop-folder-path="/home/u/docs"');
+        expect(html).not.toContain('data-drop-folder-path="/home/u/readme.txt"');
+        expect(html).toContain(`height:${expectedHeight}px`);
+
+        const docsCard = html.match(/<div[^>]*data-file-path="\/home\/u\/docs"[^>]*>/)?.[0] ?? '';
+        expect(docsCard).toContain('data-drop-active="true"');
+        expect(docsCard).toContain('ring-2 ring-inset ring-m3-primary');
+        expect(docsCard).toContain('h-full');
+    });
+
+    test('omits data-drop-folder-path when isTrash is true in both list and grid modes', () => {
+        for (const viewMode of ['list', 'grid'] as const) {
+            const html = renderToStaticMarkup(
+                <FileList
+                    files={files}
+                    selectedFiles={new Set()}
+                    onSelect={() => {}}
+                    onNavigate={() => {}}
+                    viewMode={viewMode}
+                    iconSize={64}
+                    filledIcons={false}
+                    isTrash={true}
+                    activeDropTarget={{ kind: 'folder', path: '/home/u/docs', source: 'filelist' }}
+                />
+            );
+
+            expect(html).not.toContain('data-drop-folder-path=');
+            expect(html).not.toContain('data-drop-active="true"');
+        }
+    });
+
+    test('does not highlight FileList folder when activeDropTarget comes from sidebar or explorer-root', () => {
+        for (const source of ['sidebar', 'explorer-root'] as const) {
+            const html = renderToStaticMarkup(
+                <FileList
+                    files={files}
+                    selectedFiles={new Set()}
+                    onSelect={() => {}}
+                    onNavigate={() => {}}
+                    viewMode="list"
+                    iconSize={64}
+                    filledIcons
+                    activeDropTarget={{ kind: 'folder', path: '/home/u/docs', source }}
+                />
+            );
+
+            expect(html).not.toContain('data-drop-active="true"');
+        }
+    });
+});
+
+describe('Sidebar drop target markup', () => {
+    const places = [
+        { name: 'Home', path: '/home/u', icon: 'home' },
+        { name: 'Downloads', path: '/home/u/Downloads', icon: 'download' },
+    ];
+    const drives = [
+        {
+            name: 'nvme0n1p2',
+            label: 'System',
+            mountpoint: '/',
+            size: '500G',
+            type: 'ext4',
+            removable: false,
+            usb: false,
+        },
+        {
+            name: 'sdb1',
+            label: 'USB Drive',
+            mountpoint: '/mnt/usb',
+            size: '32G',
+            type: 'vfat',
+            removable: true,
+            usb: true,
+        },
+    ];
+
+    test('renders sidebar, scroll viewport, trash, place, and device drop markup', () => {
+        const html = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'trash' }}
+            />
+        );
+
+        expect(html).toContain('data-drop-sidebar="true"');
+        expect(html).toContain('data-drop-scroll-container="true"');
+        expect(html).toContain('data-drop-trash="true"');
+        expect(html).toContain('data-drop-folder-path="/home/u/Downloads"');
+        expect(html).toContain('data-drop-folder-path="/mnt/usb"');
+
+        const trashSection = html.match(/<div[^>]*data-drop-trash="true"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(trashSection).toContain('data-drop-active="true"');
+        expect(trashSection).toContain('ring-2 ring-inset ring-m3-primary');
+    });
+
+    test('highlights matching Place or Device path in Sidebar when activeDropTarget matches', () => {
+        const placeHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'folder', path: '/home/u/Downloads', source: 'sidebar' }}
+            />
+        );
+
+        const placeSection =
+            placeHtml.match(/<div[^>]*data-drop-folder-path="\/home\/u\/Downloads"[^>]*>[\s\S]*?<\/button>/)?.[0] ??
+            '';
+        expect(placeSection).toContain('data-drop-active="true"');
+        expect(placeSection).toContain('ring-2 ring-inset ring-m3-primary');
+
+        const driveHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'folder', path: '/mnt/usb', source: 'sidebar' }}
+            />
+        );
+
+        const driveSection =
+            driveHtml.match(/<div[^>]*data-drop-folder-path="\/mnt\/usb"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(driveSection).toContain('data-drop-active="true"');
+        expect(driveSection).toContain('ring-2 ring-inset ring-m3-primary');
+
+        const fallbackHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u"
+                onNavigate={() => {}}
+                activeDropTarget={{ kind: 'folder', path: '/', source: 'sidebar' }}
+            />
+        );
+        const computerSection =
+            fallbackHtml.match(/<div[^>]*data-drop-folder-path="\/"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(computerSection).toContain('data-drop-active="true"');
+        expect(computerSection).toContain('ring-2 ring-inset ring-m3-primary');
+    });
+});
+
+describe('TabBar drop target markup', () => {
+    const tabs: Tab[] = [
+        { id: 't1', path: '/home/u', title: 'Home' },
+        { id: 't2', path: '/home/u/Documents', title: 'Documents' },
+        { id: 't3', path: 'app://trash', title: 'Trash' },
+    ];
+
+    test('renders data-drop-tab-id on tab buttons and highlights matching tab target', () => {
+        const html = renderToStaticMarkup(
+            <TabBar
+                tabs={tabs}
+                activeTabId="t1"
+                onTabClick={() => {}}
+                onTabClose={() => {}}
+                onNewTab={() => {}}
+                activeDropTarget={{ kind: 'tab', tabId: 't2', path: '/home/u/Documents' }}
+            />
+        );
+
+        expect(html).toContain('data-drop-tab-id="t1"');
+        expect(html).toContain('data-drop-tab-id="t2"');
+        expect(html).toContain('data-drop-tab-id="t3"');
+
+        const tab2 = html.match(/<button[^>]*data-drop-tab-id="t2"[^>]*>/)?.[0] ?? '';
+        expect(tab2).toContain('data-drop-active="true"');
+        expect(tab2).toContain('ring-2 ring-inset ring-m3-primary');
+
+        const tab1 = html.match(/<button[^>]*data-drop-tab-id="t1"[^>]*>/)?.[0] ?? '';
+        expect(tab1).not.toContain('data-drop-active="true"');
+    });
+
+    test('highlights app://trash tab when activeDropTarget is trash', () => {
+        const html = renderToStaticMarkup(
+            <TabBar
+                tabs={tabs}
+                activeTabId="t1"
+                onTabClick={() => {}}
+                onTabClose={() => {}}
+                onNewTab={() => {}}
+                activeDropTarget={{ kind: 'trash' }}
+            />
+        );
+
+        const trashTab = html.match(/<button[^>]*data-drop-tab-id="t3"[^>]*>/)?.[0] ?? '';
+        expect(trashTab).toContain('data-drop-active="true"');
+        expect(trashTab).toContain('ring-2 ring-inset ring-m3-primary');
+
+        const homeTab = html.match(/<button[^>]*data-drop-tab-id="t1"[^>]*>/)?.[0] ?? '';
+        expect(homeTab).not.toContain('data-drop-active="true"');
+    });
+});

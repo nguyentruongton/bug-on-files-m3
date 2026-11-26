@@ -11,7 +11,10 @@ import {
 } from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { normalizePath, getActiveDriveMountpoint } from '../utils/navigationHistory';
+import type { ResolvedDropTarget } from '../utils/dropTargetUtils';
 import { api } from '../api';
+
+const DROP_ACTIVE_CLASS = 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
 
 interface Place {
     name: string;
@@ -23,6 +26,9 @@ interface SidebarProps {
     onNavigate: (path: string) => void;
     currentPath: string;
     collapsed?: boolean;
+    activeDropTarget?: ResolvedDropTarget | null;
+    initialPlaces?: Place[];
+    initialDrives?: Drive[];
 }
 
 interface Drive {
@@ -52,9 +58,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onNavigate,
     currentPath,
     collapsed = false,
+    activeDropTarget = null,
+    initialPlaces = [],
+    initialDrives = [],
 }) => {
-    const [places, setPlaces] = useState<Place[]>([]);
-    const [drives, setDrives] = useState<Drive[]>([]);
+    const [places, setPlaces] = useState<Place[]>(initialPlaces);
+    const [drives, setDrives] = useState<Drive[]>(initialDrives);
 
     useEffect(() => {
         if (!api?.getPlaces) return;
@@ -98,6 +107,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         normCurrent,
         drives.map((d) => d.mountpoint),
     );
+    const activeSidebarDropPath =
+        activeDropTarget?.kind === 'folder' && activeDropTarget.source === 'sidebar'
+            ? normalizePath(activeDropTarget.path)
+            : null;
+    const isTrashDropActive = activeDropTarget?.kind === 'trash';
+    const isComputerDropActive = activeSidebarDropPath === '/';
 
     return (
         <motion.aside
@@ -118,76 +133,112 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="shell-panel h-full bg-m3-surface-container-low rounded-3xl! border-0"
                 aria-label="Places and devices"
             >
-                <ScrollArea className="h-full" type="hover">
-                    <NavigationDrawerContent className="px-2 py-3">
-                        <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
-                            Places
-                        </NavigationDrawerSectionHeader>
-                        {places.map((place) => {
-                            const isSelected = normalizePath(place.path) === normCurrent;
-                            return (
+                <div data-drop-sidebar="true" className="flex-1 min-h-0 h-full">
+                    <ScrollArea
+                        className="h-full"
+                        type="hover"
+                        viewportProps={{ 'data-drop-scroll-container': 'true' } as React.HTMLAttributes<HTMLDivElement>}
+                    >
+                        <NavigationDrawerContent className="px-2 py-3">
+                            <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
+                                Places
+                            </NavigationDrawerSectionHeader>
+                            {places.map((place) => {
+                                const isSelected = normalizePath(place.path) === normCurrent;
+                                const isPlaceDropActive =
+                                    activeSidebarDropPath !== null &&
+                                    normalizePath(place.path) === activeSidebarDropPath;
+                                return (
+                                    <div
+                                        key={place.path}
+                                        data-drop-folder-path={place.path}
+                                        data-drop-active={isPlaceDropActive ? 'true' : undefined}
+                                    >
+                                        <NavigationDrawerItem
+                                            selected={isSelected}
+                                            shape="pill"
+                                            icon={<Icon name={getPlaceIconName(place.name)} size={20} fill={isSelected ? 1 : 0} animateFill />}
+                                            label={place.name}
+                                            onClick={() => onNavigate(place.path)}
+                                            className={isPlaceDropActive ? DROP_ACTIVE_CLASS : undefined}
+                                        />
+                                    </div>
+                                );
+                            })}
+                            <div
+                                data-drop-trash="true"
+                                data-drop-active={isTrashDropActive ? 'true' : undefined}
+                            >
                                 <NavigationDrawerItem
-                                    key={place.path}
-                                    selected={isSelected}
+                                    key="app://trash"
+                                    selected={normCurrent === 'app://trash'}
                                     shape="pill"
-                                    icon={<Icon name={getPlaceIconName(place.name)} size={20} fill={isSelected ? 1 : 0} animateFill />}
-                                    label={place.name}
-                                    onClick={() => onNavigate(place.path)}
+                                    icon={<Icon name="delete" size={20} fill={normCurrent === 'app://trash' ? 1 : 0} animateFill />}
+                                    label="Trash"
+                                    onClick={() => onNavigate('app://trash')}
+                                    className={isTrashDropActive ? DROP_ACTIVE_CLASS : undefined}
                                 />
-                            );
-                        })}
-                        <NavigationDrawerItem
-                            key="app://trash"
-                            selected={normCurrent === 'app://trash'}
-                            shape="pill"
-                            icon={<Icon name="delete" size={20} fill={normCurrent === 'app://trash' ? 1 : 0} animateFill />}
-                            label="Trash"
-                            onClick={() => onNavigate('app://trash')}
-                        />
+                            </div>
 
-                        <Divider shape='wavy' className="my-2" />
+                            <Divider shape='wavy' className="my-2" />
 
-                        <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
-                            Devices
-                        </NavigationDrawerSectionHeader>
-                        {drives.map((drive) => {
-                            const isSelected =
-                                !!activeMountpoint &&
-                                normalizePath(drive.mountpoint) === activeMountpoint;
-                            const iconName = drive.usb
-                                ? 'usb'
-                                : drive.mountpoint === '/'
-                                    ? 'hard_drive'
-                                    : 'sd_storage';
-                            const label = drive.label || (drive.mountpoint === '/' ? 'System' : drive.name);
-                            return (
-                                <NavigationDrawerItem
-                                    key={drive.mountpoint}
-                                    selected={isSelected}
-                                    shape="pill"
-                                    icon={<Icon name={iconName} size={20} fill={isSelected ? 1 : 0} animateFill />}
-                                    label={label}
-                                    badge={
-                                        <span className="text-[11px] font-medium text-m3-on-surface-variant">
-                                            {drive.size}
-                                        </span>
-                                    }
-                                    onClick={() => onNavigate(drive.mountpoint)}
-                                />
-                            );
-                        })}
+                            <NavigationDrawerSectionHeader className="text-m3-on-surface-variant">
+                                Devices
+                            </NavigationDrawerSectionHeader>
+                            {drives.map((drive) => {
+                                const isSelected =
+                                    !!activeMountpoint &&
+                                    normalizePath(drive.mountpoint) === activeMountpoint;
+                                const isDriveDropActive =
+                                    activeSidebarDropPath !== null &&
+                                    normalizePath(drive.mountpoint) === activeSidebarDropPath;
+                                const iconName = drive.usb
+                                    ? 'usb'
+                                    : drive.mountpoint === '/'
+                                        ? 'hard_drive'
+                                        : 'sd_storage';
+                                const label = drive.label || (drive.mountpoint === '/' ? 'System' : drive.name);
+                                return (
+                                    <div
+                                        key={drive.mountpoint}
+                                        data-drop-folder-path={drive.mountpoint}
+                                        data-drop-active={isDriveDropActive ? 'true' : undefined}
+                                    >
+                                        <NavigationDrawerItem
+                                            selected={isSelected}
+                                            shape="pill"
+                                            icon={<Icon name={iconName} size={20} fill={isSelected ? 1 : 0} animateFill />}
+                                            label={label}
+                                            badge={
+                                                <span className="text-[11px] font-medium text-m3-on-surface-variant">
+                                                    {drive.size}
+                                                </span>
+                                            }
+                                            onClick={() => onNavigate(drive.mountpoint)}
+                                            className={isDriveDropActive ? DROP_ACTIVE_CLASS : undefined}
+                                        />
+                                    </div>
+                                );
+                            })}
 
-                        {drives.length === 0 && (
-                            <NavigationDrawerItem
-                                selected={normCurrent === '/'}
-                                shape="pill"
-                                icon={<Icon name="hard_drive" size={20} fill={normCurrent === '/' ? 1 : 0} animateFill />}
-                                label="Computer"
-                                onClick={() => onNavigate('/')}
-                            />
-                        )}
-                    </NavigationDrawerContent>
-                </ScrollArea>
+                            {drives.length === 0 && (
+                                <div
+                                    data-drop-folder-path="/"
+                                    data-drop-active={isComputerDropActive ? 'true' : undefined}
+                                >
+                                    <NavigationDrawerItem
+                                        selected={normCurrent === '/'}
+                                        shape="pill"
+                                        icon={<Icon name="hard_drive" size={20} fill={normCurrent === '/' ? 1 : 0} animateFill />}
+                                        label="Computer"
+                                        onClick={() => onNavigate('/')}
+                                        className={isComputerDropActive ? DROP_ACTIVE_CLASS : undefined}
+                                    />
+                                </div>
+                            )}
+                        </NavigationDrawerContent>
+                    </ScrollArea>
+                </div>
             </NavigationDrawer>
         </motion.aside>
     );

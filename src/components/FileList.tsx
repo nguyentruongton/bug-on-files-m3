@@ -5,7 +5,6 @@ import { ExpressiveShape } from './ExpressiveShape';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
 import {
-    buildFileUriList,
     formatFileDate,
     formatFileSize,
     formatOriginalParent,
@@ -20,12 +19,13 @@ import {
     GRID_HEADER_HEIGHT,
     buildDisplayEntries,
     buildVirtualGridEntries,
-    collectOutboundDragPaths,
     computeGridColumns,
     getGridCardHeight,
     resolveGridArrowTarget,
     type SortField,
 } from '../utils/fileListUtils';
+import { collectOutboundDragItems, type ResolvedDropTarget } from '../utils/dropTargetUtils';
+import { normalizePath } from '../utils/navigationHistory';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../utils/shapeUtils';
 import { toThumbnailUrl } from '../utils/quickLook';
 import { useVirtualWindow } from '../hooks/useVirtualWindow';
@@ -38,6 +38,12 @@ const GRID_TOP_PADDING = 16;
 const HEADER_ROW_HEIGHT_WITH_GAP = 38;
 const FILE_ROW_HEIGHT = 56;
 const FILE_ROW_HEIGHT_WITH_GAP = 58;
+const DROP_ACTIVE_CLASS = 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldSuppressClickAfterDrag(suppressedUntilMs: number, nowMs: number): boolean {
+    return nowMs < suppressedUntilMs;
+}
 
 interface FileListProps {
     files: IFile[];
@@ -59,18 +65,22 @@ interface FileListProps {
     isSearch?: boolean;
     isTrash?: boolean;
     homePath?: string;
+    activeDropTarget?: ResolvedDropTarget | null;
+    onStartOutboundDrag?: (items: IFile[]) => void;
 }
 
 interface FileListRowProps {
     file: IFile;
     fileIndex: number;
     isSelected: boolean;
+    isDropTarget: boolean;
     position: ListItemPosition;
     morphEnabled: boolean;
     filledIcons: boolean;
     isTrash: boolean;
     homePath?: string;
     onItemClick: (e: React.MouseEvent, file: IFile) => void;
+    onItemPointerDown: () => void;
     onNavigate: (file: IFile) => void;
     onContextMenu?: (e: React.MouseEvent, file: IFile) => void;
     onItemDragStart: (e: React.DragEvent, file: IFile) => void;
@@ -150,12 +160,14 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
         file,
         fileIndex,
         isSelected,
+        isDropTarget,
         position,
         morphEnabled,
         filledIcons,
         isTrash,
         homePath,
         onItemClick,
+        onItemPointerDown,
         onNavigate,
         onContextMenu,
         onItemDragStart,
@@ -227,13 +239,18 @@ const FileListRow: React.FC<FileListRowProps> = React.memo(
                     role="option"
                     aria-selected={isSelected}
                     data-file-path={file.path}
+                    data-drop-folder-path={!isTrash && file.isDirectory ? file.path : undefined}
+                    data-drop-active={isDropTarget ? 'true' : undefined}
                     draggable={!isTrash}
+                    onPointerDown={onItemPointerDown}
                     onDragStart={(e) => onItemDragStart(e, file)}
                     onClick={(e) => onItemClick(e, file)}
                     onDoubleClick={() => onNavigate(file)}
                     onContextMenu={(e) => onContextMenu?.(e, file)}
                     onKeyDown={(e) => onItemKeyDown(e, file, fileIndex)}
-                    className="file-list-item h-14 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-m3-primary"
+                    className={`file-list-item h-14 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-m3-primary ${
+                        isDropTarget ? DROP_ACTIVE_CLASS : ''
+                    }`}
                 />
             </ListItem>
         );
@@ -261,6 +278,8 @@ export const FileList: React.FC<FileListProps> = ({
     isSearch = false,
     isTrash = false,
     homePath,
+    activeDropTarget = null,
+    onStartOutboundDrag,
 }) => {
     const sortedFiles = files;
 
@@ -269,6 +288,7 @@ export const FileList: React.FC<FileListProps> = ({
     const activeScrollRef = scrollContainerRef ?? localScrollRef;
     const pendingFocusPathRef = useRef<string | null>(null);
     const isProgrammaticScrollRef = useRef(false);
+    const suppressClickUntilRef = useRef<number>(0);
     const [containerWidth, setContainerWidth] = useState(800);
     const [widthMeasured, setWidthMeasured] = useState(false);
 
@@ -373,6 +393,8 @@ export const FileList: React.FC<FileListProps> = ({
         onNavigate,
         onContextMenu,
         onScrollTopChange,
+        onStartOutboundDrag,
+        isTrash,
         offsets,
         fileIndexToEntryIndex,
         gridEntries: gridLayout.entries,
@@ -391,6 +413,8 @@ export const FileList: React.FC<FileListProps> = ({
             onNavigate,
             onContextMenu,
             onScrollTopChange,
+            onStartOutboundDrag,
+            isTrash,
             offsets,
             fileIndexToEntryIndex,
             gridEntries: gridLayout.entries,
@@ -447,7 +471,15 @@ export const FileList: React.FC<FileListProps> = ({
         }
     }, [startIndex, endIndex, displayEntries, gridLayout.entries]);
 
+    const handleItemPointerDown = useCallback(() => {
+        suppressClickUntilRef.current = 0;
+    }, []);
+
     const handleItemClick = useCallback((e: React.MouseEvent, file: IFile) => {
+        if (shouldSuppressClickAfterDrag(suppressClickUntilRef.current, Date.now())) {
+            suppressClickUntilRef.current = 0;
+            return;
+        }
         const { selectedFiles: currentSelected, onNavigate: navigate, onSelect: select } =
             latestRef.current;
         const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
@@ -468,13 +500,21 @@ export const FileList: React.FC<FileListProps> = ({
     }, []);
 
     const handleItemDragStart = useCallback((e: React.DragEvent, file: IFile) => {
-        const { sortedFiles: currentFiles, selectedFiles: currentSelected } = latestRef.current;
-        const dragPaths = collectOutboundDragPaths(file, currentFiles, currentSelected);
-        if (e.dataTransfer) {
-            e.dataTransfer.effectAllowed = 'copyMove';
-            e.dataTransfer.setData('text/uri-list', buildFileUriList(dragPaths));
-            e.dataTransfer.setData('text/plain', dragPaths.join('\n'));
+        e.preventDefault();
+        const {
+            sortedFiles: currentFiles,
+            selectedFiles: currentSelected,
+            onSelect: select,
+            onStartOutboundDrag: startOutboundDrag,
+            isTrash: currentIsTrash,
+        } = latestRef.current;
+        if (currentIsTrash) return;
+        suppressClickUntilRef.current = Date.now() + 350;
+        const dragItems = collectOutboundDragItems(file, currentFiles, currentSelected);
+        if (!currentSelected.has(file.path)) {
+            select(file, false, false);
         }
+        startOutboundDrag?.(dragItems);
     }, []);
 
     const handleItemKeyDown = useCallback(
@@ -604,6 +644,13 @@ export const FileList: React.FC<FileListProps> = ({
         );
     }
 
+    const activeFileListDropPath =
+        !isTrash &&
+        activeDropTarget?.kind === 'folder' &&
+        activeDropTarget.source === 'filelist'
+            ? normalizePath(activeDropTarget.path)
+            : null;
+
     if (isList) {
         const visibleEntries =
             endIndex >= startIndex ? displayEntries.slice(startIndex, endIndex + 1) : [];
@@ -689,6 +736,7 @@ export const FileList: React.FC<FileListProps> = ({
 
                 <div
                     ref={activeScrollRef}
+                    data-drop-scroll-container="true"
                     className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-m3-surface-container-low"
                 >
                 <div className="px-3 pt-2 pb-24 min-h-full bg-m3-surface-container-low">
@@ -725,12 +773,18 @@ export const FileList: React.FC<FileListProps> = ({
                         }
 
                         const isSelected = selectedFiles.has(entry.file.path);
+                        const isDropTarget =
+                            !isTrash &&
+                            entry.file.isDirectory &&
+                            activeFileListDropPath !== null &&
+                            normalizePath(entry.file.path) === activeFileListDropPath;
                         return (
                             <FileListRow
                                 key={entry.key}
                                 file={entry.file}
                                 fileIndex={entry.fileIndex}
                                 isSelected={isSelected}
+                                isDropTarget={isDropTarget}
                                 position={entry.position}
                                 morphEnabled={shouldEnableItemMorph(
                                     sortedFiles.length,
@@ -740,6 +794,7 @@ export const FileList: React.FC<FileListProps> = ({
                                 isTrash={isTrash}
                                 homePath={homePath}
                                 onItemClick={handleItemClick}
+                                onItemPointerDown={handleItemPointerDown}
                                 onNavigate={handleStableNavigate}
                                 onContextMenu={
                                     onContextMenu ? handleStableContextMenu : undefined
@@ -772,6 +827,7 @@ export const FileList: React.FC<FileListProps> = ({
         <div ref={listRootRef} className="flex flex-col flex-1 min-h-0 w-full bg-m3-surface-container-low">
             <div
                 ref={activeScrollRef}
+                data-drop-scroll-container="true"
                 className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-m3-surface-container-low"
             >
                 <div className="grid content-start gap-3 p-4 pb-24 min-h-full bg-m3-surface-container-low">
@@ -810,6 +866,11 @@ export const FileList: React.FC<FileListProps> = ({
                                 {entry.items.map((file, colIdx) => {
                                     const fileIndex = entry.startIndex + colIdx;
                                     const isSelected = selectedFiles.has(file.path);
+                                    const isDropTarget =
+                                        !isTrash &&
+                                        file.isDirectory &&
+                                        activeFileListDropPath !== null &&
+                                        normalizePath(file.path) === activeFileListDropPath;
                                     const hidden = isHiddenFile(file.name);
                                     const iconInfo = getFileIconInfo(file);
                                     const groupName = getSemanticGroup(file);
@@ -828,12 +889,17 @@ export const FileList: React.FC<FileListProps> = ({
                                         <div
                                             key={file.path}
                                             data-file-path={file.path}
+                                            data-drop-folder-path={!isTrash && file.isDirectory ? file.path : undefined}
+                                            data-drop-active={isDropTarget ? 'true' : undefined}
                                             className={`file-list-item group relative flex flex-col items-center h-full p-2.5 rounded-m3-lg transition-colors cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-m3-primary ${
-                                                isSelected
-                                                    ? 'bg-m3-secondary-container text-m3-on-secondary-container'
-                                                    : 'hover:bg-m3-surface-container-high text-m3-on-surface'
+                                                isDropTarget
+                                                    ? `${DROP_ACTIVE_CLASS} text-m3-on-surface`
+                                                    : isSelected
+                                                        ? 'bg-m3-secondary-container text-m3-on-secondary-container'
+                                                        : 'hover:bg-m3-surface-container-high text-m3-on-surface'
                                             } ${hidden ? 'opacity-60' : ''}`}
                                             title={file.name}
+                                            onPointerDown={handleItemPointerDown}
                                             onClick={(e) => handleItemClick(e, file)}
                                             onDoubleClick={() => onNavigate(file)}
                                             onContextMenu={(e) => onContextMenu?.(e, file)}
