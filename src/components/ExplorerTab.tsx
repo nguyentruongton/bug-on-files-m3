@@ -1086,9 +1086,7 @@ export function ExplorerTab({
                         data-explorer-path={currentPath}
                         data-search-active={searchActive ? 'true' : 'false'}
                         data-drop-active={isExplorerRootDropActive ? 'true' : undefined}
-                        className={`flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low flex flex-col isolate${
-                            isExplorerRootDropActive ? ' ring-2 ring-inset ring-m3-primary/60' : ''
-                        }`}
+                        className="relative flex-1 min-h-0 mx-2 rounded-[24px] overflow-hidden bg-m3-surface-container-low flex flex-col isolate"
                         onClick={(e) => {
                             if (
                                 e.target === e.currentTarget ||
@@ -1136,6 +1134,12 @@ export function ExplorerTab({
                                 homePath={homePath}
                                 activeDropTarget={activeDropTarget}
                                 onStartOutboundDrag={(items) => onStartOutboundDrag?.(items, currentPathRef.current)}
+                            />
+                        )}
+                        {isExplorerRootDropActive && (
+                            <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 z-10 rounded-[24px] ring-2 ring-inset ring-m3-primary/60"
                             />
                         )}
                     </div>

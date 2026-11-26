@@ -398,7 +398,15 @@ describe('ExplorerTab silent reload & recovery logic', () => {
       expect(activeHtml).toContain('data-drop-explorer-root="true"');
       expect(activeHtml).toContain('data-explorer-path="/tmp/demo"');
       expect(activeHtml).toContain('data-search-active="false"');
-      expect(activeHtml).toContain('ring-2 ring-inset ring-m3-primary/60');
+      expect(activeHtml).toContain('data-drop-active="true"');
+
+      const activeRootTag = activeHtml.match(/<div[^>]*data-drop-explorer-root="true"[^>]*>/)?.[0] ?? '';
+      expect(activeRootTag).toContain('relative');
+      expect(activeRootTag).not.toContain('ring-2 ring-inset ring-m3-primary/60');
+
+      expect(activeHtml).toMatch(
+        /<div[^>]*aria-hidden="true"[^>]*class="[^"]*pointer-events-none absolute inset-0 z-10 rounded-\[24px\] ring-2 ring-inset ring-m3-primary\/60[^"]*"/
+      );
 
       const sidebarHtml = renderTab({
         kind: 'folder',
@@ -406,6 +414,8 @@ describe('ExplorerTab silent reload & recovery logic', () => {
         source: 'sidebar',
       });
       expect(sidebarHtml).toContain('data-drop-explorer-root="true"');
+      expect(sidebarHtml).not.toContain('data-drop-active="true"');
+      expect(sidebarHtml).not.toContain('pointer-events-none absolute inset-0 z-10');
       expect(sidebarHtml).not.toContain('ring-2 ring-inset ring-m3-primary/60');
     });
   });
