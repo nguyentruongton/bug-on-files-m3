@@ -38,7 +38,10 @@ export async function copyPathToClipboard(
   clipboard: Pick<Clipboard, 'writeText'> | undefined,
   showToast: (message: string, severity: ToastSeverity) => void
 ): Promise<void> {
-  if (!clipboard?.writeText) return;
+  if (!clipboard?.writeText) {
+    showToast('Failed to copy path', 'error');
+    return;
+  }
   try {
     await clipboard.writeText(path);
     showToast('Path copied', 'info');

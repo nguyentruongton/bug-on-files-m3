@@ -140,14 +140,14 @@ describe('copyPathToClipboard', () => {
     expect(toasts).toEqual([['Path copied', 'info']]);
   });
 
-  test('does not throw when clipboard API is unavailable', async () => {
+  test('shows error toast and does not throw when clipboard API is unavailable', async () => {
     const toasts: Array<[string, string]> = [];
     await expect(
       copyPathToClipboard('/home/user/notes.txt', undefined, (msg, severity) =>
         toasts.push([msg, severity])
       )
     ).resolves.toBeUndefined();
-    expect(toasts).toEqual([]);
+    expect(toasts).toEqual([['Failed to copy path', 'error']]);
   });
 
   test('handles clipboard write rejection without throwing', async () => {
@@ -263,5 +263,174 @@ describe('buildFileContextMenuItems — Open & Open in New Tab', () => {
 
     expect(openedFolders).toEqual(['/home/user/Projects']);
     expect(openedFiles).toEqual(['/home/user/notes.txt']);
+  });
+});
+
+describe('buildFileContextMenuItems — Trash, Archive, Standard, and Background branches', () => {
+  test('builds Trash item menu with multi-select suffix and invokes callbacks', () => {
+    const calls: string[] = [];
+    const f1 = makeFile('a.txt', false);
+    const f2 = makeFile('b.txt', false);
+    const items = buildFileContextMenuItems(
+      makeParams({
+        item: f1,
+        targetItems: [f1, f2],
+        isTrashView: true,
+        currentPath: 'app://trash',
+        onRestore: (xs) => calls.push(`restore:${xs.length}`),
+        onPurge: (xs) => calls.push(`purge:${xs.length}`),
+        onProperties: (x) => calls.push(`props:${x.name}`),
+      })
+    );
+
+    expect(items.filter((i) => !i.divider).map((i) => i.label)).toEqual([
+      'Restore (2)',
+      'Delete Permanently (2)',
+      'Properties',
+    ]);
+    items.filter((i) => !i.divider).forEach((i) => i.action());
+    expect(calls).toEqual(['restore:2', 'purge:2', 'props:a.txt']);
+  });
+
+  test('builds standard normal-view actions and invokes callbacks', () => {
+    const calls: string[] = [];
+    const file = makeFile('report.pdf', false);
+    const items = buildFileContextMenuItems(
+      makeParams({
+        item: file,
+        targetItems: [file],
+        onOpenInTerminal: (x) => calls.push(`term:${x.name}`),
+        onCopy: (xs) => calls.push(`copy:${xs.length}`),
+        onCut: (xs) => calls.push(`cut:${xs.length}`),
+        onDelete: (xs) => calls.push(`del:${xs.length}`),
+        onCompress: (xs) => calls.push(`compress:${xs.length}`),
+        onRename: (x) => calls.push(`rename:${x.name}`),
+        onOpenWith: (x) => calls.push(`openWith:${x.name}`),
+        onProperties: (x) => calls.push(`props:${x.name}`),
+      })
+    );
+
+    const labels = items.filter((i) => !i.divider).map((i) => i.label);
+    expect(labels).toEqual([
+      'Open',
+      'Open in Terminal',
+      'Copy Path',
+      'Copy',
+      'Cut',
+      'Delete',
+      'Compress...',
+      'Rename',
+      'Open With...',
+      'Properties',
+    ]);
+
+    for (const label of [
+      'Open in Terminal',
+      'Copy',
+      'Cut',
+      'Delete',
+      'Compress...',
+      'Rename',
+      'Open With...',
+      'Properties',
+    ]) {
+      items.find((i) => i.label === label)!.action();
+    }
+    expect(calls).toEqual([
+      'term:report.pdf',
+      'copy:1',
+      'cut:1',
+      'del:1',
+      'compress:1',
+      'rename:report.pdf',
+      'openWith:report.pdf',
+      'props:report.pdf',
+    ]);
+  });
+
+  test('builds Archive extraction actions for single and multi-archive selections', () => {
+    const calls: string[] = [];
+    const a1 = makeFile('backup.tar.gz', false);
+    const a2 = makeFile('photos.zip', false);
+
+    const singleItems = buildFileContextMenuItems(
+      makeParams({
+        item: a1,
+        targetItems: [a1],
+        allSelectedAreArchives: true,
+        onExtractHere: (xs) => calls.push(`here:${xs.length}`),
+        onExtractToOwnFolder: (xs) => calls.push(`own:${xs.length}`),
+        onExtractToDir: (xs) => calls.push(`dir:${xs.length}`),
+      })
+    );
+    expect(singleItems.map((i) => i.label)).toContain('Extract Here');
+    expect(singleItems.map((i) => i.label)).toContain('Extract to "backup/"');
+    expect(singleItems.map((i) => i.label)).toContain('Extract to...');
+    singleItems.find((i) => i.label === 'Extract Here')!.action();
+    singleItems.find((i) => i.label === 'Extract to "backup/"')!.action();
+    singleItems.find((i) => i.label === 'Extract to...')!.action();
+    expect(calls).toEqual(['here:1', 'own:1', 'dir:1']);
+
+    const multiItems = buildFileContextMenuItems(
+      makeParams({
+        item: a1,
+        targetItems: [a1, a2],
+        allSelectedAreArchives: true,
+      })
+    );
+    expect(multiItems.map((i) => i.label)).toContain('Extract Here (2)');
+    expect(multiItems.map((i) => i.label)).toContain('Extract Each to Own Folder (2)');
+    expect(multiItems.map((i) => i.label)).toContain('Extract to...');
+  });
+
+  test('builds Background menus for Trash, Explorer dir (with/without clipboard), and Dashboard', () => {
+    const calls: string[] = [];
+
+    const trashBg = buildFileContextMenuItems(
+      makeParams({
+        item: null,
+        targetItems: [],
+        isTrashView: true,
+        currentPath: 'app://trash',
+        onEmptyTrash: () => calls.push('emptyTrash'),
+      })
+    );
+    expect(trashBg.map((i) => i.label)).toEqual(['Empty Trash']);
+    trashBg[0]!.action();
+
+    const dirBgNoClip = buildFileContextMenuItems(
+      makeParams({
+        item: null,
+        targetItems: [],
+        currentPath: '/home/user',
+        hasClipboardFiles: false,
+        onNewFolder: () => calls.push('newFolder'),
+      })
+    );
+    expect(dirBgNoClip.map((i) => i.label)).toEqual(['New Folder']);
+
+    const dirBgWithClip = buildFileContextMenuItems(
+      makeParams({
+        item: null,
+        targetItems: [],
+        currentPath: '/home/user',
+        hasClipboardFiles: true,
+        onNewFolder: () => calls.push('newFolder'),
+        onPaste: () => calls.push('paste'),
+      })
+    );
+    expect(dirBgWithClip.map((i) => i.label)).toEqual(['New Folder', 'Paste']);
+    dirBgWithClip.forEach((i) => i.action());
+
+    const dashboardBg = buildFileContextMenuItems(
+      makeParams({
+        item: null,
+        targetItems: [],
+        currentPath: 'app://dashboard',
+        hasClipboardFiles: true,
+      })
+    );
+    expect(dashboardBg).toEqual([]);
+    expect(calls).toEqual(['emptyTrash', 'newFolder', 'paste']);
   });
 });

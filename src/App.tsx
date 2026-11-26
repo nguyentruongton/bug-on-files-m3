@@ -594,7 +594,11 @@ function AppContent() {
       },
       onCopyPath: (path) => {
         setContextMenu(null);
-        void copyPathToClipboard(path, navigator.clipboard, showToast);
+        void copyPathToClipboard(
+          path,
+          typeof navigator !== 'undefined' ? navigator.clipboard : undefined,
+          showToast
+        );
       },
       onCopy: (items) => handleCopy(items),
       onCut: (items) => handleCut(items),
