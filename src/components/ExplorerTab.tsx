@@ -763,8 +763,8 @@ export function ExplorerTab({
                 return;
             }
 
-            // Delete (Del)
-            if (e.key === 'Delete') {
+            // Delete (Del / macOS Backspace)
+            if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
                 if (selectedItems.length > 0) {
                     if (isTrash) {
