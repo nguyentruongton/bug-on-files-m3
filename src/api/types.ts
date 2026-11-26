@@ -44,6 +44,12 @@ export interface ExtractProgressEvent {
     error?: string;
 }
 
+export interface NativeDragRequest {
+    paths: string[];
+    label?: string;
+    isDirectory?: boolean;
+}
+
 export interface IApi {
     getThemeCss: () => Promise<string | null>;
     listDir: (path: string) => Promise<IFile[]>;
@@ -81,6 +87,8 @@ export interface IApi {
     watchStop: (id: number) => Promise<void>;
     onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
     onDragDrop: (cb: (e: DragDropEventPayload) => void) => () => void;
+    startNativeDrag: (req: NativeDragRequest) => Promise<boolean>;
+    onNativeDragEnd: (cb: () => void) => () => void;
     onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     onCompressProgress: (cb: (e: ExtractProgressEvent) => void) => () => void;
     getVideoMetadata: (path: string) => Promise<VideoMetadata | null>;

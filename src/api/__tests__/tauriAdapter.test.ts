@@ -13,6 +13,7 @@ describe('tauriAdapter', () => {
             expect(typeof adapter[key]).toBe('function');
         }
         expect(typeof adapter.onDragDrop).toBe('function');
+        expect(typeof adapter.onNativeDragEnd).toBe('function');
         expect(typeof adapter.onWatchEvent).toBe('function');
         expect(typeof adapter.onExtractProgress).toBe('function');
         expect(typeof adapter.onCompressProgress).toBe('function');
@@ -394,5 +395,66 @@ describe('tauriAdapter', () => {
         };
         registeredCb!(sample);
         expect(received).toEqual(sample);
+    });
+
+    test('startNativeDrag calls start_native_drag with normalized args', async () => {
+        const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+        const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+            calls.push({ cmd, args });
+            return true;
+        };
+        const adapter = createTauriAdapter(invoke, async () => () => {});
+
+        const okFile = await adapter.startNativeDrag({ paths: ['/tmp/a.png'], label: 'a.png' });
+        const okDir = await adapter.startNativeDrag({ paths: ['/tmp/dir'], isDirectory: true });
+
+        expect(okFile).toBe(true);
+        expect(okDir).toBe(true);
+        expect(calls).toEqual([
+            {
+                cmd: 'start_native_drag',
+                args: { paths: ['/tmp/a.png'], label: 'a.png', isDirectory: false },
+            },
+            {
+                cmd: 'start_native_drag',
+                args: { paths: ['/tmp/dir'], label: undefined, isDirectory: true },
+            },
+        ]);
+    });
+
+    test('onNativeDragEnd subscribes to fs:native-drag-ended and supports early unsubscribe', async () => {
+        let subscribedEvent = '';
+        let callCount = 0;
+        let registeredCb: ((payload: unknown) => void) | null = null;
+        let unlistenCalled = false;
+        let resolveListen!: (unlisten: () => void) => void;
+        const listenPromise = new Promise<() => void>((resolve) => {
+            resolveListen = resolve;
+        });
+
+        const listen = async (event: string, cb: (payload: unknown) => void) => {
+            subscribedEvent = event;
+            registeredCb = cb;
+            return listenPromise;
+        };
+        const adapter = createTauriAdapter(async () => {}, listen);
+
+        const unsub = adapter.onNativeDragEnd(() => {
+            callCount += 1;
+        });
+
+        expect(subscribedEvent).toBe('fs:native-drag-ended');
+        expect(registeredCb).not.toBeNull();
+        registeredCb!(null);
+        expect(callCount).toBe(1);
+
+        // Unsubscribe before listen resolves
+        unsub();
+        resolveListen(() => {
+            unlistenCalled = true;
+        });
+
+        await new Promise((r) => setTimeout(r, 10));
+        expect(unlistenCalled).toBe(true);
     });
 });

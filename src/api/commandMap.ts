@@ -2,7 +2,13 @@ import type { IApi } from './types';
 
 export type CommandKey = Exclude<
     keyof IApi,
-    'onDragDrop' | 'onWatchEvent' | 'onExtractProgress' | 'onCompressProgress' | 'ptyOnData' | 'ptyOnExit'
+    | 'onDragDrop'
+    | 'onNativeDragEnd'
+    | 'onWatchEvent'
+    | 'onExtractProgress'
+    | 'onCompressProgress'
+    | 'ptyOnData'
+    | 'ptyOnExit'
 >;
 
 export const COMMAND_MAP: Record<CommandKey, string> = {
@@ -40,6 +46,7 @@ export const COMMAND_MAP: Record<CommandKey, string> = {
     getRecommendedApps: 'get_recommended_apps',
     watchStart: 'watch_start',
     watchStop: 'watch_stop',
+    startNativeDrag: 'start_native_drag',
     getVideoMetadata: 'get_video_metadata',
     ptySpawn: 'pty_spawn',
     ptyWrite: 'pty_write',

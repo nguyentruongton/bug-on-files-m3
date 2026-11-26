@@ -4,6 +4,7 @@ import type {
     ExtractProgressEvent,
     IApi,
     IDrive,
+    NativeDragRequest,
     TextPreview,
     VideoMetadata,
     WatchEvent,
@@ -177,6 +178,15 @@ export function createTauriAdapter(
         },
         onDragDrop: (cb: (e: DragDropEventPayload) => void) => {
             return wrapListener(listenDragDrop(cb));
+        },
+        startNativeDrag: (req: NativeDragRequest) =>
+            invoke(COMMAND_MAP.startNativeDrag, {
+                paths: req.paths,
+                label: req.label,
+                isDirectory: req.isDirectory ?? false,
+            }) as Promise<boolean>,
+        onNativeDragEnd: (cb: () => void) => {
+            return wrapListener(listen('fs:native-drag-ended', () => cb()));
         },
         onExtractProgress: (cb: (e: ExtractProgressEvent) => void) => {
             return wrapListener(
