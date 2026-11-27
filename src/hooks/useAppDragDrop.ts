@@ -15,6 +15,7 @@ import type { PasteResult } from '../utils/pasteRunner';
 
 const SPRING_LOAD_DELAY_MS = 550;
 const SAFETY_TIMEOUT_MS = 15_000;
+const NATIVE_END_GRACE_MS = 150;
 
 export interface UseAppDragDropOptions {
   tabs: Array<{ id: string; path: string }>;
@@ -34,6 +35,7 @@ interface InternalDragSession {
   items: IFile[];
   paths: string[];
   sourceDir: string;
+  nativeEndedAt?: number;
 }
 
 interface ScrollContainerElement extends DropElementLike {
@@ -100,6 +102,7 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
   const autoScrollRafRef = useRef<number | null>(null);
   const autoScrollStateRef = useRef<AutoScrollState | null>(null);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativeEndGraceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const optionsRef = useRef(options);
 
@@ -113,6 +116,20 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
       safetyTimerRef.current = null;
     }
   }, []);
+
+  const clearNativeEndGraceTimer = useCallback(() => {
+    if (nativeEndGraceTimerRef.current !== null) {
+      clearTimeout(nativeEndGraceTimerRef.current);
+      nativeEndGraceTimerRef.current = null;
+    }
+  }, []);
+
+  const discardEndedInternalSession = useCallback(() => {
+    if (internalSessionRef.current?.nativeEndedAt !== undefined) {
+      clearNativeEndGraceTimer();
+      internalSessionRef.current = null;
+    }
+  }, [clearNativeEndGraceTimer]);
 
   const clearSpringLoadTimer = useCallback(() => {
     if (springLoadRef.current.timer !== null) {
@@ -141,9 +158,7 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
     }
   }, []);
 
-  const resetDragState = useCallback(() => {
-    internalSessionRef.current = null;
-    lastInboundPathsRef.current = [];
+  const clearDragUiState = useCallback(() => {
     clearSafetyTimer();
     clearSpringLoadTimer();
     stopAutoScroll();
@@ -152,6 +167,13 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
       setIsDragging(false);
     }
   }, [clearSafetyTimer, clearSpringLoadTimer, stopAutoScroll, updateActiveDropTarget]);
+
+  const resetDragState = useCallback(() => {
+    clearNativeEndGraceTimer();
+    internalSessionRef.current = null;
+    lastInboundPathsRef.current = [];
+    clearDragUiState();
+  }, [clearDragUiState, clearNativeEndGraceTimer]);
 
   const armSafetyTimer = useCallback(() => {
     clearSafetyTimer();
@@ -246,10 +268,12 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
 
   const startOutboundDrag = useCallback(
     async (items: IFile[], sourceDir: string): Promise<void> => {
+      discardEndedInternalSession();
       if (items.length === 0 || !api?.startNativeDrag) {
         return;
       }
 
+      clearNativeEndGraceTimer();
       clearSpringLoadTimer();
       stopAutoScroll();
       updateActiveDropTarget(null);
@@ -279,13 +303,25 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
         }
       }
     },
-    [armSafetyTimer, clearSpringLoadTimer, resetDragState, stopAutoScroll, updateActiveDropTarget]
+    [
+      armSafetyTimer,
+      clearNativeEndGraceTimer,
+      clearSpringLoadTimer,
+      discardEndedInternalSession,
+      resetDragState,
+      stopAutoScroll,
+      updateActiveDropTarget,
+    ]
   );
 
   useEffect(() => {
     isMountedRef.current = true;
 
     const handleHover = (event: DragDropEventPayload) => {
+      if (event.type === 'enter') {
+        discardEndedInternalSession();
+      }
+
       const session = internalSessionRef.current;
       if (!session) {
         if (event.type === 'enter') {
@@ -414,6 +450,24 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
         });
     };
 
+    const handleNativeDragEnd = () => {
+      // Clear UI & flush watcher immediately while keeping internalSessionRef alive briefly
+      // because GTK3 drag-end fires synchronously before tao drains DragDropEvent::Drop.
+      clearDragUiState();
+      lastInboundPathsRef.current = [];
+      const session = internalSessionRef.current;
+      if (session && session.nativeEndedAt === undefined) {
+        session.nativeEndedAt = Date.now();
+        clearNativeEndGraceTimer();
+        nativeEndGraceTimerRef.current = setTimeout(() => {
+          nativeEndGraceTimerRef.current = null;
+          if (internalSessionRef.current === session) {
+            internalSessionRef.current = null;
+          }
+        }, NATIVE_END_GRACE_MS);
+      }
+    };
+
     const unsubDragDrop = api?.onDragDrop?.((event) => {
       if (event.type === 'enter' || event.type === 'over') {
         handleHover(event);
@@ -421,7 +475,7 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
         updateActiveDropTarget(null);
         clearSpringLoadTimer();
         stopAutoScroll();
-        if (!internalSessionRef.current) {
+        if (!internalSessionRef.current || internalSessionRef.current.nativeEndedAt !== undefined) {
           lastInboundPathsRef.current = [];
           clearSafetyTimer();
           if (isMountedRef.current) {
@@ -434,13 +488,14 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
     });
 
     const unsubNativeDragEnd = api?.onNativeDragEnd?.(() => {
-      resetDragState();
+      handleNativeDragEnd();
     });
 
     return () => {
       isMountedRef.current = false;
       unsubDragDrop?.();
       unsubNativeDragEnd?.();
+      clearNativeEndGraceTimer();
       internalSessionRef.current = null;
       lastInboundPathsRef.current = [];
       activeDropTargetRef.current = null;
@@ -450,8 +505,11 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
     };
   }, [
     armSafetyTimer,
+    clearDragUiState,
+    clearNativeEndGraceTimer,
     clearSafetyTimer,
     clearSpringLoadTimer,
+    discardEndedInternalSession,
     resetDragState,
     stopAutoScroll,
     updateActiveDropTarget,

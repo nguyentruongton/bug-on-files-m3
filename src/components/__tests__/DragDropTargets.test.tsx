@@ -161,6 +161,43 @@ describe('Sidebar drop target markup', () => {
         },
     ];
 
+    function extractDivWrapper(html: string, startRegex: RegExp): string {
+        const match = html.match(startRegex);
+        if (!match || match.index === undefined) return '';
+        const start = match.index;
+        let depth = 0;
+        let cursor = start;
+        while (cursor < html.length) {
+            const openIdx = html.indexOf('<div', cursor);
+            const closeIdx = html.indexOf('</div>', cursor);
+            if (closeIdx === -1) break;
+            if (openIdx !== -1 && openIdx < closeIdx) {
+                depth += 1;
+                cursor = openIdx + 4;
+            } else {
+                depth -= 1;
+                cursor = closeIdx + 6;
+                if (depth === 0) {
+                    return html.slice(start, cursor);
+                }
+            }
+        }
+        return '';
+    }
+
+    function expectActiveDropOverlay(wrapperHtml: string) {
+        const openTag = wrapperHtml.match(/^<div[^>]*>/)?.[0] ?? '';
+        expect(openTag).toContain('relative');
+        expect(openTag).toContain('data-drop-active="true"');
+
+        const buttonTag = wrapperHtml.match(/<button[^>]*>/)?.[0] ?? '';
+        expect(buttonTag).not.toContain('ring-2 ring-inset ring-m3-primary');
+
+        expect(wrapperHtml).toMatch(
+            /<div[^>]*aria-hidden="true"[^>]*class="[^"]*pointer-events-none[^"]*absolute[^"]*inset-0[^"]*z-20[^"]*rounded-full[^"]*ring-2[^"]*ring-inset[^"]*ring-m3-primary[^"]*bg-m3-primary-container\/35[^"]*"/
+        );
+    }
+
     test('renders sidebar, scroll viewport, trash, place, and device drop markup', () => {
         const html = renderToStaticMarkup(
             <Sidebar
@@ -178,9 +215,8 @@ describe('Sidebar drop target markup', () => {
         expect(html).toContain('data-drop-folder-path="/home/u/Downloads"');
         expect(html).toContain('data-drop-folder-path="/mnt/usb"');
 
-        const trashSection = html.match(/<div[^>]*data-drop-trash="true"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
-        expect(trashSection).toContain('data-drop-active="true"');
-        expect(trashSection).toContain('ring-2 ring-inset ring-m3-primary');
+        const trashSection = extractDivWrapper(html, /<div[^>]*data-drop-trash="true"[^>]*>/);
+        expectActiveDropOverlay(trashSection);
     });
 
     test('highlights matching Place or Device path in Sidebar when activeDropTarget matches', () => {
@@ -194,11 +230,11 @@ describe('Sidebar drop target markup', () => {
             />
         );
 
-        const placeSection =
-            placeHtml.match(/<div[^>]*data-drop-folder-path="\/home\/u\/Downloads"[^>]*>[\s\S]*?<\/button>/)?.[0] ??
-            '';
-        expect(placeSection).toContain('data-drop-active="true"');
-        expect(placeSection).toContain('ring-2 ring-inset ring-m3-primary');
+        const placeSection = extractDivWrapper(
+            placeHtml,
+            /<div[^>]*data-drop-folder-path="\/home\/u\/Downloads"[^>]*>/
+        );
+        expectActiveDropOverlay(placeSection);
 
         const driveHtml = renderToStaticMarkup(
             <Sidebar
@@ -210,10 +246,11 @@ describe('Sidebar drop target markup', () => {
             />
         );
 
-        const driveSection =
-            driveHtml.match(/<div[^>]*data-drop-folder-path="\/mnt\/usb"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
-        expect(driveSection).toContain('data-drop-active="true"');
-        expect(driveSection).toContain('ring-2 ring-inset ring-m3-primary');
+        const driveSection = extractDivWrapper(
+            driveHtml,
+            /<div[^>]*data-drop-folder-path="\/mnt\/usb"[^>]*>/
+        );
+        expectActiveDropOverlay(driveSection);
 
         const fallbackHtml = renderToStaticMarkup(
             <Sidebar
@@ -222,10 +259,64 @@ describe('Sidebar drop target markup', () => {
                 activeDropTarget={{ kind: 'folder', path: '/', source: 'sidebar' }}
             />
         );
-        const computerSection =
-            fallbackHtml.match(/<div[^>]*data-drop-folder-path="\/"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
-        expect(computerSection).toContain('data-drop-active="true"');
-        expect(computerSection).toContain('ring-2 ring-inset ring-m3-primary');
+        const computerSection = extractDivWrapper(
+            fallbackHtml,
+            /<div[^>]*data-drop-folder-path="\/"[^>]*>/
+        );
+        expectActiveDropOverlay(computerSection);
+    });
+
+    test('renders z-20 drop overlay above selected Sidebar items (Place, Device, Trash)', () => {
+        const selectedPlaceHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u/Downloads"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'folder', path: '/home/u/Downloads', source: 'sidebar' }}
+            />
+        );
+        const selectedPlaceSection = extractDivWrapper(
+            selectedPlaceHtml,
+            /<div[^>]*data-drop-folder-path="\/home\/u\/Downloads"[^>]*>/
+        );
+        expect(selectedPlaceSection).toContain('aria-current="page"');
+        expect(selectedPlaceSection).toContain('bg-m3-secondary-container');
+        expectActiveDropOverlay(selectedPlaceSection);
+
+        const selectedDeviceHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/etc"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'folder', path: '/', source: 'sidebar' }}
+            />
+        );
+        const selectedDeviceSection = extractDivWrapper(
+            selectedDeviceHtml,
+            /<div[^>]*data-drop-folder-path="\/"[^>]*>/
+        );
+        expect(selectedDeviceSection).toContain('aria-current="page"');
+        expect(selectedDeviceSection).toContain('bg-m3-secondary-container');
+        expectActiveDropOverlay(selectedDeviceSection);
+
+        const selectedTrashHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="app://trash"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'trash' }}
+            />
+        );
+        const selectedTrashSection = extractDivWrapper(
+            selectedTrashHtml,
+            /<div[^>]*data-drop-trash="true"[^>]*>/
+        );
+        expect(selectedTrashSection).toContain('aria-current="page"');
+        expect(selectedTrashSection).toContain('bg-m3-secondary-container');
+        expectActiveDropOverlay(selectedTrashSection);
     });
 });
 

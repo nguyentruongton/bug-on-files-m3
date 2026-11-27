@@ -1,7 +1,14 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import React from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { IFile } from '../../types/files';
-import { FileList, MediaThumbnail, shouldSuppressClickAfterDrag } from '../FileList';
+import {
+    FileList,
+    MediaThumbnail,
+    shouldSuppressClickAfterDrag,
+    shouldSuppressFileClick,
+} from '../FileList';
 
 function makeFile(name: string, overrides: Partial<IFile> = {}): IFile {
     return {
@@ -208,5 +215,395 @@ describe('FileList drag click suppression helper', () => {
     test('shouldSuppressClickAfterDrag suppresses clicks only before deadline', () => {
         expect(shouldSuppressClickAfterDrag(1000, 950)).toBe(true);
         expect(shouldSuppressClickAfterDrag(1000, 1050)).toBe(false);
+    });
+
+    test('shouldSuppressFileClick suppresses throughout active drag even past deadline, and respects post-drag deadline', () => {
+        expect(shouldSuppressFileClick(true, 1000, 2000)).toBe(true);
+        expect(shouldSuppressFileClick(false, 1000, 950)).toBe(true);
+        expect(shouldSuppressFileClick(false, 1000, 1000)).toBe(false);
+    });
+});
+
+describe('FileList mounted click suppression across long drags', () => {
+    class MockNode {
+        nodeType = 1;
+        parentNode: MockNode | null = null;
+        childNodes: MockNode[] = [];
+        ownerDocument: MockDocument | null = null;
+        textContent: string | null = null;
+
+        appendChild<T extends MockNode>(child: T): T {
+            if (child.parentNode) child.parentNode.removeChild(child);
+            child.parentNode = this;
+            this.childNodes.push(child);
+            return child;
+        }
+        removeChild<T extends MockNode>(child: T): T {
+            const idx = this.childNodes.indexOf(child);
+            if (idx !== -1) {
+                this.childNodes.splice(idx, 1);
+                child.parentNode = null;
+            }
+            return child;
+        }
+        insertBefore<T extends MockNode>(newNode: T, refNode: MockNode | null): T {
+            if (!refNode) return this.appendChild(newNode);
+            if (newNode.parentNode) newNode.parentNode.removeChild(newNode);
+            const idx = this.childNodes.indexOf(refNode);
+            if (idx === -1) return this.appendChild(newNode);
+            newNode.parentNode = this;
+            this.childNodes.splice(idx, 0, newNode);
+            return newNode;
+        }
+    }
+
+    class MockElement extends MockNode {
+        tagName: string;
+        nodeName: string;
+        attributes = new Map<string, string>();
+        listeners = new Map<string, Set<(ev: unknown) => void>>();
+        style: Record<string, unknown> & {
+            setProperty: (name: string, value: string) => void;
+            removeProperty: (name: string) => void;
+        };
+        className = '';
+        clientWidth = 800;
+        clientHeight = 600;
+        scrollTop = 0;
+
+        constructor(tagName: string, ownerDocument: MockDocument | null = null) {
+            super();
+            this.tagName = tagName.toUpperCase();
+            this.nodeName = this.tagName;
+            this.ownerDocument = ownerDocument;
+            const styleObj: Record<string, unknown> & {
+                setProperty: (name: string, value: string) => void;
+                removeProperty: (name: string) => void;
+            } = {
+                setProperty: (name: string, value: string) => {
+                    styleObj[name] = value;
+                },
+                removeProperty: (name: string) => {
+                    delete styleObj[name];
+                },
+            };
+            this.style = styleObj;
+        }
+        addEventListener(type: string, cb: (ev: unknown) => void) {
+            let set = this.listeners.get(type);
+            if (!set) {
+                set = new Set();
+                this.listeners.set(type, set);
+            }
+            set.add(cb);
+        }
+        removeEventListener(type: string, cb: (ev: unknown) => void) {
+            this.listeners.get(type)?.delete(cb);
+        }
+        dispatchEvent(ev: {
+            type: string;
+            target?: unknown;
+            currentTarget?: unknown;
+            defaultPrevented?: boolean;
+            bubbles?: boolean;
+            cancelable?: boolean;
+            eventPhase?: number;
+            preventDefault?: () => void;
+            stopPropagation?: () => void;
+        }): boolean {
+            ev.target ??= this;
+            ev.bubbles ??= true;
+            ev.cancelable ??= true;
+            ev.eventPhase ??= 3;
+            ev.preventDefault ??= () => {
+                ev.defaultPrevented = true;
+            };
+            ev.stopPropagation ??= () => {};
+            for (const cb of this.listeners.get(ev.type) ?? []) {
+                ev.currentTarget = this;
+                cb(ev);
+            }
+            let parent = this.parentNode;
+            while (parent) {
+                if (parent instanceof MockElement) {
+                    ev.currentTarget = parent;
+                    for (const cb of parent.listeners.get(ev.type) ?? []) {
+                        cb(ev);
+                    }
+                }
+                parent = parent.parentNode;
+            }
+            return !ev.defaultPrevented;
+        }
+        getAttribute(name: string): string | null {
+            return this.attributes.get(name) ?? null;
+        }
+        setAttribute(name: string, value: string) {
+            this.attributes.set(name, String(value));
+        }
+        removeAttribute(name: string) {
+            this.attributes.delete(name);
+        }
+        focus() {}
+        querySelectorAll(selector: string): MockElement[] {
+            const attrMatch = selector.match(/^\[([^=\]]+)="([^"]*)"\]$/);
+            const attrOnlyMatch = selector.match(/^\[([^=\]]+)\]$/);
+            const out: MockElement[] = [];
+            const visit = (node: MockNode) => {
+                if (node instanceof MockElement) {
+                    if (attrMatch && node.getAttribute(attrMatch[1]) === attrMatch[2]) {
+                        out.push(node);
+                    } else if (attrOnlyMatch && node.getAttribute(attrOnlyMatch[1]) !== null) {
+                        out.push(node);
+                    }
+                }
+                for (const child of node.childNodes) {
+                    visit(child);
+                }
+            };
+            visit(this);
+            return out;
+        }
+    }
+
+    class MockHTMLElement extends MockElement {}
+    class MockHTMLIFrameElement extends MockHTMLElement {}
+    class MockSVGElement extends MockElement {}
+
+    class MockText extends MockNode {
+        override nodeType = 3;
+        data: string;
+        constructor(data: string, ownerDocument: MockDocument | null = null) {
+            super();
+            this.data = data;
+            this.textContent = data;
+            this.ownerDocument = ownerDocument;
+        }
+    }
+
+    class MockComment extends MockNode {
+        override nodeType = 8;
+    }
+
+    class MockDocument extends MockNode {
+        override nodeType = 9;
+        defaultView: unknown = null;
+        documentElement: MockElement;
+        body: MockElement;
+        activeElement: MockElement | null = null;
+        listeners = new Map<string, Set<(ev: unknown) => void>>();
+
+        constructor() {
+            super();
+            this.documentElement = new MockHTMLElement('HTML', this);
+            this.body = new MockHTMLElement('BODY', this);
+            this.documentElement.appendChild(this.body);
+            this.appendChild(this.documentElement);
+        }
+        createElement(tag: string) {
+            return new MockHTMLElement(tag, this);
+        }
+        createElementNS(_ns: string, tag: string) {
+            return new MockSVGElement(tag, this);
+        }
+        createTextNode(text: string) {
+            return new MockText(text, this);
+        }
+        createComment() {
+            return new MockComment();
+        }
+        addEventListener(type: string, cb: (ev: unknown) => void) {
+            let set = this.listeners.get(type);
+            if (!set) {
+                set = new Set();
+                this.listeners.set(type, set);
+            }
+            set.add(cb);
+        }
+        removeEventListener(type: string, cb: (ev: unknown) => void) {
+            this.listeners.get(type)?.delete(cb);
+        }
+    }
+
+    const DOM_KEYS = [
+        'window',
+        'document',
+        'Node',
+        'Element',
+        'HTMLElement',
+        'HTMLIFrameElement',
+        'SVGElement',
+        'navigator',
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+        'ResizeObserver',
+    ] as const;
+
+    const saved = new Map<string, { present: boolean; value: unknown }>();
+    for (const key of DOM_KEYS) {
+        const g = globalThis as Record<string, unknown>;
+        saved.set(key, { present: key in g, value: g[key] });
+    }
+
+    function restoreDomGlobals() {
+        const g = globalThis as Record<string, unknown>;
+        for (const key of DOM_KEYS) {
+            const entry = saved.get(key);
+            if (entry && entry.present) {
+                g[key] = entry.value;
+            } else {
+                delete g[key];
+            }
+        }
+    }
+
+    function setupDom() {
+        const doc = new MockDocument();
+        const container = doc.createElement('div');
+        doc.body.appendChild(container);
+        const win = {
+            document: doc,
+            Node: MockNode,
+            Element: MockElement,
+            HTMLElement: MockHTMLElement,
+            HTMLIFrameElement: MockHTMLIFrameElement,
+            SVGElement: MockSVGElement,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            requestAnimationFrame: (cb: (ts: number) => void) =>
+                setTimeout(() => cb(Date.now()), 0) as unknown as number,
+            cancelAnimationFrame: (id: number) => clearTimeout(id),
+        };
+        doc.defaultView = win;
+
+        const g = globalThis as Record<string, unknown>;
+        g.window = win;
+        g.document = doc;
+        g.Node = MockNode;
+        g.Element = MockElement;
+        g.HTMLElement = MockHTMLElement;
+        g.HTMLIFrameElement = MockHTMLIFrameElement;
+        g.SVGElement = MockSVGElement;
+        g.navigator = { userAgent: 'node' };
+        g.requestAnimationFrame = win.requestAnimationFrame;
+        g.cancelAnimationFrame = win.cancelAnimationFrame;
+        g.ResizeObserver = class {
+            observe() {}
+            disconnect() {}
+        };
+        return { container, doc };
+    }
+
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function waitFor<T>(fn: () => T | null | undefined, timeoutMs = 1000): Promise<T> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const val = fn();
+            if (val !== null && val !== undefined) return val;
+            await delay(10);
+        }
+        throw new Error(`waitFor timed out after ${timeoutMs}ms`);
+    }
+
+    let root: Root | null = null;
+    let container: MockElement;
+
+    beforeEach(() => {
+        const dom = setupDom();
+        container = dom.container;
+        root = createRoot(container as unknown as globalThis.Element, {
+            onUncaughtError: (err) => {
+                throw err;
+            },
+            onCaughtError: (err) => {
+                throw err;
+            },
+        });
+    });
+
+    afterEach(async () => {
+        if (root) {
+            root.unmount();
+            root = null;
+        }
+        await delay(20);
+        restoreDomGlobals();
+    });
+
+    afterAll(async () => {
+        await delay(20);
+        restoreDomGlobals();
+    });
+
+    test('suppresses click throughout >350ms drag and for 300ms after isDragging transitions true -> false, clearing on pointerdown', async () => {
+        const file = makeFile('report.pdf');
+        const selectedCalls: string[] = [];
+        const navigatedCalls: string[] = [];
+        const startedDragCalls: IFile[][] = [];
+
+        const renderWithDragging = (dragging: boolean, selected = false) => {
+            root!.render(
+                <FileList
+                    files={[file]}
+                    selectedFiles={selected ? new Set([file.path]) : new Set()}
+                    onSelect={(f) => selectedCalls.push(f.path)}
+                    onNavigate={(f) => navigatedCalls.push(f.path)}
+                    viewMode="grid"
+                    iconSize={64}
+                    filledIcons
+                    groupingEnabled={false}
+                    isDragging={dragging}
+                    onStartOutboundDrag={(items) => startedDragCalls.push(items)}
+                />
+            );
+        };
+
+        renderWithDragging(false);
+        const card = await waitFor(
+            () => container.querySelectorAll(`[data-file-path="${file.path}"]`)[0]
+        );
+
+        // Start drag on unselected item: handleItemDragStart selects it and triggers outbound drag
+        card.dispatchEvent({ type: 'dragstart' });
+        expect(startedDragCalls).toEqual([[file]]);
+        expect(selectedCalls).toEqual([file.path]);
+        selectedCalls.length = 0;
+
+        renderWithDragging(true, true);
+        await delay(400); // > 350ms old timer!
+
+        // While drag is still active at 400ms, click must remain suppressed
+        card.dispatchEvent({ type: 'click' });
+        expect(selectedCalls).toEqual([]);
+        expect(navigatedCalls).toEqual([]);
+
+        // Drag ends (onNativeDragEnd -> isDragging: true -> false)
+        renderWithDragging(false, true);
+        await delay(30);
+
+        // Trailing click within 300ms after isDragging: true -> false is still suppressed
+        card.dispatchEvent({ type: 'click' });
+        expect(selectedCalls).toEqual([]);
+        expect(navigatedCalls).toEqual([]);
+
+        // Re-arm suppression via another true -> false transition, then verify pointerdown clears it immediately
+        renderWithDragging(true, true);
+        await delay(20);
+        renderWithDragging(false, true);
+        await delay(30);
+
+        card.dispatchEvent({ type: 'pointerdown' });
+        card.dispatchEvent({ type: 'click' });
+        expect(navigatedCalls).toEqual([file.path]);
+
+        // Also verify suppression expires naturally after 300ms
+        renderWithDragging(true, true);
+        await delay(20);
+        renderWithDragging(false, true);
+        await delay(330);
+
+        card.dispatchEvent({ type: 'click' });
+        expect(navigatedCalls).toEqual([file.path, file.path]);
     });
 });

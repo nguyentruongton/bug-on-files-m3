@@ -1132,6 +1132,7 @@ export function ExplorerTab({
                                 isSearch={searchActive}
                                 isTrash={isTrash}
                                 homePath={homePath}
+                                isDragging={isDragging}
                                 activeDropTarget={activeDropTarget}
                                 onStartOutboundDrag={(items) => onStartOutboundDrag?.(items, currentPathRef.current)}
                             />

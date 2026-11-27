@@ -39,10 +39,20 @@ const HEADER_ROW_HEIGHT_WITH_GAP = 38;
 const FILE_ROW_HEIGHT = 56;
 const FILE_ROW_HEIGHT_WITH_GAP = 58;
 const DROP_ACTIVE_CLASS = 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
+const DRAG_CLICK_SUPPRESS_MS = 300;
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function shouldSuppressClickAfterDrag(suppressedUntilMs: number, nowMs: number): boolean {
     return nowMs < suppressedUntilMs;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldSuppressFileClick(
+    isDragging: boolean,
+    suppressedUntilMs: number,
+    nowMs: number
+): boolean {
+    return isDragging || shouldSuppressClickAfterDrag(suppressedUntilMs, nowMs);
 }
 
 interface FileListProps {
@@ -65,6 +75,7 @@ interface FileListProps {
     isSearch?: boolean;
     isTrash?: boolean;
     homePath?: string;
+    isDragging?: boolean;
     activeDropTarget?: ResolvedDropTarget | null;
     onStartOutboundDrag?: (items: IFile[]) => void;
 }
@@ -278,6 +289,7 @@ export const FileList: React.FC<FileListProps> = ({
     isSearch = false,
     isTrash = false,
     homePath,
+    isDragging = false,
     activeDropTarget = null,
     onStartOutboundDrag,
 }) => {
@@ -289,6 +301,7 @@ export const FileList: React.FC<FileListProps> = ({
     const pendingFocusPathRef = useRef<string | null>(null);
     const isProgrammaticScrollRef = useRef(false);
     const suppressClickUntilRef = useRef<number>(0);
+    const prevIsDraggingRef = useRef(Boolean(isDragging));
     const [containerWidth, setContainerWidth] = useState(800);
     const [widthMeasured, setWidthMeasured] = useState(false);
 
@@ -394,6 +407,7 @@ export const FileList: React.FC<FileListProps> = ({
         onContextMenu,
         onScrollTopChange,
         onStartOutboundDrag,
+        isDragging: Boolean(isDragging),
         isTrash,
         offsets,
         fileIndexToEntryIndex,
@@ -414,6 +428,8 @@ export const FileList: React.FC<FileListProps> = ({
             onContextMenu,
             onScrollTopChange,
             onStartOutboundDrag,
+            // Hold true across the true -> false commit gap until useEffect arms suppressClickUntilRef
+            isDragging: latestRef.current.isDragging || Boolean(isDragging),
             isTrash,
             offsets,
             fileIndexToEntryIndex,
@@ -425,6 +441,15 @@ export const FileList: React.FC<FileListProps> = ({
             scrollEl: activeScrollRef.current,
         };
     });
+
+    useEffect(() => {
+        const dragging = Boolean(isDragging);
+        if (prevIsDraggingRef.current && !dragging) {
+            suppressClickUntilRef.current = Date.now() + DRAG_CLICK_SUPPRESS_MS;
+        }
+        prevIsDraggingRef.current = dragging;
+        latestRef.current.isDragging = dragging;
+    }, [isDragging]);
 
     const selectedArray = useMemo(() => Array.from(selectedFiles), [selectedFiles]);
 
@@ -476,7 +501,13 @@ export const FileList: React.FC<FileListProps> = ({
     }, []);
 
     const handleItemClick = useCallback((e: React.MouseEvent, file: IFile) => {
-        if (shouldSuppressClickAfterDrag(suppressClickUntilRef.current, Date.now())) {
+        if (
+            shouldSuppressFileClick(
+                Boolean(latestRef.current.isDragging),
+                suppressClickUntilRef.current,
+                Date.now()
+            )
+        ) {
             suppressClickUntilRef.current = 0;
             return;
         }
@@ -509,7 +540,7 @@ export const FileList: React.FC<FileListProps> = ({
             isTrash: currentIsTrash,
         } = latestRef.current;
         if (currentIsTrash) return;
-        suppressClickUntilRef.current = Date.now() + 350;
+        suppressClickUntilRef.current = Date.now() + DRAG_CLICK_SUPPRESS_MS;
         const dragItems = collectOutboundDragItems(file, currentFiles, currentSelected);
         if (!currentSelected.has(file.path)) {
             select(file, false, false);

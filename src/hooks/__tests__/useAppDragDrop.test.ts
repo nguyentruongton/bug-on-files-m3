@@ -312,8 +312,8 @@ describe('useAppDragDrop', () => {
     if (root) {
       root.unmount();
       root = null;
-      await delay(20);
     }
+    await delay(20);
     Object.assign(api, origApiMethods);
   });
 
@@ -520,10 +520,107 @@ describe('useAppDragDrop', () => {
     expect(harness.getState().isDragging).toBe(false);
     expect(harness.getState().activeDropTarget).toBeNull();
 
-    // After onNativeDragEnd, internal session is gone
+    // After onNativeDragEnd 150ms grace window expires, internal session is gone
+    await delay(170);
     emitDragDrop({ type: 'drop', position: { x: 140, y: 140 } });
     await delay(30);
     expect(transferCalls).toHaveLength(0);
+  });
+
+  test('Critical #1: executes internal move and trash when onNativeDragEnd fires immediately before drop', async () => {
+    const transferCalls: Array<{ files: IFile[]; op: 'copy' | 'cut'; destDir: string }> = [];
+    const trashedBatches: IFile[][] = [];
+    const harness = mountCoordinator({
+      transferFiles: async (files, op, destDir) => {
+        transferCalls.push({ files, op, destDir });
+        return emptyPasteResult(files.length);
+      },
+      onTrashItems: (items) => trashedBatches.push(items),
+    });
+    await waitFor(() => harness.getState());
+
+    const fileA = makeFile('/home/u/Source/a.txt');
+    await harness.getState().startOutboundDrag([fileA], '/home/u/Source');
+    elementAtPointImpl = () =>
+      makeHitElement({
+        attrs: { 'data-drop-folder-path': '/home/u/DestFolder' },
+        parent: { attrs: { 'data-drop-sidebar': 'true' } },
+      });
+    emitDragDrop({ type: 'over', position: { x: 40, y: 120 } });
+    await waitFor(() => harness.getState().activeDropTarget);
+
+    // Simulate wry firing GTK drag-end synchronously before tao drains DragDropEvent::Drop
+    emitNativeDragEnd();
+    await waitFor(() => (!harness.getState().isDragging ? true : null));
+    expect(harness.getState().isDragging).toBe(false);
+    expect(harness.getState().activeDropTarget).toBeNull();
+
+    emitDragDrop({ type: 'drop', position: { x: 40, y: 120 } });
+    await waitFor(() => (transferCalls.length > 0 ? true : null));
+
+    expect(transferCalls).toEqual([
+      { files: [fileA], op: 'cut', destDir: '/home/u/DestFolder' },
+    ]);
+    expect(copyFileCalls).toHaveLength(0);
+
+    // Same ordering for Trash target
+    const fileB = makeFile('/home/u/Source/b.txt');
+    await harness.getState().startOutboundDrag([fileB], '/home/u/Source');
+    elementAtPointImpl = () =>
+      makeHitElement({
+        attrs: { 'data-drop-trash': 'true' },
+        parent: { attrs: { 'data-drop-sidebar': 'true' } },
+      });
+    emitDragDrop({ type: 'over', position: { x: 30, y: 300 } });
+    await waitFor(() => harness.getState().activeDropTarget);
+
+    emitNativeDragEnd();
+    await waitFor(() => (!harness.getState().isDragging ? true : null));
+    expect(harness.getState().isDragging).toBe(false);
+    expect(harness.getState().activeDropTarget).toBeNull();
+
+    emitDragDrop({ type: 'drop', position: { x: 30, y: 300 } });
+    await waitFor(() => (trashedBatches.length > 0 ? true : null));
+
+    expect(trashedBatches).toEqual([[fileB]]);
+    expect(transferCalls).toHaveLength(1);
+    expect(copyFileCalls).toHaveLength(0);
+  });
+
+  test('Critical #1: subsequent external enter after onNativeDragEnd discards ended session and treats drop as copy', async () => {
+    const transferCalls: Array<{ files: IFile[]; op: 'copy' | 'cut'; destDir: string }> = [];
+    const importCompletions: Array<{ destDir: string; count: number }> = [];
+    const harness = mountCoordinator({
+      transferFiles: async (files, op, destDir) => {
+        transferCalls.push({ files, op, destDir });
+        return emptyPasteResult(files.length);
+      },
+      onExternalImportComplete: (destDir, count) => {
+        importCompletions.push({ destDir, count });
+      },
+    });
+    await waitFor(() => harness.getState());
+
+    const internalFile = makeFile('/home/u/Source/internal.txt');
+    await harness.getState().startOutboundDrag([internalFile], '/home/u/Source');
+    await waitFor(() => (harness.getState().isDragging ? true : null));
+
+    emitNativeDragEnd();
+    await waitFor(() => (!harness.getState().isDragging ? true : null));
+
+    // Quick external enter arrives within the 150ms grace window
+    elementAtPointImpl = () => makeHitElement({ attrs: { 'data-drop-folder-path': '/home/u/Target' } });
+    emitDragDrop({ type: 'enter', paths: ['/ext/inbound.txt'], position: { x: 160, y: 160 } });
+    await waitFor(() => harness.getState().activeDropTarget);
+
+    emitDragDrop({ type: 'drop', paths: ['/ext/inbound.txt'], position: { x: 160, y: 160 } });
+    await waitFor(() => (importCompletions.length > 0 ? true : null));
+
+    expect(transferCalls).toHaveLength(0);
+    expect(copyFileCalls).toEqual([
+      { source: '/ext/inbound.txt', dest: '/home/u/Target/inbound.txt' },
+    ]);
+    expect(importCompletions).toEqual([{ destDir: '/home/u/Target', count: 1 }]);
   });
 
   test('external drag leave clears isDragging and activeDropTarget immediately', async () => {
