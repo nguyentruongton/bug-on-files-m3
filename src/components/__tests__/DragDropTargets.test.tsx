@@ -205,7 +205,7 @@ describe('Sidebar drop target markup', () => {
                 onNavigate={() => {}}
                 initialPlaces={places}
                 initialDrives={drives}
-                activeDropTarget={{ kind: 'trash' }}
+                activeDropTarget={{ kind: 'trash', source: 'sidebar' }}
             />
         );
 
@@ -307,7 +307,7 @@ describe('Sidebar drop target markup', () => {
                 onNavigate={() => {}}
                 initialPlaces={places}
                 initialDrives={drives}
-                activeDropTarget={{ kind: 'trash' }}
+                activeDropTarget={{ kind: 'trash', source: 'sidebar' }}
             />
         );
         const selectedTrashSection = extractDivWrapper(
@@ -317,6 +317,17 @@ describe('Sidebar drop target markup', () => {
         expect(selectedTrashSection).toContain('aria-current="page"');
         expect(selectedTrashSection).toContain('bg-m3-secondary-container');
         expectActiveDropOverlay(selectedTrashSection);
+
+        const tabTrashHtml = renderToStaticMarkup(
+            <Sidebar
+                currentPath="/home/u"
+                onNavigate={() => {}}
+                initialPlaces={places}
+                initialDrives={drives}
+                activeDropTarget={{ kind: 'trash', source: 'tab', tabId: 't3' }}
+            />
+        );
+        expect(tabTrashHtml).not.toContain('data-drop-active="true"');
     });
 });
 
@@ -351,7 +362,7 @@ describe('TabBar drop target markup', () => {
         expect(tab1).not.toContain('data-drop-active="true"');
     });
 
-    test('highlights app://trash tab when activeDropTarget is trash', () => {
+    test('highlights app://trash tab only when activeDropTarget targets that tab and not Sidebar Trash', () => {
         const html = renderToStaticMarkup(
             <TabBar
                 tabs={tabs}
@@ -359,7 +370,7 @@ describe('TabBar drop target markup', () => {
                 onTabClick={() => {}}
                 onTabClose={() => {}}
                 onNewTab={() => {}}
-                activeDropTarget={{ kind: 'trash' }}
+                activeDropTarget={{ kind: 'trash', source: 'tab', tabId: 't3' }}
             />
         );
 
@@ -369,5 +380,17 @@ describe('TabBar drop target markup', () => {
 
         const homeTab = html.match(/<button[^>]*data-drop-tab-id="t1"[^>]*>/)?.[0] ?? '';
         expect(homeTab).not.toContain('data-drop-active="true"');
+
+        const sidebarTrashHtml = renderToStaticMarkup(
+            <TabBar
+                tabs={tabs}
+                activeTabId="t1"
+                onTabClick={() => {}}
+                onTabClose={() => {}}
+                onNewTab={() => {}}
+                activeDropTarget={{ kind: 'trash', source: 'sidebar' }}
+            />
+        );
+        expect(sidebarTrashHtml).not.toContain('data-drop-active="true"');
     });
 });

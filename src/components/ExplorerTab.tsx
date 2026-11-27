@@ -143,6 +143,7 @@ export function ExplorerTab({
     const [files, setFiles] = useState<IFile[]>([]);
     const filesRef = useRef<IFile[]>(files);
     const [loading, setLoading] = useState(false);
+    const loadingRef = useRef(false);
     const { showToast } = useToast();
     const { copy, cut } = useClipboard();
 
@@ -217,6 +218,7 @@ export function ExplorerTab({
         lastScrollTopRef.current = 0;
         const targetDir = currentPathRef.current;
 
+        loadingRef.current = true;
         setLoading(true);
         setSearchActive(true);
         searchActiveRef.current = true;
@@ -237,6 +239,7 @@ export function ExplorerTab({
             showToast('Search failed', 'error');
         }
         if (seq === searchSeqRef.current) {
+            loadingRef.current = false;
             setLoading(false);
         }
     };
@@ -261,10 +264,12 @@ export function ExplorerTab({
             currentPathRef.current = path;
             setCurrentPath(path);
             onPathChange(tabId, path);
+            loadingRef.current = false;
             setLoading(false);
             return;
         }
 
+        loadingRef.current = true;
         setLoading(true);
         try {
             const items =
@@ -290,6 +295,7 @@ export function ExplorerTab({
             }
         }
         if (seq === loadSeqRef.current) {
+            loadingRef.current = false;
             setLoading(false);
         }
     }, [onPathChange, tabId, addToRecents, showToast]);
@@ -395,7 +401,7 @@ export function ExplorerTab({
     const applyTransferSync = useCallback(
         (signal: TransferSyncSignal) => {
             if (searchActiveRef.current) {
-                if (signal.removedPaths.length > 0) {
+                if (!loadingRef.current && signal.removedPaths.length > 0) {
                     const removedSet = new Set(signal.removedPaths);
                     const nextFiles = pruneRemovedFilePaths(filesRef.current, removedSet);
                     if (nextFiles !== filesRef.current) {

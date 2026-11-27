@@ -15,7 +15,13 @@ export function pruneRemovedFilePaths<T extends { path: string }>(
   if (files.length === 0 || removedPaths.size === 0) {
     return files;
   }
-  const next = files.filter((file) => !removedPaths.has(file.path));
+  const removedList = Array.from(removedPaths);
+  const next = files.filter((file) => {
+    if (removedPaths.has(file.path)) {
+      return false;
+    }
+    return !removedList.some((removedPath) => isSameOrDescendant(removedPath, file.path));
+  });
   return next.length === files.length ? files : next;
 }
 

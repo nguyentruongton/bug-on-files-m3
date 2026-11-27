@@ -2,10 +2,13 @@ import type { IFile } from '../types/files';
 import { normalizePath } from './navigationHistory';
 import { isSameOrDescendant } from './pasteRunner';
 
+export const DROP_ACTIVE_CLASS = 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
+
 export type ResolvedDropTarget =
   | { kind: 'folder'; path: string; source: 'filelist' | 'sidebar' | 'explorer-root' }
   | { kind: 'tab'; tabId: string; path: string }
-  | { kind: 'trash' };
+  | { kind: 'trash'; source: 'sidebar' }
+  | { kind: 'trash'; source: 'tab'; tabId: string };
 
 export interface DropElementLike {
   closest(selector: string): DropElementLike | null;
@@ -84,16 +87,25 @@ export function canDropPathsIntoDir(
   destDir: string,
   mode: 'move' | 'copy'
 ): boolean {
+  void mode;
   if (paths.length === 0 || !isValidDestDir(destDir)) {
     return false;
   }
   const normDest = normalizePath(destDir);
+  let hasActionable = false;
   for (const rawPath of paths) {
-    if (!isValidAbsPath(rawPath) || isSameOrDescendant(rawPath, normDest)) {
+    if (!isValidAbsPath(rawPath)) {
       return false;
     }
+    const normSrc = normalizePath(rawPath);
+    if (isSameOrDescendant(normSrc, normDest)) {
+      return false;
+    }
+    if (getParentDirPath(normSrc) !== normDest) {
+      hasActionable = true;
+    }
   }
-  return filterActionablePathsForDir(paths, destDir, mode).length > 0;
+  return hasActionable;
 }
 
 function canDropToTrash(draggedPaths: string[], mode: 'move' | 'copy'): boolean {
@@ -117,7 +129,7 @@ export function resolveDropTargetFromElement(
 
   const trashEl = el.closest('[data-drop-trash="true"]');
   if (trashEl) {
-    return canDropToTrash(draggedPaths, mode) ? { kind: 'trash' } : null;
+    return canDropToTrash(draggedPaths, mode) ? { kind: 'trash', source: 'sidebar' } : null;
   }
 
   const tabEl = el.closest('[data-drop-tab-id]');
@@ -131,7 +143,7 @@ export function resolveDropTargetFromElement(
       return null;
     }
     if (tab.path === 'app://trash') {
-      return canDropToTrash(draggedPaths, mode) ? { kind: 'trash' } : null;
+      return canDropToTrash(draggedPaths, mode) ? { kind: 'trash', source: 'tab', tabId } : null;
     }
     if (tab.path === 'app://dashboard') {
       return null;

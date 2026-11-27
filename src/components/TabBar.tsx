@@ -2,8 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Button, ButtonGroup } from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
-import type { ResolvedDropTarget } from '../utils/dropTargetUtils';
-import { normalizePath } from '../utils/navigationHistory';
+import { DROP_ACTIVE_CLASS, type ResolvedDropTarget } from '../utils/dropTargetUtils';
 
 export interface Tab {
     id: string;
@@ -117,7 +116,9 @@ export const TabBar: React.FC<TabBarProps> = ({
                         const isDropActive = Boolean(
                             activeDropTarget &&
                             ((activeDropTarget.kind === 'tab' && activeDropTarget.tabId === tab.id) ||
-                                (activeDropTarget.kind === 'trash' && normalizePath(tab.path) === 'app://trash'))
+                                (activeDropTarget.kind === 'trash' &&
+                                    activeDropTarget.source === 'tab' &&
+                                    activeDropTarget.tabId === tab.id))
                         );
                         return (
                             <Button
@@ -163,7 +164,7 @@ export const TabBar: React.FC<TabBarProps> = ({
                                     }
                                 }}
                                 className={`min-w-[120px] max-w-[220px] [&>span]:w-full [&>span]:min-w-0 pl-2! pr-1.5! ${
-                                    isDropActive ? 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35' : ''
+                                    isDropActive ? DROP_ACTIVE_CLASS : ''
                                 }`}
                             >
                                 <span className="flex items-center gap-1.5 w-full min-w-0 justify-between">

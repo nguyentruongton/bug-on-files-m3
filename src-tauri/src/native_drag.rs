@@ -39,8 +39,9 @@ pub fn validate_drag_paths(paths: &[String]) -> Result<Vec<String>, String> {
         if path.contains('\0') {
             return Err("Drag path contains invalid NUL byte".to_string());
         }
-        if seen.insert(path.as_str()) {
-            validated.push(path.clone());
+        let normalized = normalize_trailing_slash(path);
+        if seen.insert(normalized) {
+            validated.push(normalized.to_string());
         }
     }
 
@@ -305,8 +306,8 @@ mod platform {
         }
 
         surface.flush();
-        // Negative offset places the drag pill down-right of the cursor hotspot after drawing.
-        surface.set_device_offset(-16.0, -20.0);
+        // Positive device offset shifts the drag pill down-right of the cursor hotspot, scaled for HiDPI.
+        surface.set_device_offset(16.0 * scale, 20.0 * scale);
         Ok(surface)
     }
 
@@ -359,8 +360,13 @@ mod platform {
             webview.connect_motion_notify_event(move |wv, event| {
                 let mut s = state_motion.borrow_mut();
                 if s.button1_pressed {
-                    let (x, y) = event.position();
-                    s.last_pos = widget_coords_in_toplevel(wv, x, y);
+                    if !event.state().contains(gdk::ModifierType::BUTTON1_MASK) {
+                        s.button1_pressed = false;
+                        s.last_press_event = None;
+                    } else {
+                        let (x, y) = event.position();
+                        s.last_pos = widget_coords_in_toplevel(wv, x, y);
+                    }
                 }
                 gtk::glib::Propagation::Proceed
             });
@@ -369,6 +375,16 @@ mod platform {
             webview.connect_button_release_event(move |_wv, event| {
                 if event.button() == 1 {
                     let mut s = state_release.borrow_mut();
+                    s.button1_pressed = false;
+                    s.last_press_event = None;
+                }
+                gtk::glib::Propagation::Proceed
+            });
+
+            let state_focus_out = Rc::clone(&state);
+            webview.connect_focus_out_event(move |_wv, _event| {
+                let mut s = state_focus_out.borrow_mut();
+                if s.active_payload.is_none() {
                     s.button1_pressed = false;
                     s.last_press_event = None;
                 }
@@ -590,6 +606,16 @@ mod tests {
                 "/a.txt".to_string(),
             ]),
             Ok(vec!["/a.txt".to_string(), "/b".to_string()])
+        );
+
+        assert_eq!(
+            validate_drag_paths(&[
+                "/tmp/dir/".to_string(),
+                "/tmp/dir".to_string(),
+                "/".to_string(),
+                "///".to_string(),
+            ]),
+            Ok(vec!["/tmp/dir".to_string(), "/".to_string()])
         );
     }
 

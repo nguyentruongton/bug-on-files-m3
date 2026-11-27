@@ -424,7 +424,6 @@ for (const key of DOM_GLOBAL_KEYS) {
   const g = globalThis as Record<string, unknown>;
   savedGlobals.set(key, { present: key in g, value: g[key] });
 }
-const hadDocumentBeforeSuite = 'document' in globalThis && globalThis.document !== undefined;
 
 function restoreGlobals() {
   const g = globalThis as Record<string, unknown>;
@@ -506,11 +505,6 @@ describe('usePaste transferFiles', () => {
   afterAll(async () => {
     await delay(20);
     restoreGlobals();
-    if (!hadDocumentBeforeSuite) {
-      mock.module('@radix-ui/react-use-layout-effect', () => ({
-        useLayoutEffect: () => {},
-      }));
-    }
   });
 
   test('isolates ClipboardContext, tracks affectedDirs on partial skip, and blocks concurrent paste/transferFiles', async () => {

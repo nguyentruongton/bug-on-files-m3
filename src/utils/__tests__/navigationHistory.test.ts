@@ -107,10 +107,14 @@ describe('resolveAfterTabClose', () => {
 });
 
 describe('normalizePath and getActiveDriveMountpoint', () => {
-  test('normalizes trailing slashes while preserving root /', () => {
+  test('normalizes trailing and repeated slashes while preserving root / and virtual schemes', () => {
     expect(normalizePath('/')).toBe('/');
+    expect(normalizePath('///')).toBe('/');
     expect(normalizePath('/home/stark/')).toBe('/home/stark');
+    expect(normalizePath('/home//stark///Docs/')).toBe('/home/stark/Docs');
     expect(normalizePath('/home/stark')).toBe('/home/stark');
+    expect(normalizePath('app://trash/')).toBe('app://trash');
+    expect(normalizePath('search://docs/')).toBe('search://docs');
   });
 
   test('selects the longest matching mountpoint for a path', () => {

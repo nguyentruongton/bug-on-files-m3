@@ -156,6 +156,7 @@ describe('resolveDropTargetFromElement', () => {
 
     expect(resolveDropTargetFromElement(sidebarTrash, ['/home/u/a.txt'], 'move', tabsById)).toEqual({
       kind: 'trash',
+      source: 'sidebar',
     });
     expect(resolveDropTargetFromElement(sidebarTrash, ['/home/u/a.txt'], 'copy', tabsById)).toBeNull();
     expect(resolveDropTargetFromElement(sidebarTrash, [], 'move', tabsById)).toBeNull();
@@ -177,6 +178,8 @@ describe('resolveDropTargetFromElement', () => {
 
     expect(resolveDropTargetFromElement(trashTab, ['/home/u/a.txt'], 'move', tabsById)).toEqual({
       kind: 'trash',
+      source: 'tab',
+      tabId: 'tab-trash',
     });
     expect(resolveDropTargetFromElement(trashTab, ['/home/u/a.txt'], 'copy', tabsById)).toBeNull();
 

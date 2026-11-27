@@ -14,7 +14,7 @@ import { processInboundDrop } from '../utils/explorerTabUtils';
 import type { PasteResult } from '../utils/pasteRunner';
 
 const SPRING_LOAD_DELAY_MS = 550;
-const SAFETY_TIMEOUT_MS = 15_000;
+const SAFETY_TIMEOUT_MS = 60_000;
 const NATIVE_END_GRACE_MS = 150;
 
 export interface UseAppDragDropOptions {
@@ -34,7 +34,6 @@ export interface UseAppDragDropOptions {
 interface InternalDragSession {
   items: IFile[];
   paths: string[];
-  sourceDir: string;
   nativeEndedAt?: number;
 }
 
@@ -55,7 +54,10 @@ function areDropTargetsEqual(
 ): boolean {
   if (a === b) return true;
   if (!a || !b || a.kind !== b.kind) return false;
-  if (a.kind === 'trash') return true;
+  if (a.kind === 'trash' && b.kind === 'trash') {
+    if (a.source !== b.source) return false;
+    return a.source === 'sidebar' || (b.source === 'tab' && a.tabId === b.tabId);
+  }
   if (a.kind === 'tab' && b.kind === 'tab') {
     return a.tabId === b.tabId && a.path === b.path;
   }
@@ -87,7 +89,7 @@ function buildTabsMap(tabs: Array<{ id: string; path: string }>): Map<string, { 
 export function useAppDragDrop(options: UseAppDragDropOptions): {
   isDragging: boolean;
   activeDropTarget: ResolvedDropTarget | null;
-  startOutboundDrag: (items: IFile[], sourceDir: string) => Promise<void>;
+  startOutboundDrag: (items: IFile[], _sourceDir?: string) => Promise<void>;
 } {
   const [isDragging, setIsDragging] = useState(false);
   const [activeDropTarget, setActiveDropTarget] = useState<ResolvedDropTarget | null>(null);
@@ -267,7 +269,8 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
   );
 
   const startOutboundDrag = useCallback(
-    async (items: IFile[], sourceDir: string): Promise<void> => {
+    async (items: IFile[], _sourceDir?: string): Promise<void> => {
+      void _sourceDir;
       discardEndedInternalSession();
       if (items.length === 0 || !api?.startNativeDrag) {
         return;
@@ -279,7 +282,7 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
       updateActiveDropTarget(null);
 
       const paths = items.map((item) => item.path);
-      const session: InternalDragSession = { items, paths, sourceDir };
+      const session: InternalDragSession = { items, paths };
       internalSessionRef.current = session;
       lastInboundPathsRef.current = [];
       if (isMountedRef.current) {
@@ -433,7 +436,11 @@ export function useAppDragDrop(options: UseAppDragDropOptions): {
         copyFile: (src, dest) => api.copyFile(src, dest),
       })
         .then((count) => {
-          if (!isMountedRef.current || count <= 0) {
+          if (!isMountedRef.current) {
+            return;
+          }
+          if (count <= 0) {
+            optionsRef.current.showToast('Failed to import dropped files', 'error');
             return;
           }
           optionsRef.current.showToast(

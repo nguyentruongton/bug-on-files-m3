@@ -307,6 +307,18 @@ describe('ExplorerTab silent reload & recovery logic', () => {
       expect(pruneRemovedFilePaths(files, new Set(['/home/u/Docs/other.txt']))).toBe(files);
       expect(pruneRemovedFilePaths(files, new Set())).toBe(files);
     });
+
+    test('prunes descendant search hits when a parent folder is removed without affecting sibling prefixes', () => {
+      const folder = { path: '/home/u/Docs', name: 'Docs' };
+      const nested = { path: '/home/u/Docs/sub/report.pdf', name: 'report.pdf' };
+      const siblingPrefix = { path: '/home/u/Docs2/notes.txt', name: 'notes.txt' };
+      const files = [folder, nested, siblingPrefix];
+
+      const result = pruneRemovedFilePaths(files, new Set(['/home/u/Docs']));
+
+      expect(result).toEqual([siblingPrefix]);
+      expect(result[0]).toBe(siblingPrefix);
+    });
   });
 
   describe('directory-scoped silent refresh (shouldSilentlyRefreshTab)', () => {

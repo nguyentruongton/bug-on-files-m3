@@ -24,7 +24,11 @@ import {
     resolveGridArrowTarget,
     type SortField,
 } from '../utils/fileListUtils';
-import { collectOutboundDragItems, type ResolvedDropTarget } from '../utils/dropTargetUtils';
+import {
+    DROP_ACTIVE_CLASS,
+    collectOutboundDragItems,
+    type ResolvedDropTarget,
+} from '../utils/dropTargetUtils';
 import { normalizePath } from '../utils/navigationHistory';
 import { getFileGroupShapePair, shouldEnableItemMorph } from '../utils/shapeUtils';
 import { toThumbnailUrl } from '../utils/quickLook';
@@ -38,7 +42,6 @@ const GRID_TOP_PADDING = 16;
 const HEADER_ROW_HEIGHT_WITH_GAP = 38;
 const FILE_ROW_HEIGHT = 56;
 const FILE_ROW_HEIGHT_WITH_GAP = 58;
-const DROP_ACTIVE_CLASS = 'ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
 const DRAG_CLICK_SUPPRESS_MS = 300;
 
 // eslint-disable-next-line react-refresh/only-export-components

@@ -137,7 +137,12 @@ export function hasClosableOtherTabs<T extends { id: string; pinned?: boolean }>
 
 export function normalizePath(pathStr: string): string {
   if (!pathStr || pathStr === '/') return pathStr;
-  return pathStr.replace(/\/+$/, '');
+  if (pathStr.startsWith('app://') || pathStr.startsWith('search://')) {
+    return pathStr.replace(/\/+$/, '');
+  }
+  const collapsed = pathStr.replace(/\/+/g, '/');
+  if (collapsed === '/') return '/';
+  return collapsed.replace(/\/+$/, '');
 }
 
 export function getActiveDriveMountpoint(currentPath: string, mountpoints: string[]): string | null {

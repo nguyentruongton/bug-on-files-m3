@@ -855,6 +855,32 @@ describe('useAppDragDrop', () => {
     expect(harness.getState().activeDropTarget).toBeNull();
   });
 
+  test('external drop shows error toast when copyFile fails for all actionable items', async () => {
+    const importCompletions: Array<{ destDir: string; count: number }> = [];
+    const toasts: Array<{ msg: string; type: string }> = [];
+    copyFileImpl = async () => false;
+
+    const harness = mountCoordinator({
+      onExternalImportComplete: (destDir, count) => importCompletions.push({ destDir, count }),
+      showToast: (msg, type) => toasts.push({ msg, type }),
+    });
+    await waitFor(() => harness.getState());
+
+    elementAtPointImpl = () => makeHitElement({ attrs: { 'data-drop-folder-path': '/home/u/Target' } });
+    emitDragDrop({
+      type: 'drop',
+      paths: ['/ext/unreadable.png'],
+      position: { x: 100, y: 100 },
+    });
+    await waitFor(() => (toasts.length > 0 ? true : null));
+
+    expect(copyFileCalls).toEqual([
+      { source: '/ext/unreadable.png', dest: '/home/u/Target/unreadable.png' },
+    ]);
+    expect(importCompletions).toEqual([]);
+    expect(toasts).toEqual([{ msg: 'Failed to import dropped files', type: 'error' }]);
+  });
+
   test('external drop onto Trash (sidebar or app://trash tab) does nothing', async () => {
     const trashed: IFile[][] = [];
     const importCompletions: Array<{ destDir: string; count: number }> = [];

@@ -11,11 +11,10 @@ import {
 } from '@bug-on/m3-expressive';
 import { Icon } from './Icon';
 import { normalizePath, getActiveDriveMountpoint } from '../utils/navigationHistory';
-import type { ResolvedDropTarget } from '../utils/dropTargetUtils';
+import { DROP_ACTIVE_CLASS, type ResolvedDropTarget } from '../utils/dropTargetUtils';
 import { api } from '../api';
 
-const DROP_OVERLAY_CLASS =
-    'pointer-events-none absolute inset-0 z-20 rounded-full ring-2 ring-inset ring-m3-primary bg-m3-primary-container/35';
+const DROP_OVERLAY_CLASS = `pointer-events-none absolute inset-0 z-20 rounded-full ${DROP_ACTIVE_CLASS}`;
 
 function SidebarDropOverlay({ active }: { active: boolean }) {
     if (!active) return null;
@@ -117,7 +116,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeDropTarget?.kind === 'folder' && activeDropTarget.source === 'sidebar'
             ? normalizePath(activeDropTarget.path)
             : null;
-    const isTrashDropActive = activeDropTarget?.kind === 'trash';
+    const isTrashDropActive =
+        activeDropTarget?.kind === 'trash' && activeDropTarget.source === 'sidebar';
     const isComputerDropActive = activeSidebarDropPath === '/';
 
     return (
